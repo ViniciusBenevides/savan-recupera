@@ -1,0 +1,33 @@
+# === Segredos (NUNCA versionar) ===
+.env
+.env.*
+!.env.example
+**/.env.local
+**/.env*.local
+
+# === Dados reais / PII (LGPD) ===
+dividas_savan.xlsx
+*.xlsx
+
+# === Build / dependências ===
+node_modules/
+.next/
+*.tsbuildinfo
+dashboard/next-env.d.ts
+
+# === Vínculo de conta Vercel (orgId/projectId) ===
+.vercel/
+**/.vercel/
+
+# === Tooling local e material de referência (não é o trabalho / bloat) ===
+.claude/
+Documentacao/
+referencias/
+conversa_com_claude.md
+
+# Workflows de referência de terceiros (não os workflows reais do SAVAN)
+WORKFLOWS/
+
+# === Sistema operacional ===
+Thumbs.db
+.DS_Store
