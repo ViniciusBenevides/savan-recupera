@@ -84,7 +84,7 @@ Deno.serve(async (req) => {
           nome_bot: cfg.ia?.nome_bot ?? "Ana",
           nome: dev?.nome,
         })
-        : `Olá ${primeiroNomeCap}, aqui é a ${cfg.ia?.nome_bot ?? "Ana"} da SAVAN Calçados.`;
+        : `Olá ${primeiroNomeCap}, aqui é a ${cfg.ia?.nome_bot ?? "Ana"} da nossa loja de calçados.`;
 
       await sb.from("fila_envios")
         .update({ template_id: tpl?.id ?? null, mensagem_renderizada: conteudo })

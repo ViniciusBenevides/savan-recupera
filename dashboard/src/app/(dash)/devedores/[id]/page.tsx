@@ -24,7 +24,7 @@ export default async function DevedorPage({ params }: { params: Promise<{ id: st
       sb.from("configuracoes").select("valor").eq("chave", "chatwoot").maybeSingle(),
     ]);
 
-  const cwUrl = cfg?.valor?.url ?? "https://chatwoot.virtusdoctor.com";
+  const cwUrl = cfg?.valor?.url ?? "https://chatwoot.example.com";
   const conv = conversas?.[0];
 
   return (

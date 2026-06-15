@@ -11,8 +11,6 @@ from pathlib import Path
 import requests
 
 RAIZ = Path(__file__).resolve().parent.parent
-N8N = "https://n8n.virtusdoctor.com"
-SUPA = "https://wmggqsmqvklxlqwsksjs.supabase.co"
 
 
 def env(chave):
@@ -22,6 +20,8 @@ def env(chave):
     raise SystemExit(f"{chave} não encontrado no .env")
 
 
+N8N = env("url n8n").rstrip("/")
+SUPA = env("supabase api url").rstrip("/")
 N8N_KEY = env("n8n api key")
 SRK = env("service_role supabase")
 HDR = {"X-N8N-API-KEY": N8N_KEY, "Content-Type": "application/json"}

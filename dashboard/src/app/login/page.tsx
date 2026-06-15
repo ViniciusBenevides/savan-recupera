@@ -39,16 +39,16 @@ export default function LoginPage() {
           </p>
           <div className="mt-10 grid grid-cols-2 gap-4">
             <div className="card-surface p-4">
-              <div className="font-mono text-2xl font-600 text-chalk tabnums">50.577</div>
+              <div className="font-mono text-2xl font-600 text-chalk tabnums">50.000</div>
               <div className="mt-1 text-xs text-mist">devedores na base</div>
             </div>
             <div className="card-surface p-4">
-              <div className="font-mono text-2xl font-600 text-emerald tabnums">{brl(10780800.61)}</div>
+              <div className="font-mono text-2xl font-600 text-emerald tabnums">{brl(10000000)}</div>
               <div className="mt-1 text-xs text-mist">em estoque a recuperar</div>
             </div>
           </div>
         </div>
-        <p className="relative z-10 text-xs text-mist/70">SAVAN Calçados · Plataforma operada por Virtus</p>
+        <p className="relative z-10 text-xs text-mist/70">Recuperação extrajudicial de crédito por WhatsApp</p>
       </div>
 
       {/* lado direito — form */}

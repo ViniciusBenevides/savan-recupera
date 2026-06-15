@@ -67,7 +67,7 @@ Deno.serve(async (req) => {
     value: valorFinal,
     dueDate,
     externalReference: String(neg?.id ?? dev.id),
-    description: `Quitacao SAVAN - processo ${dev.processo}`,
+    description: `Quitacao - processo ${dev.processo}`,
     walletSavan: asaasCfg.wallet_savan || undefined,
     comissaoPct,
   });
@@ -103,7 +103,7 @@ Deno.serve(async (req) => {
 
   // atualiza atributos no Chatwoot
   if (dev.chatwoot_contact_id) {
-    const cwUrl = cfg.chatwoot?.url ?? "https://chatwoot.virtusdoctor.com";
+    const cwUrl = cfg.chatwoot?.url ?? "https://chatwoot.example.com";
     const acc = cfg.chatwoot?.account_id ?? 1;
     await fetch(`${cwUrl}/api/v1/accounts/${acc}/contacts/${dev.chatwoot_contact_id}`, {
       method: "PUT",

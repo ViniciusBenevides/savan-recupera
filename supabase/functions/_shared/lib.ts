@@ -222,7 +222,7 @@ export class Chatwoot {
 
 export function cwFromConfig(cfg: Record<string, any>): Chatwoot {
   return new Chatwoot(
-    cfg.chatwoot?.url ?? "https://chatwoot.virtusdoctor.com",
+    cfg.chatwoot?.url ?? "https://chatwoot.example.com",
     cfg.chatwoot?.account_id ?? 1,
     Deno.env.get("CHATWOOT_TOKEN")!,
   );

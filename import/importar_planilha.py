@@ -22,8 +22,8 @@ import requests
 RAIZ = Path(__file__).resolve().parent.parent
 PLANILHA = RAIZ / "dividas_savan.xlsx"
 
-SUPABASE_URL = "https://wmggqsmqvklxlqwsksjs.supabase.co"
-SERVICE_KEY = ""  # preenchido via .env
+SUPABASE_URL = ""  # preenchido via .env (chave "supabase api url")
+SERVICE_KEY = ""   # preenchido via .env (chave "service_role supabase")
 
 BATCH = 500
 
@@ -35,14 +35,19 @@ DDDs_VALIDOS = set(
 
 
 def carregar_service_key():
-    global SERVICE_KEY
+    global SERVICE_KEY, SUPABASE_URL
     env = RAIZ / ".env"
     for linha in env.read_text(encoding="utf-8").splitlines():
         if "service_role supabase" in linha:
             SERVICE_KEY = linha.split(":", 1)[1].strip()
-            return
-    print("ERRO: service_role não encontrada no .env")
-    sys.exit(1)
+        elif linha.lower().startswith("supabase api url"):
+            SUPABASE_URL = linha.split(":", 1)[1].strip()
+    if not SERVICE_KEY:
+        print("ERRO: service_role não encontrada no .env")
+        sys.exit(1)
+    if not SUPABASE_URL:
+        print('ERRO: "supabase api url" não encontrada no .env')
+        sys.exit(1)
 
 
 def normalizar_cpf(valor):

@@ -28,6 +28,10 @@ conversa_com_claude.md
 # Workflows de referência de terceiros (não os workflows reais do SAVAN)
 WORKFLOWS/
 
+# === Python ===
+__pycache__/
+*.pyc
+
 # === Sistema operacional ===
 Thumbs.db
 .DS_Store

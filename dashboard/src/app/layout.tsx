@@ -20,7 +20,7 @@ const mono = JetBrains_Mono({
 
 export const metadata: Metadata = {
   title: "SAVAN Recupera",
-  description: "Plataforma de recuperação de crédito — SAVAN Calçados",
+  description: "Plataforma de recuperação extrajudicial de crédito por WhatsApp",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

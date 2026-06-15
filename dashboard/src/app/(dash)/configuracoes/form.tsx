@@ -108,8 +108,8 @@ export function ConfigForm({ ehAdmin, asaas, ia, usuarios }: {
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
-            <Label>Wallet ID da SAVAN (recebe 90%)</Label>
-            <Input value={wallet} onChange={(e) => setWallet(e.target.value)} placeholder="walletId do Asaas da SAVAN" className="font-mono text-xs" />
+            <Label>Wallet ID do credor (recebe 90%)</Label>
+            <Input value={wallet} onChange={(e) => setWallet(e.target.value)} placeholder="walletId do Asaas do credor" className="font-mono text-xs" />
           </div>
           <div>
             <Label>Sua comissão (%)</Label>
