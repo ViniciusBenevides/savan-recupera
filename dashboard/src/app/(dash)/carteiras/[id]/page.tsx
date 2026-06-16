@@ -7,8 +7,9 @@ import { CarteiraPainel } from "./painel";
 
 export const dynamic = "force-dynamic";
 
-export default async function CarteiraPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function CarteiraPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string }> }) {
   const { id } = await params;
+  const { tab } = await searchParams;
   const sb = await supabaseServer();
 
   const { data: carteira } = await sb.from("carteiras").select("*").eq("id", Number(id)).maybeSingle();
@@ -29,7 +30,7 @@ export default async function CarteiraPage({ params }: { params: Promise<{ id: s
         <ArrowLeft className="h-4 w-4" /> Carteiras
       </Link>
       <SectionTitle title={carteira.nome} sub={carteira.credor ? `Credor: ${carteira.credor}` : "Configure os envios e o robô desta carteira."} />
-      <CarteiraPainel carteira={carteira} importacoes={importacoes ?? []} padrao={padrao} />
+      <CarteiraPainel carteira={carteira} importacoes={importacoes ?? []} padrao={padrao} tabInicial={tab as any} />
     </>
   );
 }

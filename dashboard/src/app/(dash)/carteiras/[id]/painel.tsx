@@ -18,8 +18,8 @@ const TABS = [
 ] as const;
 type Tab = typeof TABS[number]["k"];
 
-export function CarteiraPainel({ carteira, importacoes, padrao }: { carteira: any; importacoes: any[]; padrao: Record<string, any> }) {
-  const [tab, setTab] = React.useState<Tab>("status");
+export function CarteiraPainel({ carteira, importacoes, padrao, tabInicial }: { carteira: any; importacoes: any[]; padrao: Record<string, any>; tabInicial?: Tab }) {
+  const [tab, setTab] = React.useState<Tab>(tabInicial ?? (carteira.status === "importando" ? "historico" : "status"));
   return (
     <>
       <div className="mb-5 flex flex-wrap gap-1 border-b border-line">
@@ -330,8 +330,14 @@ function AbaHistorico({ carteira, importacoes }: { carteira: any; importacoes: a
 
   return (
     <div className="max-w-2xl space-y-4">
+      {carteira.status === "importando" && (
+        <div className="flex items-start gap-2 rounded-xl border border-amber/30 bg-amber/10 px-4 py-3 text-sm text-amber">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>Esta carteira ainda não tem planilha. Envie o arquivo abaixo para concluir a criação — ou apague a carteira na aba <b>Status &amp; envios</b>.</span>
+        </div>
+      )}
       <Card className="space-y-3">
-        <Label className="flex items-center gap-1.5">Subir nova planilha para esta carteira <HelpHint text="Acrescenta/atualiza devedores. Mesmo CPF é atualizado (não duplica). Não aceita um arquivo com nome já usado." /></Label>
+        <Label className="flex items-center gap-1.5">Subir planilha para esta carteira <HelpHint text="Acrescenta/atualiza devedores. Mesmo CPF é atualizado (não duplica). Não aceita um arquivo com nome já usado." /></Label>
         <div className="flex items-center gap-2">
           <a href="/api/carteiras/modelo"><Button variant="outline">Baixar modelo</Button></a>
           <label className="flex flex-1 cursor-pointer items-center gap-2 rounded-xl border border-dashed border-line bg-ink-900 px-3 py-2 hover:border-emerald/50">

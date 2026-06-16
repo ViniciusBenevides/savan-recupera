@@ -3,6 +3,7 @@ import { Card, SectionTitle, Badge, Button, HelpHint } from "@/components/ui/pri
 import { brl, num, dataBR } from "@/lib/utils";
 import { FolderUp, Plus } from "lucide-react";
 import Link from "next/link";
+import { CarteiraAcoes } from "./acoes";
 
 export const dynamic = "force-dynamic";
 
@@ -53,6 +54,7 @@ export default async function CarteirasPage() {
                   <th className="px-5 py-3 font-medium">
                     <span className="inline-flex items-center gap-1">Status <HelpHint text="Importando: aguardando planilha. Pausada: importada, sem enviar. Ativa: enviando. Arquivada: histórico." /></span>
                   </th>
+                  <th className="px-5 py-3 text-right font-medium">Ações</th>
                 </tr>
               </thead>
               <tbody>
@@ -68,6 +70,7 @@ export default async function CarteirasPage() {
                       <td className="px-5 py-3 font-mono text-chalk tabnums">{brl(c.soma_saldo)}</td>
                       <td className="px-5 py-3 text-mist">{dataBR(c.criado_em)}</td>
                       <td className="px-5 py-3"><Badge tone={s.tone}>{s.label}</Badge></td>
+                      <td className="px-5 py-3"><CarteiraAcoes id={c.id} nome={c.nome} status={c.status} /></td>
                     </tr>
                   );
                 })}
