@@ -1,7 +1,8 @@
 # Contexto do Projeto — SAVAN Recupera
 
 > Documento para retomar o contexto em novas sessões com Claude.
-> Última atualização: build completo + dashboard no ar + criação de usuários.
+> Última atualização: versionado no GitHub (repo **público**) + deploy via integração Git da
+> Vercel + anonimização do cliente em docs e código (ver §13).
 
 ---
 
@@ -10,8 +11,8 @@
 Plataforma de **recuperação extrajudicial de crédito por WhatsApp** para a carteira de um
 **varejista de calçados** (cliente anonimizado · ~50 mil devedores · carteira na casa dos R$ 10 mi).
 O bot oferece **quitação voluntária com desconto**, gera **Pix com split automático
-90% SAVAN / 10% operador** (Asaas) e tudo é operável por um **painel web** — o software
-será vendido ao "Maurélio" (dono da carteira, não-técnico), então **zero necessidade de
+90% credor / 10% operador** (Asaas) e tudo é operável por um **painel web** — o software
+será vendido ao **cliente final** (dono da carteira, não-técnico), então **zero necessidade de
 mexer em n8n/código**.
 
 ### Regras de negócio inegociáveis (jurídico)
@@ -26,7 +27,7 @@ Dívidas com média de **15,8 anos → ~99,8% prescritas** e **fora do Serasa** 
   **30→100→250→400→500** novos contatos/chip/dia em 30 dias.
 - Descontos por idade: 15+ anos→60%, 10+→50%, 5+→40%, <5→30%. Margem extra única: +10pp.
 - Comissão **10%** via split Asaas. **Bloqueante legal:** contrato de cobrança + DPA (LGPD)
-  assinados com a SAVAN antes de qualquer disparo real.
+  assinados com o credor antes de qualquer disparo real.
 
 ---
 
@@ -54,12 +55,14 @@ complexos. Os workflows n8n são finos: só orquestram timing e I/O com Chatwoot
 ## 3. Estrutura de pastas
 
 ```
-MaurelioV2/
-├── README.md                      # guia de operação + checklist go-live
+MaurelioV2/                        # repo Git público (ver §13). [gi] = gitignored, fora do repo
+├── README.md                      # apresentação do projeto (em inglês)
 ├── contexto-projeto.md            # este arquivo
-├── conversa_com_claude.md         # histórico das decisões (planejamento)
-├── dividas_savan.xlsx             # planilha-fonte (sheet "ControlDesk", A1:AH50578)
-├── .env                           # TODAS as credenciais (Supabase, Chatwoot, Asaas, Z-API, n8n key)
+├── .gitignore                     # exclui segredos, PII e bloat do repo
+├── .env.example                   # template das vars dos scripts (formato "chave: valor")
+├── conversa_com_claude.md         # [gi] histórico das decisões (planejamento)
+├── dividas_savan.xlsx             # [gi] planilha-fonte REAL (PII LGPD) — NUNCA versionar
+├── .env                           # [gi] TODAS as credenciais (Supabase, Chatwoot, Asaas, Z-API, n8n)
 │
 ├── supabase/
 │   ├── migrations/                # 7 migrations (rodadas via MCP apply_migration)
@@ -87,8 +90,9 @@ MaurelioV2/
 ├── n8n/
 │   └── criar_workflows.py         # cria/atualiza os 5 workflows via API n8n
 │
-└── dashboard/                     # Next.js (deploy Vercel)
-    ├── .env.local                 # vars locais (mesmas estão na Vercel)
+└── dashboard/                     # Next.js (deploy Vercel via Git — ver §13)
+    ├── .env.local                 # [gi] vars locais (mesmas estão na Vercel)
+    ├── .env.example               # template das vars (formato KEY=valor)
     ├── tailwind.config.ts         # design system dark fintech
     └── src/
         ├── middleware.ts          # proteção de rotas (auth)
@@ -198,6 +202,10 @@ instance_id, client_token}` (client_token = `ZAPI_CLIENT_TOKEN`). Labels: `agent
 Vercel e retornam 401; usar o canônico).
 **Login admin:** `<ADMIN_EMAIL>` · senha inicial `<ADMIN_SENHA>` *(credenciais omitidas — ver gestor de segredos)*.
 Projeto Vercel: `<team>/savan-recupera` (7 env vars de produção).
+**Deploy:** integração Git da Vercel — `git push` na `main` → deploy automático
+(**Root Directory = `dashboard`**). Detalhes no §13.
+**Branding:** o painel mostra branding genérico (cliente anonimizado) desde a abertura do
+repo público; o nome real pode voltar via config/env no ambiente do cliente, se necessário.
 
 **Páginas:** Visão geral (cards + funil + feed realtime de pagamentos) · Campanha (switch
 gigante liga/desliga, modo simulação, janela, intervalo, aquecimento) · Chips (cards +
@@ -249,7 +257,7 @@ Tudo pré-pronto. Faltam itens que dependem de compra/assinatura:
    `…/functions/v1/webhook-asaas` (header `asaas-access-token`).
 3. **Chips:** comprar 5 Salvy + 5 instâncias Z-API → cadastrar no painel (QR) → ativar.
 4. **Jurídico (bloqueante):** contrato de cobrança + DPA (LGPD).
-5. **Segurança:** rotacionar a `service_role` do Supabase antes de entregar ao Maurélio
+5. **Segurança:** rotacionar a `service_role` do Supabase antes de entregar ao cliente final
    (atualizar em Vercel, segredos do Supabase e `.env`).
 6. Testar com **Modo simulação** ligado antes do disparo real.
 
@@ -257,9 +265,12 @@ Tudo pré-pronto. Faltam itens que dependem de compra/assinatura:
 
 ## 11. Como testar/rodar
 
+> Os scripts `import/` e `n8n/` leem URLs e chaves do `.env` da raiz (ver `.env.example`).
+> Necessário ter a chave `supabase api url` no `.env` (além do `service_role supabase`, `url n8n`).
+
 ```bash
 # Dashboard local
-cd dashboard && npm install && npm run dev   # localhost:3000
+cd dashboard && cp .env.example .env.local   # preencher; npm install && npm run dev (localhost:3000)
 
 # Re-import da planilha (idempotente por processo)
 python import/importar_planilha.py --dry-run   # só analisa
@@ -268,8 +279,7 @@ python import/importar_planilha.py             # grava
 # Recriar workflows n8n
 python n8n/criar_workflows.py
 
-# Deploy do dashboard
-cd dashboard && npx vercel --prod --yes
+# Deploy do dashboard → automático: basta `git push` na branch main (ver §13)
 ```
 
 **Teste E2E sem chips** (validado nesta sessão): inserir chip fake `aquecendo` +
@@ -280,9 +290,29 @@ mensagem renderizada → limpar cenário. (A fila volta ao total inicial, campan
 
 ## 12. Credenciais — onde estão
 
-Todas no `.env` da raiz: Supabase (URL, anon, service_role), Chatwoot (URL, token),
-Asaas (chave sandbox, webhook token), Z-API (client token), n8n (login, senha, api key).
-No dashboard: `dashboard/.env.local` (local) e 7 env vars na Vercel (produção).
-Segredos operacionais das Edge Functions: tabela `segredos` no Supabase.
-```
-```
+Todas no `.env` da raiz (**gitignored**): Supabase (`service_role supabase`, `supabase api url`),
+Chatwoot (URL, token), Asaas (chave sandbox, webhook token), Z-API (client token), n8n (URL,
+login, senha, api key). Template sem valores em `.env.example`.
+No dashboard: `dashboard/.env.local` (**gitignored**, template em `dashboard/.env.example`) e 7
+env vars na Vercel (produção). Segredos operacionais das Edge Functions: tabela `segredos` no Supabase.
+
+---
+
+## 13. Versionamento & Deploy (GitHub + Vercel) — adicionado nesta sessão
+
+- **Repositório:** `github.com/ViniciusBenevides/savan-recupera` — **público**, monorepo
+  (`dashboard/` + `supabase/` + `import/` + `n8n/`). Criado via `gh` CLI; branch padrão `main`.
+- **Deploy:** integração Git da Vercel. `git push` na `main` → build/deploy automático em
+  produção. **Root Directory = `dashboard`** (o Next fica na subpasta). `npx vercel --prod` não
+  é mais necessário; as 7 env vars de produção ficam no projeto da Vercel.
+- **`.gitignore`** mantém fora do repo: `.env` e `**/.env*.local`, `dividas_savan.xlsx`/`*.xlsx`
+  (PII LGPD), `.next/`, `node_modules/`, `.vercel/`, `.claude/`, `Documentacao/`, `referencias/`,
+  `WORKFLOWS/`, `conversa_com_claude.md`, `__pycache__/`.
+- **Anonimização (repo público) — docs E código:** nome real do cliente, razão social e
+  operador → genéricos ("nossa loja de calçados"/"credor"); figuras reais → arredondadas; URLs
+  de infra (n8n/chatwoot) e ref do Supabase → fora do repo (Edge Functions caem em fallback
+  `*.example.com`; `import/` e `n8n/` leem `url n8n` e `supabase api url` do `.env`).
+  **Mantidos** (não são dado sensível): codinome **"SAVAN Recupera"**, nomes de workflow
+  (`SAVAN W01`…) e identificadores de banco (`wallet_savan`, `repasse_savan`).
+- **Pendência de segurança:** os segredos circularam em texto → **rotacionar a `service_role`**
+  do Supabase (e atualizar Vercel + `.env`) antes de qualquer entrega (ver §10.5).
