@@ -26,6 +26,17 @@ Deno.serve(async (req) => {
   const simulacao = cfg.modo_simulacao === true || cfg.modo_simulacao === "true";
   const restanteJanela = minutosRestantesJanela(cfg.janela_envio);
 
+  // cache de carteiras (credor exibido na mensagem de abertura)
+  const carteiraCache = new Map<number, { credor: string | null }>();
+  async function credorDaCarteira(cartId: number | null): Promise<string | null> {
+    if (!cartId) return null;
+    if (carteiraCache.has(cartId)) return carteiraCache.get(cartId)!.credor;
+    const { data } = await sb.from("carteiras").select("credor").eq("id", cartId).maybeSingle();
+    const credor = data?.credor ?? null;
+    carteiraCache.set(cartId, { credor });
+    return credor;
+  }
+
   // chips elegíveis
   const { data: chips } = await sb
     .from("chips")
@@ -75,16 +86,19 @@ Deno.serve(async (req) => {
         continue;
       }
 
+      const credor = await credorDaCarteira(item.carteira_id);
       const tpl = await escolherTemplate(sb, "abordagem_inicial");
       const primeiroNome = (dev?.nome ?? "").split(" ")[0];
       const primeiroNomeCap = primeiroNome.charAt(0) + primeiroNome.slice(1).toLowerCase();
+      const nomeBot = cfg.ia?.nome_bot ?? "Ana";
       const conteudo = tpl
         ? renderTemplate(tpl.conteudo, {
           primeiro_nome: primeiroNomeCap,
-          nome_bot: cfg.ia?.nome_bot ?? "Ana",
+          nome_bot: nomeBot,
           nome: dev?.nome,
+          credor: credor ?? "",
         })
-        : `Olá ${primeiroNomeCap}, aqui é a ${cfg.ia?.nome_bot ?? "Ana"} da nossa loja de calçados.`;
+        : `Olá ${primeiroNomeCap}, aqui é a ${nomeBot}${credor ? ` da ${credor}` : ""}.`;
 
       await sb.from("fila_envios")
         .update({ template_id: tpl?.id ?? null, mensagem_renderizada: conteudo })
@@ -92,6 +106,7 @@ Deno.serve(async (req) => {
 
       itens.push({
         fila_id: item.id,
+        carteira_id: item.carteira_id,
         chip_id: chip.id,
         inbox_id: chip.chatwoot_inbox_id,
         devedor_id: dev?.id,

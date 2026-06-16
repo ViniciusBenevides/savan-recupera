@@ -3,7 +3,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard, Radio, Smartphone, MessageSquareText, Percent,
-  Users, ReceiptText, BarChart3, Settings, LogOut, HandCoins,
+  Users, BarChart3, Settings, LogOut, HandCoins, FolderUp,
 } from "lucide-react";
 import { Logo } from "@/components/Brand";
 import { supabaseBrowser } from "@/lib/supabase-browser";
@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 
 const nav = [
   { href: "/", label: "Visão geral", icon: LayoutDashboard },
+  { href: "/carteiras", label: "Carteiras", icon: FolderUp },
   { href: "/campanha", label: "Campanha", icon: Radio },
   { href: "/chips", label: "Chips", icon: Smartphone },
   { href: "/templates", label: "Mensagens", icon: MessageSquareText },

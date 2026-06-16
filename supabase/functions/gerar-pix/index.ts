@@ -13,7 +13,7 @@ Deno.serve(async (req) => {
   const b = await req.json();
 
   const { data: dev } = await sb.from("devedores")
-    .select("id, nome, cpf_cnpj, processo, saldo, asaas_customer_id, chatwoot_contact_id")
+    .select("id, nome, cpf_cnpj, processo, saldo, carteira_id, asaas_customer_id, chatwoot_contact_id")
     .eq("id", b.devedor_id).single();
   if (!dev) return json({ ok: false, erro: "devedor_nao_encontrado" }, 404);
 
@@ -22,7 +22,13 @@ Deno.serve(async (req) => {
   const descontoPct = b.desconto_pct ?? prop.desconto_pct;
   const valorFinal = b.valor_final ?? prop.valor_final;
 
-  const asaasCfg = cfg.asaas ?? {};
+  // override de Asaas (wallet/comissão) por carteira, com fallback global
+  let cartAsaas: any = {};
+  if (dev.carteira_id) {
+    const { data: cart } = await sb.from("carteiras").select("config_override").eq("id", dev.carteira_id).maybeSingle();
+    cartAsaas = cart?.config_override?.asaas ?? {};
+  }
+  const asaasCfg = { ...(cfg.asaas ?? {}), ...cartAsaas };
   const ambiente = asaasCfg.ambiente === "producao" ? "producao" : "sandbox";
   const apiKey = ambiente === "producao"
     ? Deno.env.get("ASAAS_API_KEY_PROD") ?? ""
@@ -94,7 +100,7 @@ Deno.serve(async (req) => {
     await sb.from("conversas").update({ estado: "pix_enviado" }).eq("id", b.conversa_id);
   }
   await sb.from("eventos_campanha").insert({
-    tipo: "pix_gerado", devedor_id: dev.id,
+    tipo: "pix_gerado", devedor_id: dev.id, carteira_id: dev.carteira_id ?? null,
     payload: { pagamento: pay.id, valor: valorFinal, desconto_pct: descontoPct },
   });
   await sb.rpc("fn_inc_metrica_dia", {

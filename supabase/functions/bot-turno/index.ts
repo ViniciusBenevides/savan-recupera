@@ -5,43 +5,15 @@
 // nao_perturbe, pessoa_errada, desconto_extra) e devolve a resposta a enviar.
 // Entrada: { chatwoot_conversation_id, mensagem, contato_attrs? }
 // Saída:   { ok, acao, mensagens: string[], escalar?, encerrar? }
-import { admin, carregarSegredos, getConfig, json, cors } from "../_shared/lib.ts";
+import {
+  admin, carregarSegredos, getConfig, getCarteira, montarSystemPrompt, json, cors,
+} from "../_shared/lib.ts";
 
 const OPENAI = "https://api.openai.com/v1/chat/completions";
 
-function systemPrompt(cfg: any, dev: any): string {
-  const nomeBot = cfg.ia?.nome_bot ?? "Ana";
-  return `Você é ${nomeBot}, assistente de negociação que atende em nome da nossa loja de calçados.
-Seu objetivo é oferecer a QUITAÇÃO VOLUNTÁRIA de uma pendência antiga com desconto.
-
-REGRAS INEGOCIÁVEIS (violar qualquer uma é falha grave):
-1. NUNCA mencione Serasa, SPC, "nome sujo", negativação, score de crédito, processo
-   judicial, justiça, juros futuros ou QUALQUER consequência por não pagar.
-   Não existe consequência — a dívida é antiga e o pagamento é totalmente voluntário.
-2. NUNCA invente valores. Use SOMENTE os números retornados pela tool consultar_divida.
-3. Se perguntarem sobre prescrição ou se "ainda precisa pagar": responda com honestidade
-   que, por se tratar de uma dívida antiga, ela pode estar prescrita e o pagamento é
-   totalmente voluntário; a proposta é uma oportunidade de encerramento definitivo com
-   termo de quitação. Nunca pressione.
-4. CONFIRME A IDENTIDADE antes de revelar qualquer dado. Pergunte se você fala com
-   ${dev?.primeiro_nome ?? "a pessoa"}. Se a pessoa disser que não é ela / número errado:
-   peça desculpas, chame a tool pessoa_errada e encerre. NUNCA revele CPF, valor da
-   dívida ou outros dados antes da confirmação.
-5. Se a pessoa pedir para não ser mais contatada / "me tira da lista": chame a tool
-   nao_perturbe, confirme educadamente e encerre.
-6. Se a pessoa contestar a dívida, disser que não reconhece, citar advogado/Procon/justiça,
-   ou for hostil: chame a tool escalar_humano.
-7. Desconto extra: no máximo UMA vez, e somente após a pessoa recusar explicitamente a
-   primeira proposta. Use a tool desconto_extra. Nunca ofereça abaixo do valor mínimo.
-
-FLUXO IDEAL: confirmar identidade -> contextualizar (pendência antiga com a loja) ->
-chamar consultar_divida -> apresentar proposta (valor, desconto, validade) -> tratar
-objeções -> chamar gerar_pix -> orientar pagamento -> avisar que após o pagamento envia
-o termo de quitação.
-
-ESTILO: humano, caloroso, brasileiro, frases curtas, no máximo 2 perguntas por vez.
-Use no máximo 1 emoji por mensagem. Não soe robótica.`;
-}
+// O prompt do robô agora vem do banco (persona/contexto/guardrails), configurável pelo
+// painel — global em `configuracoes` e, opcionalmente, sobrescrito por carteira.
+// Ver montarSystemPrompt() em _shared/lib.ts.
 
 function tools() {
   return [
@@ -116,17 +88,25 @@ Deno.serve(async (req) => {
 
   // conversa + devedor
   const { data: conv } = await sb.from("conversas")
-    .select("id, devedor_id, estado").eq("chatwoot_conversation_id", convId).maybeSingle();
+    .select("id, devedor_id, carteira_id, estado").eq("chatwoot_conversation_id", convId).maybeSingle();
   if (!conv) return json({ ok: false, erro: "conversa_desconhecida" }, 404);
 
   const { data: prop } = await sb.rpc("fn_proposta", { p_devedor_id: conv.devedor_id });
+
+  // carteira (overrides de prompt/regras); fallback p/ carteira do devedor
+  let carteiraId = conv.carteira_id;
+  if (!carteiraId) {
+    const { data: d } = await sb.from("devedores").select("carteira_id").eq("id", conv.devedor_id).maybeSingle();
+    carteiraId = d?.carteira_id ?? null;
+  }
+  const carteira = await getCarteira(sb, carteiraId);
 
   // histórico (memória) das últimas 20 mensagens
   const { data: hist } = await sb.from("mensagens")
     .select("origem, direcao, conteudo")
     .eq("conversa_id", conv.id).order("criado_em", { ascending: true }).limit(20);
 
-  const messages: any[] = [{ role: "system", content: systemPrompt(cfg, prop) }];
+  const messages: any[] = [{ role: "system", content: montarSystemPrompt(cfg, carteira, prop) }];
   for (const m of hist ?? []) {
     messages.push({ role: m.direcao === "entrada" ? "user" : "assistant", content: m.conteudo ?? "" });
   }
@@ -194,7 +174,8 @@ Deno.serve(async (req) => {
           const extra = Number(prop.margem_extra_pp ?? 0);
           const novoPct = Math.min(80, Number(prop.desconto_pct) + extra);
           let novoValor = Math.round(Number(prop.valor_original) * (1 - novoPct / 100) * 100) / 100;
-          const minPix = Number(cfg.faixas_desconto?.valor_minimo_pix ?? 30);
+          const faixas = carteira?.config_override?.faixas_desconto ?? cfg.faixas_desconto;
+          const minPix = Number(faixas?.valor_minimo_pix ?? 30);
           if (novoValor < minPix) novoValor = Math.min(Number(prop.valor_original), minPix);
           prop.desconto_pct = novoPct;
           prop.valor_final = novoValor;

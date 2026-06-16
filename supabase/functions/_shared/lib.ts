@@ -41,6 +41,68 @@ export async function getConfig(sb: SupabaseClient): Promise<Record<string, any>
   return cfg;
 }
 
+// Carrega a carteira (overrides) por id. Retorna null se não houver.
+export async function getCarteira(sb: SupabaseClient, carteiraId: number | null | undefined) {
+  if (!carteiraId) return null;
+  const { data } = await sb.from("carteiras")
+    .select("id, nome, credor, status, prompt_persona, contexto_negocio, guardrails, config_override")
+    .eq("id", carteiraId).maybeSingle();
+  return data;
+}
+
+// Mescla o config global com o override da carteira (raso por chave de 1º nível).
+export function mesclarConfig(cfg: Record<string, any>, carteira: any): Record<string, any> {
+  const over = carteira?.config_override ?? {};
+  return { ...cfg, ...over };
+}
+
+// Monta o system prompt do bot a partir de persona/contexto/guardrails
+// (carteira tem prioridade; cai no padrão global de `configuracoes`; e por fim nos defaults).
+export function montarSystemPrompt(cfg: any, carteira: any, prop: any): string {
+  const nomeBot = cfg.ia?.nome_bot ?? "Ana";
+  const primeiroNome = prop?.primeiro_nome ?? "a pessoa";
+  const interp = (t: unknown) =>
+    String(t ?? "").replaceAll("{{nome_bot}}", nomeBot).replaceAll("{{primeiro_nome}}", primeiroNome);
+
+  const persona = carteira?.prompt_persona || cfg.bot_persona ||
+    "Você é {{nome_bot}}, uma assistente de negociação simpática e objetiva. Seu objetivo é oferecer a QUITAÇÃO VOLUNTÁRIA de uma pendência antiga com desconto.";
+  const contexto = carteira?.contexto_negocio || cfg.bot_contexto ||
+    "Você atende em nome do credor responsável pela cobrança.";
+  const g = carteira?.guardrails || cfg.bot_guardrails || {};
+
+  const regras: string[] = [];
+  const nuncaCitar = Array.isArray(g.nunca_citar) ? g.nunca_citar : [];
+  if (nuncaCitar.length) {
+    regras.push(`NUNCA mencione ${nuncaCitar.join(", ")}, nem QUALQUER consequência por não pagar.`);
+  }
+  regras.push("NUNCA invente valores. Use SOMENTE os números retornados pela tool consultar_divida.");
+  if (g.responder_prescricao_honestamente !== false) {
+    regras.push("Se perguntarem sobre prescrição ou se ainda precisa pagar: responda com honestidade que, por ser dívida antiga, pode estar prescrita e o pagamento é voluntário; a proposta é um encerramento definitivo com termo de quitação. Nunca pressione.");
+  }
+  if (g.confirmar_identidade !== false) {
+    regras.push(`CONFIRME A IDENTIDADE antes de revelar qualquer dado. Pergunte se fala com ${primeiroNome}. Se não for a pessoa / número errado: peça desculpas, chame a tool pessoa_errada e encerre. NUNCA revele CPF, valor da dívida ou outros dados antes da confirmação.`);
+  }
+  regras.push("Se pedir para não ser mais contatada: chame a tool nao_perturbe, confirme educadamente e encerre.");
+  regras.push("Se contestar a dívida, não reconhecer, citar advogado/Procon/justiça, ou for hostil: chame a tool escalar_humano.");
+  const maxRodadas = Number(g.max_rodadas_desconto ?? 1);
+  regras.push(`Desconto extra: no máximo ${maxRodadas} vez(es), e somente após recusa explícita da primeira proposta. Use a tool desconto_extra. Nunca ofereça abaixo do valor mínimo.`);
+  if (g.regras_extras) regras.push(String(g.regras_extras));
+
+  const tom = g.tom || "humano, caloroso, brasileiro, frases curtas, no máximo 2 perguntas por vez e 1 emoji por mensagem";
+
+  return [
+    interp(persona),
+    interp(contexto),
+    "",
+    "REGRAS INEGOCIÁVEIS (violar qualquer uma é falha grave):",
+    ...regras.map((r, i) => `${i + 1}. ${interp(r)}`),
+    "",
+    "FLUXO IDEAL: confirmar identidade -> contextualizar -> consultar_divida -> apresentar proposta (valor, desconto, validade) -> tratar objeções -> gerar_pix -> orientar pagamento -> avisar que após o pagamento envia o termo de quitação.",
+    "",
+    `ESTILO: ${interp(tom)}. Não soe robótica.`,
+  ].join("\n");
+}
+
 // ---------- Spintax + template ----------
 export function resolverSpintax(texto: string): string {
   // resolve {a|b|c} (não-aninhado) escolhendo uma opção ao acaso

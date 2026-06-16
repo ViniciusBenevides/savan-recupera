@@ -1,4 +1,5 @@
 import * as React from "react";
+import { Info } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export function Card({ className, glow, ...props }: React.HTMLAttributes<HTMLDivElement> & { glow?: boolean }) {
@@ -93,6 +94,56 @@ export function Switch({ checked, onChange, size = "md" }: {
         )}
       />
     </button>
+  );
+}
+
+export function Textarea({ className, ...props }: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
+  return (
+    <textarea
+      className={cn(
+        "w-full rounded-xl border border-line bg-ink-850 px-3.5 py-2.5 text-sm text-chalk placeholder:text-mist/60",
+        "outline-none transition-colors focus:border-emerald/60 focus:ring-2 focus:ring-emerald/15",
+        className,
+      )}
+      {...props}
+    />
+  );
+}
+
+export function Select({ className, ...props }: React.SelectHTMLAttributes<HTMLSelectElement>) {
+  return (
+    <select
+      className={cn(
+        "h-10 w-full rounded-xl border border-line bg-ink-850 px-3 text-sm text-chalk",
+        "outline-none transition-colors focus:border-emerald/60 focus:ring-2 focus:ring-emerald/15",
+        className,
+      )}
+      {...props}
+    />
+  );
+}
+
+// Bolha de ajuda no hover — pura CSS (funciona em Server e Client Components).
+// Toda ação/controle deve usar Tooltip ou HelpHint para o usuário não ter dúvidas.
+export function Tooltip({ text, children, className }: { text: string; children: React.ReactNode; className?: string }) {
+  return (
+    <span className={cn("group relative inline-flex", className)}>
+      {children}
+      <span
+        role="tooltip"
+        className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 w-max max-w-[260px] -translate-x-1/2 rounded-lg border border-line bg-ink-950 px-2.5 py-1.5 text-[11px] leading-snug text-chalk opacity-0 shadow-xl transition-opacity duration-150 group-hover:opacity-100"
+      >
+        {text}
+      </span>
+    </span>
+  );
+}
+
+export function HelpHint({ text, className }: { text: string; className?: string }) {
+  return (
+    <Tooltip text={text} className={cn("align-middle", className)}>
+      <Info className="h-3.5 w-3.5 cursor-help text-mist hover:text-chalk" />
+    </Tooltip>
   );
 }
 

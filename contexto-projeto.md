@@ -8,12 +8,13 @@
 
 ## 1. O que é
 
-Plataforma de **recuperação extrajudicial de crédito por WhatsApp** para a carteira de um
-**varejista de calçados** (cliente anonimizado · ~50 mil devedores · carteira na casa dos R$ 10 mi).
-O bot oferece **quitação voluntária com desconto**, gera **Pix com split automático
-90% credor / 10% operador** (Asaas) e tudo é operável por um **painel web** — o software
-será vendido ao **cliente final** (dono da carteira, não-técnico), então **zero necessidade de
-mexer em n8n/código**.
+Plataforma de **recuperação extrajudicial de crédito por WhatsApp**, agora um **produto
+multi-carteira vendável**: o cliente sobe **planilhas pelo próprio painel** (cada uma vira uma
+**carteira** independente), tem **controle total** (quem foi contatado, quem respondeu, como) e
+**configura o robô** (prompt/regras/descontos) sem tocar em n8n/código. O bot oferece
+**quitação voluntária com desconto**, gera **Pix com split automático 90% credor / 10%
+operador** (Asaas). Vendido ao **cliente final** não-técnico (ex.: Maurélio) — **uma instância
+por cliente**, com várias carteiras dentro. Ver a reformulação multi-carteira no **§14**.
 
 ### Regras de negócio inegociáveis (jurídico)
 Dívidas com média de **15,8 anos → ~99,8% prescritas** e **fora do Serasa** (>5 anos).
@@ -134,8 +135,9 @@ MaurelioV2/                        # repo Git público (ver §13). [gi] = gitign
 `chip_metricas_diarias`, `configuracoes`, `templates_mensagem`, `usuarios_app`,
 `segredos`, `eventos_campanha`, `metricas_diarias`, `bot_fila_mensagens`, `bot_locks`.
 
-**Estado atual dos dados:** ~50 mil devedores · ~215 mil telefones · ~47 mil na fila
-(`status='na_fila'`/`aguardando`) · ~3 mil sem WhatsApp · soma na casa dos R$ 10 mi. *(valores exatos omitidos)*
+**Estado atual dos dados:** banco **zerado** (a base suja antiga da SAVAN foi apagada — ver
+§14). Devedores/telefones/fila começam vazios e são populados pelos uploads de planilha do
+painel. Cada devedor pertence a uma **carteira** (`devedores.carteira_id`).
 
 **Funções/RPCs:** `fn_proposta(devedor)` (calcula desconto — o LLM NUNCA faz aritmética),
 `fn_selecionar_lote(chip,n)` (FOR UPDATE SKIP LOCKED), `fn_limite_chip`, `fn_proposta`,
@@ -316,3 +318,52 @@ env vars na Vercel (produção). Segredos operacionais das Edge Functions: tabel
   (`SAVAN W01`…) e identificadores de banco (`wallet_savan`, `repasse_savan`).
 - **Pendência de segurança:** os segredos circularam em texto → **rotacionar a `service_role`**
   do Supabase (e atualizar Vercel + `.env`) antes de qualquer entrega (ver §10.5).
+
+---
+
+## 14. Reformulação multi-carteira (produto vendável) — adicionado nesta sessão
+
+Transformação de single-client (lista fixa SAVAN, import por script Python) em **produto
+multi-carteira 100% operável pelo front**. Decisões: **1 instância por cliente** (várias
+carteiras dentro) · **modelo de planilha fixo** p/ baixar · **config por carteira com padrão
+global** · **base suja apagada** (a planilha-fonte segue no PC do dono como backup).
+
+**Banco — migration `008_carteiras_multicarteira.sql` (aplicada):**
+- Tabela **`carteiras`** (`nome` UNIQUE, `credor`, `status` enum
+  `importando|ativa|pausada|arquivada`, `num_devedores`, `soma_saldo`, e overrides
+  `prompt_persona`/`contexto_negocio`/`guardrails`/`config_override` — NULL herda o global).
+- Tabela **`importacoes`** (1 linha por upload; `arquivo_nome` **UNIQUE global** → bloqueia
+  subir 2 planilhas com o mesmo nome; relatório `erros` jsonb).
+- `carteira_id` em `devedores`/`fila_envios`/`conversas`/`eventos_campanha`.
+- **Dedup por carteira:** `processo` deixou de ser único/obrigatório; identidade do devedor =
+  `UNIQUE(carteira_id, cpf_cnpj)`.
+- Seeds globais do robô em `configuracoes`: `bot_persona`, `bot_contexto`, `bot_guardrails`.
+- `fn_proposta` usa descontos da carteira (override) com fallback global; `fn_selecionar_lote`
+  só seleciona de carteiras **`ativa`**.
+
+**Edge Functions (redeployadas, self-contained):** o **prompt do robô saiu do código** e passa
+a vir do banco (`montarSystemPrompt`: persona/contexto/guardrails da carteira → global →
+default). `bot-turno` resolve a carteira via conversa→devedor; `campanha-lote`/`campanha-registrar`
+propagam `carteira_id` e usam o `credor` da carteira; `gerar-pix` aceita wallet/comissão por
+carteira. (`campanha-followup` ainda não escopa por status de carteira — pendência menor.)
+n8n inalterado.
+
+**Front (Next.js `dashboard/`):**
+- Parser TS porta o Python: `src/lib/import/{normalizar,parse-planilha,modelo}.ts` (lê `.xlsx`
+  com SheetJS/`xlsx`; CPF, telefone E.164 + 9º dígito + DDDs, datas, e-mails).
+- Rotas: `api/carteiras` (criar/listar), `api/carteiras/[id]` (PATCH status/overrides, DELETE),
+  `api/carteiras/[id]/importar` (upload multipart → import idempotente por `(carteira_id,cpf)`),
+  `api/carteiras/modelo` (baixa o `.xlsx` em branco com aba de instruções).
+- Páginas: **Carteiras** (lista + item na Sidebar), **Carteiras/Nova** (assistente baixar
+  modelo → upload → relatório), **Carteiras/[id]** (abas Status & envios / Prompt do robô /
+  Descontos / Importações). **Devedores** ganhou filtro por carteira + coluna "Resposta".
+  **Configurações** ganhou editor do **padrão global do robô** (`bot-global.tsx`).
+- UX: `Tooltip`/`HelpHint` em `components/ui/primitives.tsx` (bolha de ajuda no hover) usados
+  nos botões/controles das telas novas. `xlsx` adicionado ao `package.json`.
+
+**Fluxo do usuário:** Nova carteira → baixa modelo → preenche → sobe → vê relatório (importadas/
+ignoradas) → carteira fica **Pausada** → ajusta prompt/descontos → **Ativa** para enviar
+(ainda respeitando a chave geral em Campanha + modo simulação).
+
+**Verificado (SQL):** override de desconto por carteira (60%↔80%), fallback global, dedup
+`(carteira_id,cpf_cnpj)`, e `fn_selecionar_lote` (pausada→0 / ativa→1). Build do front OK.

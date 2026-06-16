@@ -24,9 +24,17 @@ Deno.serve(async (req) => {
     const horas = (cfg.followup?.intervalos_horas ?? [24, 72, 168])[0];
     const prox = new Date(Date.now() + horas * 3600 * 1000).toISOString();
 
+    // carteira do devedor (escopo das conversas)
+    let carteiraId = b.carteira_id ?? null;
+    if (!carteiraId) {
+      const { data: d } = await sb.from("devedores").select("carteira_id").eq("id", b.devedor_id).maybeSingle();
+      carteiraId = d?.carteira_id ?? null;
+    }
+
     if (b.chatwoot_conversation_id) {
       await sb.from("conversas").upsert({
         devedor_id: b.devedor_id,
+        carteira_id: carteiraId,
         chip_id: b.chip_id,
         telefone_id: b.telefone_id,
         chatwoot_conversation_id: b.chatwoot_conversation_id,
@@ -39,7 +47,7 @@ Deno.serve(async (req) => {
     }
 
     await sb.from("devedores").update({ status_cobranca: "contatado" })
-      .eq("id", b.devedor_id).eq("status_cobranca", "na_fila");
+      .eq("id", b.devedor_id).in("status_cobranca", ["na_fila", "pendente"]);
 
     await sb.rpc("fn_inc_chip_metrica", {
       p_chip: b.chip_id, p_dia: hoje, p_novos: 1, p_msgs: 1, p_resp: 0,
@@ -49,7 +57,7 @@ Deno.serve(async (req) => {
       .eq("id", b.chip_id);
 
     await sb.from("eventos_campanha").insert({
-      tipo: "envio", devedor_id: b.devedor_id, chip_id: b.chip_id,
+      tipo: "envio", devedor_id: b.devedor_id, chip_id: b.chip_id, carteira_id: carteiraId,
       payload: { simulacao: b.simulacao ?? false },
     });
 
@@ -63,7 +71,7 @@ Deno.serve(async (req) => {
     });
     if (prox && prox.length) {
       await sb.from("fila_envios").insert({
-        devedor_id: b.devedor_id, telefone_id: prox[0].id,
+        devedor_id: b.devedor_id, telefone_id: prox[0].id, carteira_id: b.carteira_id ?? null,
         prioridade: b.prioridade ?? 0, status: "aguardando",
       });
     } else {
