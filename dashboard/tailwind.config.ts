@@ -1,53 +1,44 @@
 import type { Config } from "tailwindcss";
 
+// Cores baseadas em CSS variables (canais RGB) → trocam entre tema escuro e claro.
+// Suporta utilitários de opacidade (ex.: bg-emerald/15) via <alpha-value>.
+const v = (name: string) => `rgb(var(${name}) / <alpha-value>)`;
+
 const config: Config = {
+  darkMode: "class",
   content: ["./src/**/*.{ts,tsx}"],
   theme: {
     extend: {
       colors: {
         ink: {
-          950: "#08090C",
-          900: "#0B0D12",
-          850: "#0F1117",
-          800: "#13151D",
-          700: "#1B1E28",
-          600: "#262A36",
-          500: "#3A3F4F",
+          950: v("--c-bg"),
+          900: v("--c-900"),
+          850: v("--c-surface"),
+          800: v("--c-800"),
+          700: v("--c-700"),
+          600: v("--c-600"),
+          500: v("--c-500"),
         },
-        line: "#1F2330",
-        mist: "#8A91A6",
-        chalk: "#E7EAF2",
-        emerald: {
-          DEFAULT: "#2BD98C",
-          soft: "#34D399",
-          deep: "#0E5C3D",
-        },
-        violet: { DEFAULT: "#8B7CF6", deep: "#3B2E73" },
-        amber: { DEFAULT: "#F5B544" },
-        rose: { DEFAULT: "#F4607A" },
+        line: v("--c-line"),
+        mist: v("--c-mist"),
+        chalk: v("--c-chalk"),
+        emerald: { DEFAULT: v("--c-emerald"), soft: v("--c-emerald-soft"), deep: v("--c-emerald-deep") },
+        violet: { DEFAULT: v("--c-violet"), deep: v("--c-violet-deep") },
+        amber: { DEFAULT: v("--c-amber") },
+        rose: { DEFAULT: v("--c-rose") },
+        blue: { DEFAULT: v("--c-blue") },
       },
       fontFamily: {
         display: ["var(--font-display)", "system-ui", "sans-serif"],
         sans: ["var(--font-sans)", "system-ui", "sans-serif"],
         mono: ["var(--font-mono)", "ui-monospace", "monospace"],
       },
-      boxShadow: {
-        glow: "0 0 0 1px rgba(43,217,140,0.18), 0 18px 60px -20px rgba(43,217,140,0.35)",
-        card: "0 1px 0 0 rgba(255,255,255,0.03) inset, 0 24px 50px -28px rgba(0,0,0,0.8)",
-      },
-      backgroundImage: {
-        "grid-faint":
-          "linear-gradient(to right, rgba(255,255,255,0.025) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,0.025) 1px, transparent 1px)",
-      },
       keyframes: {
         "fade-up": {
           "0%": { opacity: "0", transform: "translateY(10px)" },
           "100%": { opacity: "1", transform: "translateY(0)" },
         },
-        pulseglow: {
-          "0%,100%": { opacity: "0.5" },
-          "50%": { opacity: "1" },
-        },
+        pulseglow: { "0%,100%": { opacity: "0.5" }, "50%": { opacity: "1" } },
       },
       animation: {
         "fade-up": "fade-up 0.5s cubic-bezier(0.22,1,0.36,1) both",

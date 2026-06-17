@@ -6,6 +6,7 @@ import {
   Users, BarChart3, Settings, LogOut, HandCoins, FolderUp,
 } from "lucide-react";
 import { Logo } from "@/components/Brand";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import { cn } from "@/lib/utils";
 
@@ -66,6 +67,7 @@ export function Sidebar({ nome, role }: { nome: string; role: string }) {
             <div className="truncate text-sm font-medium text-chalk hover:text-emerald">{nome}</div>
             <div className="text-[11px] capitalize text-mist">{role} · minha conta</div>
           </Link>
+          <ThemeToggle className="h-8 w-8 rounded-lg border-0" />
           <button onClick={sair} title="Sair" className="rounded-lg p-2 text-mist hover:bg-ink-700 hover:text-rose">
             <LogOut className="h-4 w-4" />
           </button>

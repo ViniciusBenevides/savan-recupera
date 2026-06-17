@@ -2,17 +2,78 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ===== TEMA ESCURO (padrão) ===== */
 :root {
   color-scheme: dark;
+
+  --c-bg: 8 9 12;
+  --c-900: 11 13 18;
+  --c-surface: 15 17 23;
+  --c-800: 19 21 29;
+  --c-700: 27 30 40;
+  --c-600: 38 42 54;
+  --c-500: 58 63 79;
+  --c-line: 31 35 48;
+  --c-mist: 138 145 166;
+  --c-chalk: 231 234 242;
+
+  --c-emerald: 43 217 140;
+  --c-emerald-soft: 52 211 153;
+  --c-emerald-deep: 14 92 61;
+  --c-violet: 139 124 246;
+  --c-violet-deep: 59 46 115;
+  --c-amber: 245 181 68;
+  --c-rose: 244 96 122;
+  --c-blue: 124 176 255;
+
+  --card-shadow: 0 1px 0 0 rgba(255, 255, 255, 0.03) inset, 0 24px 50px -28px rgba(0, 0, 0, 0.8);
+  --card-top: rgba(255, 255, 255, 0.018);
+  --glow-1: rgba(43, 217, 140, 0.10);
+  --glow-2: rgba(139, 124, 246, 0.08);
+  --grain-opacity: 0.025;
+  --scroll-thumb: 31 35 48;
+}
+
+/* ===== TEMA CLARO ===== */
+html.light {
+  color-scheme: light;
+
+  --c-bg: 244 246 250;
+  --c-900: 255 255 255;
+  --c-surface: 255 255 255;
+  --c-800: 240 243 248;
+  --c-700: 228 233 240;
+  --c-600: 205 212 224;
+  --c-500: 150 159 176;
+  --c-line: 224 228 236;
+  --c-mist: 90 99 116;
+  --c-chalk: 15 19 30;
+
+  --c-emerald: 16 163 106;
+  --c-emerald-soft: 14 159 98;
+  --c-emerald-deep: 8 92 58;
+  --c-violet: 109 84 224;
+  --c-violet-deep: 76 60 150;
+  --c-amber: 183 121 31;
+  --c-rose: 225 29 72;
+  --c-blue: 37 99 235;
+
+  --card-shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 12px 32px -18px rgba(16, 24, 40, 0.16);
+  --card-top: transparent;
+  --glow-1: rgba(16, 163, 106, 0.08);
+  --glow-2: rgba(109, 84, 224, 0.06);
+  --grain-opacity: 0;
+  --scroll-thumb: 205 212 224;
 }
 
 html, body {
-  background-color: #08090C;
-  color: #E7EAF2;
+  background-color: rgb(var(--c-bg));
+  color: rgb(var(--c-chalk));
   -webkit-font-smoothing: antialiased;
 }
+html { transition: background-color 0.25s ease; }
 
-/* Atmosfera: glow esmeralda no topo + grade tênue */
+/* Atmosfera: glow + grade tênue, atrás de tudo */
 body::before {
   content: "";
   position: fixed;
@@ -20,36 +81,41 @@ body::before {
   pointer-events: none;
   z-index: 0;
   background:
-    radial-gradient(900px 500px at 12% -8%, rgba(43, 217, 140, 0.10), transparent 60%),
-    radial-gradient(800px 480px at 92% 0%, rgba(139, 124, 246, 0.08), transparent 55%);
+    radial-gradient(900px 500px at 12% -8%, var(--glow-1), transparent 60%),
+    radial-gradient(800px 480px at 92% 0%, var(--glow-2), transparent 55%);
 }
 
 ::selection { background: rgba(43, 217, 140, 0.25); }
 
-/* Scrollbar */
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #1F2330; border-radius: 999px; border: 2px solid #08090C; }
-::-webkit-scrollbar-thumb:hover { background: #2A2F3E; }
+::-webkit-scrollbar-thumb {
+  background: rgb(var(--scroll-thumb));
+  border-radius: 999px;
+  border: 2px solid rgb(var(--c-bg));
+}
 
 .tabnums { font-variant-numeric: tabular-nums; }
 
-/* Grão sutil para textura */
 .grain::after {
   content: "";
   position: absolute;
   inset: 0;
   pointer-events: none;
-  opacity: 0.025;
+  opacity: var(--grain-opacity);
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
 .card-surface {
-  background: linear-gradient(180deg, rgba(255,255,255,0.018), rgba(255,255,255,0)) , #0F1117;
-  border: 1px solid #1F2330;
+  background:
+    linear-gradient(180deg, var(--card-top), transparent),
+    rgb(var(--c-surface));
+  border: 1px solid rgb(var(--c-line));
   border-radius: 18px;
+  box-shadow: var(--card-shadow);
+  transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .glow-ring {
-  box-shadow: 0 0 0 1px rgba(43,217,140,0.20), 0 30px 80px -36px rgba(43,217,140,0.45);
+  box-shadow: 0 0 0 1px rgb(var(--c-emerald) / 0.20), 0 30px 80px -36px rgb(var(--c-emerald) / 0.45);
 }

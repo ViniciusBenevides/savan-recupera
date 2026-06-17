@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import { Button, Input, Label } from "@/components/ui/primitives";
 import { Logo } from "@/components/Brand";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { brl } from "@/lib/utils";
 
 export default function LoginPage() {
@@ -26,6 +27,7 @@ export default function LoginPage() {
 
   return (
     <div className="grain relative grid min-h-screen lg:grid-cols-2">
+      <div className="absolute right-5 top-5 z-20"><ThemeToggle /></div>
       {/* lado esquerdo — pitch */}
       <div className="relative hidden flex-col justify-between overflow-hidden border-r border-line p-12 lg:flex">
         <Logo size={32} />

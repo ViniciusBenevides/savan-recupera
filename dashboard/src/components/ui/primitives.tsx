@@ -18,7 +18,7 @@ export function Button({
   size?: "sm" | "md" | "lg";
 }) {
   const variants = {
-    primary: "bg-emerald text-ink-950 hover:bg-emerald-soft font-semibold shadow-[0_8px_30px_-12px_rgba(43,217,140,0.7)]",
+    primary: "bg-emerald text-[#04140c] hover:bg-emerald-soft font-semibold shadow-[0_8px_30px_-12px_rgba(43,217,140,0.55)]",
     ghost: "text-mist hover:text-chalk hover:bg-ink-800",
     outline: "border border-line text-chalk hover:border-ink-500 hover:bg-ink-800",
     danger: "bg-rose/15 text-rose hover:bg-rose/25 border border-rose/30",
@@ -44,7 +44,7 @@ export function Badge({ tone = "neutral", children, className }: {
     violet: "bg-violet/12 text-violet border-violet/25",
     amber: "bg-amber/12 text-amber border-amber/25",
     rose: "bg-rose/12 text-rose border-rose/25",
-    blue: "bg-[#4C8DFF]/12 text-[#7FB0FF] border-[#4C8DFF]/25",
+    blue: "bg-blue/12 text-blue border-blue/25",
   };
   return (
     <span className={cn("inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-medium", tones[tone], className)}>
