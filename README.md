@@ -1,7 +1,9 @@
-# SAVAN Recupera
+# Recupera
 
 > **Real-world portfolio case — client anonymized.** Names, credentials, project
 > identifiers and exact portfolio figures have been removed or generalized.
+> The product is **white-label**: the brand shown in the UI is configurable via
+> `NEXT_PUBLIC_APP_NAME` (defaults to "Recupera").
 
 A **WhatsApp-based out-of-court debt recovery** platform for the portfolio of a
 **footwear retailer** (~50k debtors · portfolio in the ~R$10M range). The bot offers
@@ -65,6 +67,10 @@ npm run dev                  # http://localhost:3000
 Environment variables are documented in [`.env.example`](.env.example) (root, for the
 scripts) and [`dashboard/.env.example`](dashboard/.env.example) (dashboard). **No secrets are
 committed** — fill in your own locally.
+
+**White-label brand:** set `NEXT_PUBLIC_APP_NAME` to rebrand the whole UI per client
+(logo wordmark + page title). One or two words; the second word is highlighted. No client
+name is hardcoded anywhere in the screens.
 
 ## Re-import the spreadsheet
 ```bash

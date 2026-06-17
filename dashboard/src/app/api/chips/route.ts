@@ -39,7 +39,7 @@ export async function POST(req: Request) {
       method: "POST",
       headers: { "api_access_token": process.env.CHATWOOT_TOKEN!, "Content-Type": "application/json" },
       body: JSON.stringify({
-        name: `SAVAN ${nome}`,
+        name: `${process.env.NEXT_PUBLIC_APP_NAME?.trim() || "Recupera"} ${nome}`,
         channel: {
           type: "whatsapp",
           provider: "zapi",

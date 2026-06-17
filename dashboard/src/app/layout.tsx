@@ -18,8 +18,10 @@ const mono = JetBrains_Mono({
   weight: ["400", "500", "600"],
 });
 
+const APP_NAME = process.env.NEXT_PUBLIC_APP_NAME?.trim() || "Recupera";
+
 export const metadata: Metadata = {
-  title: "SAVAN Recupera",
+  title: APP_NAME,
   description: "Plataforma de recuperação extrajudicial de crédito por WhatsApp",
 };
 

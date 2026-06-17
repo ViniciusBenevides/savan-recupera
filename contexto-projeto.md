@@ -1,8 +1,9 @@
 # Contexto do Projeto — SAVAN Recupera
 
 > Documento para retomar o contexto em novas sessões com Claude.
-> Última atualização: versionado no GitHub (repo **público**) + deploy via integração Git da
-> Vercel + anonimização do cliente em docs e código (ver §13).
+> Última atualização: **white-label do painel** (logo/título sem nenhuma referência a credor;
+> nome do produto via `NEXT_PUBLIC_APP_NAME`, padrão "Recupera") + versionado no GitHub
+> (repo **público**) + deploy via integração Git da Vercel + anonimização (ver §13).
 
 ---
 
@@ -206,8 +207,11 @@ Vercel e retornam 401; usar o canônico).
 Projeto Vercel: `<team>/savan-recupera` (7 env vars de produção).
 **Deploy:** integração Git da Vercel — `git push` na `main` → deploy automático
 (**Root Directory = `dashboard`**). Detalhes no §13.
-**Branding:** o painel mostra branding genérico (cliente anonimizado) desde a abertura do
-repo público; o nome real pode voltar via config/env no ambiente do cliente, se necessário.
+**Branding (white-label):** nenhum nome de credor aparece nas telas. O nome do produto vem
+de `NEXT_PUBLIC_APP_NAME` (padrão **"Recupera"**), usado em `components/Brand.tsx` (logo —
+2 palavras → 2ª em verde), `app/layout.tsx` (título da aba) e no nome do inbox criado em
+`api/chips/route.ts`. Para rebrandizar por cliente, basta setar a env (sem mexer no código).
+`wallet_savan`/`repasse_savan` continuam só como identificadores internos de banco.
 
 **Páginas:** Visão geral (cards + funil + feed realtime de pagamentos) · Campanha (switch
 gigante liga/desliga, modo simulação, janela, intervalo, aquecimento) · Chips (cards +
@@ -247,6 +251,11 @@ Configurações (Asaas, segredos, **criar/gerir usuários**) · Minha conta (nom
    9º dígito em celular de 8 dígitos, datas serial/string, CPF re-pad 11).
 9. **Hardening de segurança** (advisors do Supabase): search_path fixo, pg_trgm fora do
    public, revoke execute das funções internas. (`004_hardening_advisors.sql`).
+10. **Branding entregava o credor nas telas (white-label).** O logo dizia "SAVAN Recupera".
+    Solução: nome do produto via `NEXT_PUBLIC_APP_NAME` (padrão "Recupera") em
+    `components/Brand.tsx`, `app/layout.tsx` e `api/chips/route.ts`; var em ambos `.env.example`.
+    Nenhum nome de credor hardcoded na UI. (Templates do bot no banco ainda citam o credor ao
+    devedor — isso é legítimo e por carteira, não é branding do produto.)
 
 ---
 
