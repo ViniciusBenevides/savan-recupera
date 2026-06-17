@@ -1,9 +1,9 @@
 # Contexto do Projeto — SAVAN Recupera
 
 > Documento para retomar o contexto em novas sessões com Claude.
-> Última atualização: **white-label do painel** (logo/título sem nenhuma referência a credor;
-> nome do produto via `NEXT_PUBLIC_APP_NAME`, padrão "Recupera") + versionado no GitHub
-> (repo **público**) + deploy via integração Git da Vercel + anonimização (ver §13).
+> Última atualização: **tema claro/escuro com toggle** (CSS variables; ver "Tema" no §8) +
+> **white-label do painel** (nome via `NEXT_PUBLIC_APP_NAME`, padrão "Recupera") + versionado
+> no GitHub (repo **público**) + deploy via integração Git da Vercel + anonimização (ver §13).
 
 ---
 
@@ -213,6 +213,17 @@ de `NEXT_PUBLIC_APP_NAME` (padrão **"Recupera"**), usado em `components/Brand.t
 `api/chips/route.ts`. Para rebrandizar por cliente, basta setar a env (sem mexer no código).
 `wallet_savan`/`repasse_savan` continuam só como identificadores internos de banco.
 
+**Tema (claro/escuro):** sistema baseado em **CSS variables** (canais RGB) — os tokens do
+Tailwind (`ink-*`, `line`, `mist`, `chalk`, `emerald`/`violet`/`amber`/`rose`/`blue`) resolvem
+para `rgb(var(--c-*) / <alpha-value>)`. `globals.css` define dois conjuntos: `:root` (escuro,
+padrão) e `html.light` (claro). Trocar de tema = só adicionar/remover a classe `light` no
+`<html>` — **nenhuma tela precisa ser reescrita**. `components/ThemeToggle.tsx` faz o toggle
+(persistido em `localStorage`, chave `theme`) e exporta o hook `useTheme()`; um script
+anti-flash em `app/layout.tsx` aplica o tema antes da pintura. Os gráficos (`charts.tsx`,
+recharts) leem `useTheme()` para colorir grade/eixos/tooltip. Texto sobre o verde (botão
+primário, letra do logo) usa cor fixa escura (`#04140c`) para não sumir no modo claro. Toggle
+disponível na **sidebar** (rodapé) e no **login** (canto sup. direito). Padrão = escuro.
+
 **Páginas:** Visão geral (cards + funil + feed realtime de pagamentos) · Campanha (switch
 gigante liga/desliga, modo simulação, janela, intervalo, aquecimento) · Chips (cards +
 cadastro com QR via proxy) · Mensagens (CRUD templates + preview) · Descontos (editor de
@@ -256,6 +267,10 @@ Configurações (Asaas, segredos, **criar/gerir usuários**) · Minha conta (nom
     `components/Brand.tsx`, `app/layout.tsx` e `api/chips/route.ts`; var em ambos `.env.example`.
     Nenhum nome de credor hardcoded na UI. (Templates do bot no banco ainda citam o credor ao
     devedor — isso é legítimo e por carteira, não é branding do produto.)
+11. **Só havia modo escuro; faltava tema claro + toggle.** Solução: cores migradas para CSS
+    variables (Tailwind `rgb(var(--c-*) / <alpha-value>)`), dois temas em `globals.css`
+    (`:root` escuro + `html.light` claro), `ThemeToggle`/`useTheme` com persistência e script
+    anti-flash, gráficos theme-aware, fix de texto on-accent. Detalhe na seção "Tema" do §8.
 
 ---
 
