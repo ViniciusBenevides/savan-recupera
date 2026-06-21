@@ -38,6 +38,15 @@ Deno.serve(async (req) => {
     } else if (!conectado && ["ativo", "aquecendo", "conectado"].includes(chip.status)) {
       novoStatus = "desconectado";
       await sb.from("eventos_campanha").insert({ tipo: "chip_status", chip_id: chip.id, payload: { status: "desconectado", nome: chip.nome } });
+      // failover: se há fila/conversas presas neste chip, abre um evento PENDENTE para o
+      // operador confirmar a reatribuição (não migra nada sozinho).
+      const { data: resumo } = await sb.rpc("fn_failover_resumo", { p_chip_id: chip.id });
+      const tem = ((resumo?.aguardando ?? 0) + (resumo?.conversas_ativas ?? 0) + (resumo?.escaladas ?? 0)) > 0;
+      if (tem) {
+        const { data: existe } = await sb.from("failover_eventos")
+          .select("id").eq("chip_caido_id", chip.id).eq("status", "pendente").maybeSingle();
+        if (!existe) await sb.from("failover_eventos").insert({ chip_caido_id: chip.id, resumo });
+      }
     }
     await sb.from("chips").update({ saude, status: novoStatus }).eq("id", chip.id);
     resultados.push({ chip: chip.id, conectado, status: novoStatus });

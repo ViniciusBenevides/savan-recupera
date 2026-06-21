@@ -1,6 +1,7 @@
 // SAVAN Recupera — metricas-sync
 // Reabre itens presos, recalcula métricas do dia a partir de eventos_campanha e
-// promove chips de 'aquecendo' para 'ativo' após 30 dias.
+// promove chips de 'aquecendo' para 'ativo' ao fim da curva de aquecimento
+// (chip 'novo' ~31d; chip 'aquecido' fim da curva curta; limite fixo = próximo ciclo).
 // NOTA: versão self-contained (igual à deployada via MCP). Chamada pelo W09 (n8n, 5 min).
 import { createClient, SupabaseClient } from "jsr:@supabase/supabase-js@2";
 
@@ -33,13 +34,36 @@ Deno.serve(async (req) => {
     dia: hoje, enviados, respostas, pix_gerados: pixGerados, optouts, falhas, atualizado_em: new Date().toISOString(),
   }, { onConflict: "dia" });
 
-  // 3) promove chips aquecidos (>=30 dias) para ativo
-  const { data: chips } = await sb.from("chips").select("id, status, data_ativacao").eq("status", "aquecendo");
+  // 3) promove chips de 'aquecendo' para 'ativo' ao fim da curva de aquecimento.
+  // Chip 'novo' termina ao fim da curva global (~31d); 'aquecido' ao fim da curva curta;
+  // limite fixo (override) já está no teto, então promove no próximo ciclo.
+  const { data: chips } = await sb.from("chips")
+    .select("id, status, data_ativacao, maturidade, aquecimento_perfil, limite_dia_override")
+    .eq("status", "aquecendo");
+
+  const { data: curvas } = await sb.from("configuracoes").select("chave, valor").like("chave", "aquecimento%");
+  const curvaMap = new Map((curvas ?? []).map((c: { chave: string; valor: unknown }) => [c.chave, c.valor]));
+  const plateauDia = (chave: string): number => {
+    const curva = curvaMap.get(chave) as Array<{ de: number; ate: number }> | undefined;
+    if (!Array.isArray(curva) || curva.length === 0) return 31;
+    const aberta = curva.reduce((acc, f) => (Number(f.ate) >= Number(acc.ate) ? f : acc), curva[0]);
+    return Number(aberta.de) || 31;
+  };
+
   let promovidos = 0;
   for (const c of chips ?? []) {
     if (!c.data_ativacao) continue;
     const dias = Math.floor((Date.now() - new Date(c.data_ativacao).getTime()) / 86400000) + 1;
-    if (dias >= 31) { await sb.from("chips").update({ status: "ativo" }).eq("id", c.id); promovidos++; }
+    let limiar: number;
+    if (c.limite_dia_override != null) {
+      limiar = 1;
+    } else {
+      const chave = c.maturidade === "aquecido"
+        ? (c.aquecimento_perfil || "aquecimento_rapido")
+        : (c.aquecimento_perfil || "aquecimento");
+      limiar = plateauDia(chave);
+    }
+    if (dias >= limiar) { await sb.from("chips").update({ status: "ativo" }).eq("id", c.id); promovidos++; }
   }
 
   return json({ ok: true, reabertos: reabertos ?? 0, enviados, respostas, pix_gerados: pixGerados, chips_promovidos: promovidos });

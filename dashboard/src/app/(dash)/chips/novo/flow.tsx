@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Card, Input, Label, Button, Badge } from "@/components/ui/primitives";
+import { MaturidadeField, type MaturidadeValor } from "@/components/MaturidadeField";
 import {
   Smartphone, CheckCircle2, RefreshCw, ArrowRight,
   CreditCard, AlertTriangle, ExternalLink, KeyRound,
@@ -20,6 +21,7 @@ export function NovoChipFlow() {
   const [instance, setInstance] = useState("");
   const [token, setToken] = useState("");
   const [clientToken, setClientToken] = useState("");
+  const [maturidade, setMaturidade] = useState<MaturidadeValor>({ maturidade: "novo", limite_dia_override: null });
   const [erro, setErro] = useState("");
   const [salvando, setSalvando] = useState(false);
 
@@ -42,7 +44,10 @@ export function NovoChipFlow() {
     setErro(""); setSalvando(true);
     const r = await fetch("/api/chips", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ nome, instance_id: instance, token, client_token: clientToken }),
+      body: JSON.stringify({
+        nome, instance_id: instance, token, client_token: clientToken,
+        maturidade: maturidade.maturidade, limite_dia_override: maturidade.limite_dia_override,
+      }),
     });
     setSalvando(false);
     const d = await r.json();
@@ -122,6 +127,7 @@ export function NovoChipFlow() {
               Cada conta Z-API tem o seu — por isso ele é informado aqui por chip.
             </p>
           </div>
+          <MaturidadeField value={maturidade} onChange={setMaturidade} />
           {erro && <p className="rounded-lg border border-rose/30 bg-rose/10 px-3 py-2 text-xs text-rose">{erro}</p>}
           <Button type="submit" disabled={salvando}>
             {salvando ? "Cadastrando…" : <>Cadastrar e gerar QR <ArrowRight className="h-4 w-4" /></>}

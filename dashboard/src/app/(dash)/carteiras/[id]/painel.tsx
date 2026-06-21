@@ -6,6 +6,7 @@ import {
   Card, Button, Input, Label, Textarea, Switch, Badge, HelpHint, Tooltip,
 } from "@/components/ui/primitives";
 import { brl, num, dataHoraBR } from "@/lib/utils";
+import { DistribuicaoCard } from "./distribuicao";
 import {
   Play, Pause, Archive, Trash2, Save, CheckCircle2, Loader2, Upload, Users, FileSpreadsheet, AlertTriangle,
 } from "lucide-react";
@@ -112,6 +113,8 @@ function AbaStatus({ carteira }: { carteira: any }) {
           <div className="font-mono text-2xl text-chalk tabnums">{brl(carteira.soma_saldo)}</div>
         </Card>
       </div>
+
+      <DistribuicaoCard carteira={carteira} />
 
       <Card className="flex items-center justify-between border-rose/20">
         <div>

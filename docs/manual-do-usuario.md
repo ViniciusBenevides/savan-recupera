@@ -91,6 +91,36 @@ A **chave gigante** liga/desliga toda a operação. Aqui também ficam: **Modo s
 Cartões dos números. **Novo chip** → leia o QR. Se o QR não aparecer, a tela explica o motivo
 (ex.: assinatura da instância Z‑API vencida). O menu **⋮** do cartão permite **editar** (tokens)
 e **excluir** o chip. Um aviso "Chatwoot não vinculado" indica que falta revincular o número.
+No cadastro/edição você também informa a **maturidade** do chip (veja abaixo).
+
+#### Chip aquecido ou novo?
+Um **chip aquecido** é um número que já vinha sendo usado normalmente (conversas/contatos reais).
+Um **chip novo** é frio, recém‑comprado. O WhatsApp **bloqueia números novos** que disparam muito
+de uma vez — por isso o sistema sobe o volume aos poucos (o **aquecimento**).
+- **Número novo (frio):** aquecimento gradual de ~30 dias (`30 → 100 → 250 → 400 → 500` novos
+  contatos/dia). Recomendado para chips recém‑comprados.
+- **Já aquecido:** rampa curta de segurança (`250/dia` por 3 dias, depois `500/dia`) **ou** um
+  **limite diário fixo** definido por você.
+
+O sistema **sugere e explica** a estratégia ao cadastrar/editar o chip, mas **a decisão é sua**.
+⚠️ Marcar um número frio como "aquecido" aumenta o risco de bloqueio.
+
+#### Distribuição entre chips (por carteira)
+Quando uma carteira tem **vários chips**, o sistema divide os devedores entre eles —
+**ninguém é contatado duas vezes** e cada chip respeita o próprio aquecimento. Em
+**Carteira → Status & envios → Distribuição**, escolha a estratégia:
+- **Igualitário** — divide o volume proporcional à capacidade de cada chip.
+- **Por estado (UF)** — cada chip atende estados inteiros.
+- **Por cidade** — cada chip atende cidades inteiras.
+
+Clique em **"Ver sugestão do sistema"**: ele mostra qual chip pega qual região, o **volume** e o
+**ETA** (dias estimados, já considerando o aquecimento). Revise e clique em **Aplicar**.
+
+#### Se um chip cair (failover)
+Se um chip desconecta ou é banido, aparece um **aviso vermelho no topo** de qualquer tela com o
+que ficou preso (fila, conversas em andamento, escaladas). Você **escolhe o chip substituto e
+confirma** — nada é migrado sozinho. O chip novo **herda o contexto** (o robô lê todo o histórico
+do devedor). Conversas que estavam com humano **continuam com o humano** (não voltam ao robô).
 
 ### Mensagens
 CRUD dos **modelos de mensagem** (abertura, follow-ups) com **pré‑visualização**. Use as variáveis
@@ -103,6 +133,13 @@ Editor das **faixas de desconto por idade da dívida** (15+ anos→60%, 10+→50
 ### Devedores
 Busca e lista de devedores, com **filtro por carteira** e coluna de **resposta**. Ao abrir um
 devedor, você vê a **linha do tempo** (mensagens, proposta, Pix, pagamento).
+
+### Escalações
+Registro de todos os casos que o robô **passou para atendimento humano**. Para cada um você vê
+**quem escalou, o histórico da conversa, o status** (em aberto / em atendimento / fechada com
+acordo / sem acordo / paga) e o **vínculo com o pagamento**. Quando o Pix é confirmado, a
+escalação fecha sozinha como **paga**. Acordos fechados fora do Pix devem ser registrados aqui
+(valor + observação) para ficarem visíveis. É a transparência dos dois lados.
 
 ### Pagamentos
 Lista dos Pix gerados e seu status (gerado / pago). Atualiza ao vivo quando alguém paga.
@@ -123,11 +160,16 @@ Trocar **nome**, **e‑mail de login** e **senha**.
 
 O robô **escala para humano** sozinho em casos delicados (a pessoa contesta a dívida, fala em
 advogado, fica hostil, ou faz uma pergunta complexa). Quando isso acontece, o atendimento
-continua **direto no Chatwoot** — o atendente humano assume a conversa por lá.
+continua **direto no Chatwoot** — o atendente humano assume a conversa por lá. A partir desse
+momento, **o robô não responde mais** aquela conversa (mas continua registrando as mensagens que
+chegam, para o humano ter todo o contexto).
+
+Todo caso escalado também aparece na tela **Escalações** (ver §5), com histórico, status e o
+desfecho do acordo — para o dono acompanhar e nada se perder.
 
 > Dica: deixe o Chatwoot aberto e fique de olho nas conversas marcadas/atribuídas ao time de
-> cobrança. (Veja em `n8n/README.md`, item 1 do review, uma melhoria para tornar a escalada
-> mais visível dentro do Chatwoot.)
+> cobrança. Use a tela **Escalações** para acompanhar os casos em aberto e registrar como cada
+> um terminou.
 
 ---
 

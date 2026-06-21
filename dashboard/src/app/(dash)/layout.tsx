@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { supabaseServer } from "@/lib/supabase-server";
 import { Sidebar } from "@/components/Sidebar";
+import { FailoverBanner } from "@/components/FailoverBanner";
 
 export default async function DashLayout({ children }: { children: React.ReactNode }) {
   const sb = await supabaseServer();
@@ -20,7 +21,10 @@ export default async function DashLayout({ children }: { children: React.ReactNo
     <div className="flex min-h-screen">
       <Sidebar nome={nome} role={role} />
       <main className="relative z-10 flex-1 px-5 py-7 sm:px-8 lg:px-10">
-        <div className="mx-auto max-w-[1200px] animate-fade-up">{children}</div>
+        <div className="mx-auto max-w-[1200px] animate-fade-up">
+          {["admin", "operador"].includes(role) && <FailoverBanner />}
+          {children}
+        </div>
       </main>
     </div>
   );

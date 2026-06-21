@@ -16,15 +16,20 @@ export async function POST(req: Request) {
   const guard = await exigirOperador();
   if ("erro" in guard) return NextResponse.json({ erro: guard.erro }, { status: guard.status });
 
-  const { nome, instance_id, token, client_token } = await req.json();
+  const { nome, instance_id, token, client_token, maturidade, aquecimento_perfil, limite_dia_override } = await req.json();
   if (!nome || !instance_id || !token || !client_token) {
     return NextResponse.json({ erro: "campos_obrigatorios" }, { status: 400 });
   }
   const admin = supabaseAdmin();
 
+  const novo: Record<string, unknown> = { nome, status: "cadastrado" };
+  if (maturidade === "aquecido" || maturidade === "novo") novo.maturidade = maturidade;
+  if (typeof aquecimento_perfil === "string" && aquecimento_perfil.trim()) novo.aquecimento_perfil = aquecimento_perfil.trim();
+  if (limite_dia_override != null && limite_dia_override !== "") novo.limite_dia_override = Number(limite_dia_override);
+
   const { data: chip, error } = await admin
     .from("chips")
-    .insert({ nome, status: "cadastrado" })
+    .insert(novo)
     .select("id")
     .single();
   if (error) return NextResponse.json({ erro: error.message }, { status: 400 });

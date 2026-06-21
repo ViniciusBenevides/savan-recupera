@@ -88,8 +88,16 @@ Deno.serve(async (req) => {
 
   // conversa + devedor
   const { data: conv } = await sb.from("conversas")
-    .select("id, devedor_id, carteira_id, estado").eq("chatwoot_conversation_id", convId).maybeSingle();
+    .select("id, devedor_id, carteira_id, estado, chip_id").eq("chatwoot_conversation_id", convId).maybeSingle();
   if (!conv) return json({ ok: false, erro: "conversa_desconhecida" }, 404);
+
+  // se já está com atendente humano (escalado), o bot NÃO responde — apenas registra a
+  // mensagem para o humano ter o contexto completo. Transparência: nada se perde.
+  if (conv.estado === "humano") {
+    await sb.from("mensagens").insert({ conversa_id: conv.id, direcao: "entrada", origem: "devedor", conteudo: b.mensagem });
+    await sb.from("conversas").update({ ultima_msg_em: new Date().toISOString(), ultima_msg_de: "devedor" }).eq("id", conv.id);
+    return json({ ok: true, acao: "humano", mensagens: [] });
+  }
 
   const { data: prop } = await sb.rpc("fn_proposta", { p_devedor_id: conv.devedor_id });
 
@@ -101,10 +109,16 @@ Deno.serve(async (req) => {
   }
   const carteira = await getCarteira(sb, carteiraId);
 
-  // histórico (memória) das últimas 20 mensagens
-  const { data: hist } = await sb.from("mensagens")
+  // histórico (memória) das últimas 20 mensagens DO DEVEDOR — cruza todas as conversas
+  // dele, não só a atual. Assim, se o chip cair e um número novo assumir, o bot herda o
+  // contexto do que já foi tratado.
+  const { data: convsDev } = await sb.from("conversas").select("id").eq("devedor_id", conv.devedor_id);
+  const convIds = (convsDev ?? []).map((c) => c.id);
+  const { data: histRaw } = await sb.from("mensagens")
     .select("origem, direcao, conteudo")
-    .eq("conversa_id", conv.id).order("criado_em", { ascending: true }).limit(20);
+    .in("conversa_id", convIds.length ? convIds : [conv.id])
+    .order("criado_em", { ascending: false }).limit(20);
+  const hist = (histRaw ?? []).reverse();
 
   const messages: any[] = [{ role: "system", content: montarSystemPrompt(cfg, carteira, prop) }];
   for (const m of hist ?? []) {
@@ -206,6 +220,17 @@ Deno.serve(async (req) => {
         await sb.from("eventos_campanha").insert({
           tipo: "contestacao", devedor_id: conv.devedor_id, payload: { motivo: escalarMotivo },
         });
+        // ledger de escalação (transparência): registra quem/por quê + snapshot do contexto.
+        // Evita duplicar se já houver uma escalação aberta para o devedor.
+        const { data: jaEsc } = await sb.from("escalacoes").select("id")
+          .eq("devedor_id", conv.devedor_id).in("status", ["aberta", "em_atendimento"]).limit(1);
+        if (!jaEsc || jaEsc.length === 0) {
+          await sb.from("escalacoes").insert({
+            conversa_id: conv.id, devedor_id: conv.devedor_id, carteira_id: carteiraId,
+            chip_id: conv.chip_id ?? null, motivo: escalarMotivo,
+            contexto_snapshot: { historico: hist, mensagem: b.mensagem }, status: "aberta",
+          });
+        }
         resultado = { ok: true };
       } else if (nome === "nao_perturbe") {
         acao = "encerrar"; encerrar = true;

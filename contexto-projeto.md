@@ -1,9 +1,9 @@
 # Contexto do Projeto — SAVAN Recupera
 
 > Documento para retomar o contexto em novas sessões com Claude.
-> Última atualização: **Central de Ajuda no painel** (`/ajuda`) + organização e correções do
-> n8n (escalada visível no Chatwoot, `carteira_id` no retry) + as **9 Edge Functions agora no
-> repo** — ver **§15**. (Anteriores: conexão de chips ponta a ponta Z-API ↔ Chatwoot §9.12, tema
+> Última atualização: **Distribuição de carteira entre chips + maturidade do chip (aquecido/novo)
+> + failover de chip com confirmação + ledger de Escalações (transparência) — ver §16.**
+> (Anteriores: Central de Ajuda §15, conexão de chips ponta a ponta Z-API ↔ Chatwoot §9.12, tema
 > claro/escuro §8, white-label `NEXT_PUBLIC_APP_NAME`, GitHub público + deploy Vercel §13.)
 
 ---
@@ -464,3 +464,56 @@ visual do go-live. Item **Ajuda** na Sidebar (`LifeBuoy`). Fonte em prosa:
      custom attributes no Chatwoot), correto ficar fora do runtime (não está no script).
   4. **`chips-monitor` e `metricas-sync` trazidas ao repo** (versão self-contained = a deployada).
      Agora `supabase/functions/` tem as **9** funções.
+
+---
+
+## 16. Distribuição, maturidade de chip, failover e transparência — adicionado nesta sessão
+
+Decisões do dono: **failover automático com confirmação**; **maturidade definida pelo usuário com
+sugestão transparente do sistema**; **transparência bilateral** nos casos escalados (rastro
+anti-fraude). Migrations **010–016** (aplicadas via MCP no projeto `wmggqsmqvklxlqwsksjs`).
+
+**Banco (010–016):**
+- `chips`: `maturidade` (`novo|aquecido`), `aquecimento_perfil`, `regiao_uf[]`, `regiao_cidade[]`.
+- `carteiras`: `estrategia_distribuicao` (`igualitario|uf|cidade|manual`).
+- `fila_envios`: `chip_designado_id` (chip **planejado**; `chip_id` = quem pegou).
+- Tabela **`escalacoes`** (ledger): conversa/devedor/carteira/chip, `motivo`, `contexto_snapshot`,
+  `status` (`aberta|em_atendimento|fechada_acordo|fechada_sem_acordo|fechada_paga`), `assumido_por`,
+  `negociacao_id`/`pagamento_id`, `valor_combinado`, `observacao`. Realtime.
+- Tabela **`failover_eventos`** (`pendente|aplicado|ignorado`, `resumo` jsonb, destino). Realtime.
+  Índice único parcial = 1 pendente por chip.
+- Seed `aquecimento_rapido` (`250×3d → 500`) para chips aquecidos.
+- **Funções:** `fn_limite_chip` (precedência override → curva da maturidade → global);
+  `fn_selecionar_lote` (respeita `chip_designado_id`; pega designados + pool, sem repetição);
+  `fn_distribuir_carteira(carteira, estrategia)` (round-robin igualitário / arrays de UF / cidade);
+  `fn_distribuicao_dados(carteira)` (contagem por UF/cidade p/ a sugestão); `fn_failover_resumo`;
+  `fn_reatribuir_chip(caido, destino)` (reabre presos, re-designa fila, move conversas; escaladas
+  ficam `humano`, só apontam o novo chip). `fn_pagamento_confirmado` fecha escalação aberta → `fechada_paga`.
+
+**Edge Functions redeployadas:** `metricas-sync` (promove aquecido no fim da curva curta);
+`bot-turno` v4 (**gate `estado='humano'`** = bot não reengaja; **histórico por `devedor_id`**
+cruzando conversas = número novo herda contexto; grava em `escalacoes` no `escalar_humano`);
+`chips-monitor` v2 (ao cair, cria `failover_eventos` pendente em vez de só rebaixar).
+
+**Front (Next.js):**
+- `components/MaturidadeField.tsx` (seletor novo/aquecido + sugestão transparente) no cadastro
+  (`chips/novo/flow.tsx`) e edição (`chips/chip-card.tsx`); API `chips` aceita maturidade/perfil/override.
+- `lib/distribuicao.ts` (planos igualitário/UF/cidade + ETA via curva); rotas
+  `api/carteiras/[id]/sugestao-distribuicao` e `/distribuir`; UI `carteiras/[id]/distribuicao.tsx`
+  na aba **Status & envios**.
+- Página **Escalações** (`app/(dash)/escalacoes/`, item na Sidebar `Headset`) — ledger realtime com
+  status, histórico, desfecho e ações (assumir/fechar acordo/sem acordo); API `api/escalacoes/[id]`.
+- **Banner de failover** global (`components/FailoverBanner.tsx` no `(dash)/layout.tsx`): chip caiu →
+  escolhe destino → confirma; API `api/failover/[id]` chama `fn_reatribuir_chip`.
+- **Ajuda** (`/ajuda`) + `docs/manual-do-usuario.md`: seções "Chip aquecido ou novo", "Distribuição
+  e queda de chip" e ledger de Escalações; tooltips (`HelpHint`) nos controles novos.
+
+**Verificado (SQL, com limpeza):** maturidade (aquecido=250/novo=30 no dia 1); distribuição UF
+(SP→chip A, MG+RJ→chip B) + `fn_selecionar_lote` sem sobreposição; pagamento fecha escalação;
+`fn_reatribuir_chip` (escalada permanece `humano`). Build do front OK.
+
+**Limitação documentada:** o Chatwoot não move threads entre inboxes — a herança de contexto no
+failover vem do histórico em `mensagens` (por devedor) que o `bot-turno` agora carrega, não de
+mover a conversa do Chatwoot. **Distribuição geográfica depende de `devedores.uf`/`cidade` na
+planilha; quem não tem região cai no pool livre.** **n8n inalterado** (a designação é interna ao
+`fn_selecionar_lote`, que o W01 já chama por chip).

@@ -6,7 +6,7 @@ import {
   LifeBuoy, ShieldCheck, Search, ChevronDown, ArrowUp, Sparkles, X,
   Radio, Smartphone, MessageSquareText, Percent, Users, HandCoins, BarChart3,
   Settings, FolderUp, LayoutDashboard, KeyRound, Clock, Send, QrCode,
-  AlertTriangle, CheckCircle2, ArrowRight,
+  AlertTriangle, CheckCircle2, ArrowRight, Flame, Network,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -22,7 +22,9 @@ const SECTIONS: Sec[] = [
   { id: "conceitos", title: "Conceitos rápidos", icon: Compass, keywords: "carteira chip campanha simulação fila follow-up aquecimento glossário" },
   { id: "golive", title: "Como colocar no ar", icon: Rocket, tag: "Passo a passo", keywords: "go-live chaves openai asaas chips qr carteira modelo planilha simulação ativar ordem" },
   { id: "telas", title: "Tela por tela", icon: LayoutGrid, keywords: "visão geral carteiras campanha chips mensagens descontos devedores pagamentos relatórios configurações conta" },
-  { id: "humano", title: "Atendimento humano", icon: Headphones, keywords: "escalar humano chatwoot atendente contestação advogado label nota" },
+  { id: "maturidade", title: "Chip aquecido ou novo", icon: Flame, tag: "Importante", keywords: "chip aquecido novo maturidade aquecimento rampa bloqueio whatsapp business número frio limite diário" },
+  { id: "distribuicao", title: "Distribuição e queda de chip", icon: Network, keywords: "distribuição uf cidade estado igualitário sugestão chip caiu failover reatribuir banido escalação transparência" },
+  { id: "humano", title: "Atendimento humano", icon: Headphones, keywords: "escalar humano chatwoot atendente contestação advogado label nota escalações ledger acordo transparência" },
   { id: "regras", title: "Regras jurídicas", icon: Scale, tag: "Importante", keywords: "jurídico prescrição serasa lgpd identidade janela horário contrato dpa nunca ameaça" },
   { id: "problemas", title: "Problemas comuns", icon: LifeBuoy, keywords: "robô não responde nada enviado qr não aparece chatwoot webhook asaas pagamento" },
   { id: "seguranca", title: "Segurança & limites", icon: ShieldCheck, keywords: "segurança login chaves planilha simulação aquecimento usuários" },
@@ -406,6 +408,78 @@ export default function AjudaPage() {
             </Section>
           )}
 
+          {/* maturidade do chip */}
+          {visible.some((s) => s.id === "maturidade") && (
+            <Section id="maturidade" title="Chip aquecido ou novo?" icon={Flame} tag="Importante" index={5}>
+              <p className="text-sm leading-relaxed text-chalk/90">
+                Um <strong className="text-chalk">chip aquecido</strong> é um número de WhatsApp que já vinha
+                sendo usado normalmente (com conversas e contatos reais) há algum tempo. Um <strong className="text-chalk">chip
+                novo</strong> é frio — recém‑comprado, sem histórico. Isso importa porque o WhatsApp
+                <strong className="text-chalk"> bloqueia números novos</strong> que, do nada, começam a disparar
+                muitas mensagens. Por isso o sistema sobe o volume aos poucos (o <em>aquecimento</em>).
+              </p>
+              <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                <div className="rounded-2xl border border-emerald/25 bg-emerald/8 p-4">
+                  <div className="flex items-center gap-2 font-display text-sm font-700 text-chalk"><Smartphone className="h-4 w-4 text-emerald" /> Número novo (frio)</div>
+                  <p className="mt-1.5 text-xs leading-relaxed text-mist">Aquecimento gradual de ~30 dias: <span className="text-emerald-soft">30 → 100 → 250 → 400 → 500</span> novos contatos por dia. É o recomendado para chips recém‑comprados.</p>
+                </div>
+                <div className="rounded-2xl border border-amber/25 bg-amber/8 p-4">
+                  <div className="flex items-center gap-2 font-display text-sm font-700 text-chalk"><Flame className="h-4 w-4 text-amber" /> Já aquecido</div>
+                  <p className="mt-1.5 text-xs leading-relaxed text-mist">Rampa curta de segurança: <span className="text-amber">250/dia nos 3 primeiros dias, depois 500/dia</span>. Ou defina um limite diário fixo você mesmo.</p>
+                </div>
+              </div>
+              <p className="mt-4 text-sm leading-relaxed text-chalk/90">
+                Você escolhe ao <strong className="text-chalk">cadastrar ou editar o chip</strong> (em Chips): <em>Número novo</em> ou
+                <em> Já aquecido</em>. O sistema <strong className="text-chalk">sugere e explica</strong> a estratégia, mas a decisão é sua.
+              </p>
+              <div className="mt-5">
+                <Callout tone="amber" title="Cuidado ao marcar como aquecido">
+                  Marcar um número frio como “já aquecido” faz ele disparar muito mais rápido — e aumenta o risco de
+                  bloqueio. Só use “aquecido” se o número realmente já vinha sendo usado.
+                </Callout>
+              </div>
+            </Section>
+          )}
+
+          {/* distribuição e failover */}
+          {visible.some((s) => s.id === "distribuicao") && (
+            <Section id="distribuicao" title="Distribuição e queda de chip" icon={Network} index={6}>
+              <p className="text-sm leading-relaxed text-chalk/90">
+                Quando uma carteira tem <strong className="text-chalk">vários chips</strong>, o sistema divide os
+                devedores entre eles. <strong className="text-chalk">Ninguém é contatado duas vezes</strong> e cada chip
+                respeita o próprio aquecimento. Você escolhe como dividir em
+                <strong className="text-chalk"> Carteira → Status &amp; envios → Distribuição</strong>:
+              </p>
+              <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                {[
+                  { t: "Igualitário", d: "Divide o volume proporcional à capacidade de cada chip." },
+                  { t: "Por estado (UF)", d: "Cada chip atende estados inteiros." },
+                  { t: "Por cidade", d: "Cada chip atende cidades inteiras — divisão mais fina." },
+                ].map((o) => (
+                  <div key={o.t} className="rounded-2xl border border-line bg-ink-850 p-4">
+                    <div className="font-display text-sm font-700 text-chalk">{o.t}</div>
+                    <p className="mt-1 text-xs leading-snug text-mist">{o.d}</p>
+                  </div>
+                ))}
+              </div>
+              <p className="mt-4 text-sm leading-relaxed text-chalk/90">
+                Clique em <strong className="text-chalk">“Ver sugestão do sistema”</strong>: ele mostra uma tabela com
+                <em> qual chip pega qual região</em>, o <em>volume</em> e o <em>ETA</em> (dias estimados para terminar, já
+                considerando o aquecimento). Confira e clique em <strong className="text-chalk">Aplicar</strong>.
+              </p>
+              <div className="mt-5 rounded-2xl border border-line bg-ink-850 p-4">
+                <div className="flex items-center gap-2 font-display text-sm font-700 text-chalk"><AlertTriangle className="h-4 w-4 text-rose" /> Se um chip cair (desconecta ou é banido)</div>
+                <p className="mt-1.5 text-sm leading-relaxed text-mist">
+                  Aparece um <strong className="text-chalk">aviso vermelho no topo</strong> de qualquer tela, mostrando o que
+                  ficou preso (fila, conversas em andamento e escaladas). Você <strong className="text-chalk">escolhe o chip
+                  substituto e confirma</strong> — nada é migrado sozinho. O chip novo <strong className="text-chalk">herda o
+                  contexto</strong> (o robô lê todo o histórico do devedor). As conversas que estavam com atendente humano
+                  <strong className="text-chalk"> continuam com o humano</strong> — não voltam para o robô.
+                </p>
+              </div>
+            </Section>
+          )}
+
           {/* humano */}
           {visible.some((s) => s.id === "humano") && (
             <Section id="humano" title="Atendimento humano" icon={Headphones} index={5}>
@@ -415,9 +489,16 @@ export default function AjudaPage() {
                 Quando isso acontece, a conversa recebe a etiqueta <span className="font-mono text-emerald">escalado‑humano</span> e
                 uma <strong className="text-chalk">nota interna</strong> com o motivo — e o atendimento continua direto no Chatwoot.
               </p>
+              <p className="mt-3 text-sm leading-relaxed text-chalk/90">
+                Todo caso escalado também vira um registro na tela <strong className="text-chalk">Escalações</strong>: lá você
+                vê <strong className="text-chalk">quem escalou, todo o histórico da conversa, o status</strong> (em aberto,
+                fechada com acordo, sem acordo ou paga) e o <strong className="text-chalk">vínculo com o pagamento</strong>.
+                Quando o Pix é confirmado, a escalação fecha sozinha como “paga”. É a <strong className="text-chalk">transparência
+                dos dois lados</strong>: o atendente tem todo o contexto e o dono acompanha cada desfecho — nenhum acordo se perde.
+              </p>
               <Callout tone="emerald" title="Boa prática">
-                Deixe o Chatwoot aberto e filtre pelas conversas com a etiqueta <span className="font-mono">escalado‑humano</span> para
-                assumir rápido quando o robô passar o bastão.
+                Use a tela <strong>Escalações</strong> para acompanhar os casos em aberto e registrar o desfecho de cada um.
+                Acordos fechados fora do Pix devem ser anotados ali (valor + observação) para ficarem visíveis.
               </Callout>
             </Section>
           )}

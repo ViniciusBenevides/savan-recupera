@@ -2,6 +2,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Card, Badge, Button, Input, Label } from "@/components/ui/primitives";
+import { MaturidadeField, type MaturidadeValor } from "@/components/MaturidadeField";
 import { num } from "@/lib/utils";
 import { Play, Pause, QrCode, Smartphone, AlertTriangle, MoreVertical, Pencil, Trash2, X, Eye, EyeOff, Loader2 } from "lucide-react";
 import Link from "next/link";
@@ -54,6 +55,8 @@ export function ChipCard({ chip, metrica }: { chip: any; metrica?: any }) {
   const [eInstance, setEInstance] = useState("");
   const [eToken, setEToken] = useState("");
   const [eClientToken, setEClientToken] = useState("");
+  const [eMaturidade, setEMaturidade] = useState<MaturidadeValor>({ maturidade: "novo", limite_dia_override: null });
+  const [origMat, setOrigMat] = useState<MaturidadeValor>({ maturidade: "novo", limite_dia_override: null });
   const [carregando, setCarregando] = useState(false);
   const [orig, setOrig] = useState({ instance: "", token: "", clientToken: "" });
 
@@ -81,6 +84,8 @@ export function ChipCard({ chip, metrica }: { chip: any; metrica?: any }) {
         setEToken(d.token ?? "");
         setEClientToken(d.client_token ?? "");
         setOrig({ instance: d.instance_id ?? "", token: d.token ?? "", clientToken: d.client_token ?? "" });
+        const mat: MaturidadeValor = { maturidade: d.maturidade ?? "novo", limite_dia_override: d.limite_dia_override ?? null };
+        setEMaturidade(mat); setOrigMat(mat);
       })
       .catch(() => setErro("Falha ao carregar os dados do chip."))
       .finally(() => setCarregando(false));
@@ -88,11 +93,15 @@ export function ChipCard({ chip, metrica }: { chip: any; metrica?: any }) {
 
   function salvar() {
     setErro("");
-    const body: Record<string, string> = {};
+    const body: Record<string, unknown> = {};
     if (eNome.trim() && eNome.trim() !== chip.nome) body.nome = eNome.trim();
     if (eInstance.trim() && eInstance.trim() !== orig.instance) body.instance_id = eInstance.trim();
     if (eToken.trim() && eToken.trim() !== orig.token) body.token = eToken.trim();
     if (eClientToken.trim() && eClientToken.trim() !== orig.clientToken) body.client_token = eClientToken.trim();
+    if (eMaturidade.maturidade !== origMat.maturidade) body.maturidade = eMaturidade.maturidade;
+    if (eMaturidade.limite_dia_override !== origMat.limite_dia_override) {
+      body.limite_dia_override = eMaturidade.limite_dia_override;
+    }
     if (Object.keys(body).length === 0) { setEditando(false); return; }
     start(async () => {
       const r = await fetch(`/api/chips/${chip.id}`, {
@@ -141,6 +150,7 @@ export function ChipCard({ chip, metrica }: { chip: any; metrica?: any }) {
             </div>
             <CampoToken label="Token da instância (Z-API)" value={eToken} onChange={setEToken} />
             <CampoToken label="Token de Segurança (Z-API)" value={eClientToken} onChange={setEClientToken} />
+            <MaturidadeField value={eMaturidade} onChange={setEMaturidade} />
           </>
         )}
         {erro && <p className="rounded-lg border border-rose/30 bg-rose/10 px-3 py-2 text-xs text-rose">{erro}</p>}

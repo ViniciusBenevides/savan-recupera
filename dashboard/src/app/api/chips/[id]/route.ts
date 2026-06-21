@@ -20,13 +20,16 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
   const admin = supabaseAdmin();
   const [{ data: chip }, { data: cred }] = await Promise.all([
-    admin.from("chips").select("nome").eq("id", Number(id)).maybeSingle(),
+    admin.from("chips").select("nome, maturidade, aquecimento_perfil, limite_dia_override").eq("id", Number(id)).maybeSingle(),
     admin.from("chips_credenciais").select("zapi_instance_id, zapi_token, zapi_client_token").eq("chip_id", Number(id)).maybeSingle(),
   ]);
   if (!chip) return NextResponse.json({ erro: "chip_nao_encontrado" }, { status: 404 });
 
   return NextResponse.json({
     nome: chip.nome,
+    maturidade: chip.maturidade ?? "novo",
+    aquecimento_perfil: chip.aquecimento_perfil ?? null,
+    limite_dia_override: chip.limite_dia_override ?? null,
     instance_id: cred?.zapi_instance_id ?? "",
     token: cred?.zapi_token ?? "",
     client_token: cred?.zapi_client_token ?? "",
@@ -39,11 +42,18 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const guard = await exigirOperador();
   if ("erro" in guard) return NextResponse.json({ erro: guard.erro }, { status: guard.status });
 
-  const { nome, instance_id, token, client_token } = await req.json();
+  const { nome, instance_id, token, client_token, maturidade, aquecimento_perfil, limite_dia_override } = await req.json();
   const admin = supabaseAdmin();
 
-  if (typeof nome === "string" && nome.trim()) {
-    const { error } = await admin.from("chips").update({ nome: nome.trim() }).eq("id", Number(id));
+  const chipPatch: Record<string, unknown> = {};
+  if (typeof nome === "string" && nome.trim()) chipPatch.nome = nome.trim();
+  if (maturidade === "aquecido" || maturidade === "novo") chipPatch.maturidade = maturidade;
+  if (aquecimento_perfil !== undefined) chipPatch.aquecimento_perfil = aquecimento_perfil || null;
+  if (limite_dia_override !== undefined) {
+    chipPatch.limite_dia_override = limite_dia_override === null || limite_dia_override === "" ? null : Number(limite_dia_override);
+  }
+  if (Object.keys(chipPatch).length > 0) {
+    const { error } = await admin.from("chips").update(chipPatch).eq("id", Number(id));
     if (error) return NextResponse.json({ erro: error.message }, { status: 400 });
   }
 
