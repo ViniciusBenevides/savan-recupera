@@ -1,9 +1,10 @@
 # Contexto do Projeto — SAVAN Recupera
 
 > Documento para retomar o contexto em novas sessões com Claude.
-> Última atualização: **tema claro/escuro com toggle** (CSS variables; ver "Tema" no §8) +
-> **white-label do painel** (nome via `NEXT_PUBLIC_APP_NAME`, padrão "Recupera") + versionado
-> no GitHub (repo **público**) + deploy via integração Git da Vercel + anonimização (ver §13).
+> Última atualização: **conexão de chips ponta a ponta Z-API ↔ Chatwoot** (card de assinatura
+> no QR, finalização automática ao conectar, Token de Segurança por chip, editar/excluir chip —
+> ver §9.12) + tema claro/escuro com toggle (ver "Tema" no §8) + white-label do painel
+> (`NEXT_PUBLIC_APP_NAME`) + versionado no GitHub (repo **público**) + deploy via Vercel (§13).
 
 ---
 
@@ -271,6 +272,34 @@ Configurações (Asaas, segredos, **criar/gerir usuários**) · Minha conta (nom
     variables (Tailwind `rgb(var(--c-*) / <alpha-value>)`), dois temas em `globals.css`
     (`:root` escuro + `html.light` claro), `ThemeToggle`/`useTheme` com persistência e script
     anti-flash, gráficos theme-aware, fix de texto on-accent. Detalhe na seção "Tema" do §8.
+12. **Conexão de chips quebrada de ponta a ponta (Z-API ↔ Chatwoot).** Sintomas: o QR não
+    aparecia quando a assinatura da instância Z-API estava expirada/pendente/cancelada (só um
+    spinner infinito, sem explicação); o inbox do Chatwoot era criado com telefone-placeholder
+    e o webhook do canal (derivado do número) ficava errado → **mensagens recebidas não
+    roteavam**; e o Token de Segurança era um env global (errado para um produto multi-conta
+    Z-API). Solução:
+    - **Proxy do QR** (`api/chips/[id]/qrcode`) classifica o erro da Z-API
+      (`assinatura`/`config`/`credencial`/`indisponivel`) e a tela mostra um **card** explicando
+      (ex.: "quite a assinatura desta instância, não pode estar cancelada"), com link para
+      app.z-api.io e botão "já paguei, tentar de novo"; o polling pausa em erro definitivo.
+    - **Finalização automática ao conectar** (`lib/zapi.ts` `finalizarConexaoChip`): lê o número
+      real em `/device` (o `/status` **não** traz o telefone), corrige o `phone_number` do inbox
+      no Chatwoot (PATCH; se não aplicar, deleta e recria) e aponta os webhooks da Z-API para
+      `…/webhooks/whatsapp/+<numero>` (`update-every-webhooks`, fallback `update-webhook-received`).
+      Roda uma vez (guard) e não rebaixa quem já está aquecendo/ativo/pausado.
+    - **Token de Segurança por chip** (migration `009_chip_client_token.sql`: coluna
+      `chips_credenciais.zapi_client_token`): informado no cadastro e na edição (cada conta Z-API
+      tem o seu); o env `ZAPI_CLIENT_TOKEN` virou apenas **fallback** para chips antigos.
+    - **Chatwoot sempre linkado** (`lib/chatwoot.ts`): a criação do inbox deixou de ser muda
+      (retorna status), há rota de revínculo (`api/chips/[id]/chatwoot`), telefone-placeholder
+      **único por chip** (evita colisão de número no 2º chip) e aviso "Chatwoot não vinculado"
+      no card da lista.
+    - **Editar/excluir chip** (`api/chips/[id]` GET/PATCH/DELETE): o menu ⋮ do card abre a edição
+      já preenchida, com os tokens **ocultos** (campo senha + olho para revelar); salva só o que
+      mudou; excluir remove o chip (cascade nas credenciais/métricas) e o inbox no Chatwoot.
+    (arquivos: `dashboard/src/lib/{chatwoot,zapi}.ts`, `app/api/chips/route.ts` + `[id]/{route,
+    qrcode,chatwoot}.ts`, `app/(dash)/chips/{chip-card.tsx,novo/flow.tsx}`,
+    `supabase/migrations/009_chip_client_token.sql`.)
 
 ---
 
