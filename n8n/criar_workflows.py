@@ -26,6 +26,20 @@ N8N_KEY = env("n8n api key")
 SRK = env("service_role supabase")
 HDR = {"X-N8N-API-KEY": N8N_KEY, "Content-Type": "application/json"}
 AUTH = f"Bearer {SRK}"
+TAG_PRODUTO = "SAVAN"   # todos os workflows ganham esta tag (organização na instância)
+_tag_cache = {}
+
+
+def garantir_tag(nome):
+    """Devolve o id da tag, criando-a se necessário (cacheado)."""
+    if nome in _tag_cache:
+        return _tag_cache[nome]
+    lst = requests.get(f"{N8N}/api/v1/tags?limit=100", headers=HDR).json().get("data", [])
+    achou = next((t for t in lst if t["name"] == nome), None)
+    tid = achou["id"] if achou else \
+        requests.post(f"{N8N}/api/v1/tags", headers=HDR, json={"name": nome}).json()["id"]
+    _tag_cache[nome] = tid
+    return tid
 
 
 def node(name, ntype, ver, pos, params=None, extra=None):
@@ -69,6 +83,19 @@ def http_chatwoot(name, pos, url_expr, body_expr):
     })
 
 
+def http_chatwoot_get(name, pos, url_expr):
+    """GET no Chatwoot (ex.: ler as labels atuais de uma conversa)."""
+    return node(name, "n8n-nodes-base.httpRequest", 4.2, pos, {
+        "method": "GET",
+        "url": url_expr,
+        "sendHeaders": True,
+        "headerParameters": {"parameters": [
+            {"name": "api_access_token", "value": env("token chatwoot")},
+        ]},
+        "options": {"response": {"response": {"neverError": True}}},
+    })
+
+
 def conn(*pairs):
     c = {}
     for src, dst in pairs:
@@ -98,6 +125,9 @@ def upsert(nome, nodes, connections, ativo=False, settings=None):
         print(f"  ERRO {nome}: {r.status_code} {r.text[:300]}")
         return None
     wid = r.json().get("data", r.json()).get("id")
+    # tag de organização (equivalente possível, via API, à pasta "Cobrador Maurelio v2")
+    requests.put(f"{N8N}/api/v1/workflows/{wid}/tags", headers=HDR,
+                 json=[{"id": garantir_tag(TAG_PRODUTO)}])
     if ativo:
         requests.post(f"{N8N}/api/v1/workflows/{wid}/activate", headers=HDR)
     print(f"  {nome}: {acao} (id {wid})")
@@ -228,7 +258,7 @@ def w02():
         "for (const m of (r.mensagens || [])) {\n"
         "  out.push({ json: { conv, texto: m } });\n"
         "}\n"
-        "if (r.escalar) { out.push({ json: { conv, escalar: r.escalar } }); }\n"
+        "// a escalada é tratada no ramo dedicado (label + nota interna), não aqui\n"
         "return out;"
     )})
     loop = node("Loop msgs", "n8n-nodes-base.splitInBatches", 3, [1120, 300],
@@ -239,7 +269,26 @@ def w02():
         '"content_attributes": { "zapi_args": { "delayTyping": 8 } } }')
     espera = node("Aguardar", "n8n-nodes-base.wait", 1.1, [1560, 360],
                   {"amount": 3, "unit": "seconds"}, {"webhookId": "savan-w02-wait"})
-    nodes = [wh, filtro, bot, prep, loop, envia, espera]
+
+    # --- ramo de escalada para humano (torna a transferência visível no Chatwoot) ---
+    cw = env("chatwoot url").rstrip("/")
+    conv_url = lambda rec: (f"={cw}/api/v1/accounts/1/conversations/"
+                            f"{{{{ $('Filtrar').item.json.chatwoot_conversation_id }}}}/{rec}")
+    cond_esc = node("Escalou?", "n8n-nodes-base.if", 2.2, [900, 520], {
+        "conditions": {"options": {"caseSensitive": True, "typeValidation": "loose"},
+                       "combinator": "and", "conditions": [
+            {"leftValue": "={{ !!$('Bot responder').item.json.escalar }}", "rightValue": True,
+             "operator": {"type": "boolean", "operation": "true", "singleValue": True}}]}})
+    # labels no Chatwoot SUBSTITUEM o conjunto → ler as atuais e mesclar 'escalado-humano'
+    get_labels = http_chatwoot_get("Labels atuais", [1120, 520], conv_url("labels"))
+    set_labels = http_chatwoot("Marcar escalado", [1340, 520], conv_url("labels"),
+        '={ "labels": {{ JSON.stringify([...new Set([...($json.payload || []), "escalado-humano"])]) }} }')
+    nota = http_chatwoot("Nota interna", [1560, 520], conv_url("messages"),
+        '={ "content": {{ JSON.stringify("Conversa escalada para atendimento humano pelo robo. Motivo: " '
+        '+ ($(\'Bot responder\').item.json.escalar || "nao especificado")) }}, '
+        '"message_type": "outgoing", "private": true }')
+
+    nodes = [wh, filtro, bot, prep, loop, envia, espera, cond_esc, get_labels, set_labels, nota]
     connections = {}
     def add(src, dst, idx=0):
         connections.setdefault(src, {}).setdefault("main", [])
@@ -249,10 +298,14 @@ def w02():
     add("Webhook Chatwoot", "Filtrar")
     add("Filtrar", "Bot responder")
     add("Bot responder", "Preparar envios")
+    add("Bot responder", "Escalou?")          # 2ª saída: ramo de escalada (paralelo ao envio)
     add("Preparar envios", "Loop msgs")
     add("Loop msgs", "Enviar resposta", 1)
     add("Enviar resposta", "Aguardar")
     add("Aguardar", "Loop msgs")
+    add("Escalou?", "Labels atuais", 0)        # true: tem motivo de escalada
+    add("Labels atuais", "Marcar escalado")
+    add("Marcar escalado", "Nota interna")
     upsert("SAVAN W02 - Bot Negociador", nodes, connections)
 
 

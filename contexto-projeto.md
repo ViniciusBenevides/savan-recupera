@@ -1,10 +1,10 @@
 # Contexto do Projeto — SAVAN Recupera
 
 > Documento para retomar o contexto em novas sessões com Claude.
-> Última atualização: **conexão de chips ponta a ponta Z-API ↔ Chatwoot** (card de assinatura
-> no QR, finalização automática ao conectar, Token de Segurança por chip, editar/excluir chip —
-> ver §9.12) + tema claro/escuro com toggle (ver "Tema" no §8) + white-label do painel
-> (`NEXT_PUBLIC_APP_NAME`) + versionado no GitHub (repo **público**) + deploy via Vercel (§13).
+> Última atualização: **Central de Ajuda no painel** (`/ajuda`) + organização e correções do
+> n8n (escalada visível no Chatwoot, `carteira_id` no retry) + as **9 Edge Functions agora no
+> repo** — ver **§15**. (Anteriores: conexão de chips ponta a ponta Z-API ↔ Chatwoot §9.12, tema
+> claro/escuro §8, white-label `NEXT_PUBLIC_APP_NAME`, GitHub público + deploy Vercel §13.)
 
 ---
 
@@ -84,14 +84,22 @@ MaurelioV2/                        # repo Git público (ver §13). [gi] = gitign
 │       ├── contato-criar/index.ts
 │       ├── bot-turno/index.ts
 │       ├── gerar-pix/index.ts
-│       └── webhook-asaas/index.ts
-│       # (campanha-followup, chips-monitor, metricas-sync deployadas direto via MCP)
+│       ├── webhook-asaas/index.ts
+│       ├── campanha-followup/index.ts
+│       ├── chips-monitor/index.ts     # self-contained (= deployada); trazida ao repo na §15
+│       └── metricas-sync/index.ts     # self-contained (= deployada); trazida ao repo na §15
+│       # as 9 funções estão no repo (chips-monitor/metricas-sync são self-contained)
 │
 ├── import/
 │   └── importar_planilha.py       # parse xlsx → normaliza → grava no Supabase (idempotente)
 │
 ├── n8n/
-│   └── criar_workflows.py         # cria/atualiza os 5 workflows via API n8n
+│   ├── criar_workflows.py         # cria/atualiza os 5 workflows via API n8n (+ aplica tag SAVAN)
+│   ├── organizar_tags.py          # (re)aplica a tag SAVAN nos workflows do produto
+│   └── README.md                  # catálogo dos workflows, review n8n✕código, pasta vs. tag (§15)
+│
+├── docs/
+│   └── manual-do-usuario.md       # manual do operador (fonte em prosa da Central de Ajuda /ajuda)
 │
 └── dashboard/                     # Next.js (deploy Vercel via Git — ver §13)
     ├── .env.local                 # [gi] vars locais (mesmas estão na Vercel)
@@ -118,7 +126,8 @@ MaurelioV2/                        # repo Git público (ver §13). [gi] = gitign
             │   ├── devedores/ (page + [id]/page.tsx)
             │   ├── pagamentos/ · relatorios/
             │   ├── configuracoes/ (page + form.tsx)
-            │   └── conta/ (page + form.tsx)   # minha conta: nome, e-mail, senha
+            │   ├── conta/ (page + form.tsx)   # minha conta: nome, e-mail, senha
+            │   └── ajuda/page.tsx             # Central de Ajuda (manual interativo no painel, §15)
             └── api/
                 ├── config/route.ts            # atualiza configuracoes (admin/operador)
                 ├── segredos/route.ts          # GET status + POST (admin)
@@ -182,7 +191,8 @@ Function lê os segredos via função que **RETORNA um mapa** (não seta env).
 `SAVAN W01 Disparador` (1 min) · `W02 Bot Negociador` (webhook `/webhook/savan-bot`) ·
 `W07 Follow-up` (5 min) · `W08 Monitor de Chips` (15 min) · `W09 Métricas` (5 min).
 Recriáveis com `python n8n/criar_workflows.py`. API key salva no `.env` como `n8n api key`.
-Chamam as Edge Functions por HTTP com o service_role como Bearer.
+Chamam as Edge Functions por HTTP com o service_role como Bearer. **Organização (tag `SAVAN`),
+review n8n✕código e o ramo de escalada do W02: ver §15 e `n8n/README.md`.**
 
 Webhook do **Chatwoot id 5** → `https://<seu-n8n>/webhook/savan-bot`
 (evento `message_created`).
@@ -229,7 +239,8 @@ disponível na **sidebar** (rodapé) e no **login** (canto sup. direito). Padrã
 gigante liga/desliga, modo simulação, janela, intervalo, aquecimento) · Chips (cards +
 cadastro com QR via proxy) · Mensagens (CRUD templates + preview) · Descontos (editor de
 faixas + simulador) · Devedores (busca + detalhe/timeline) · Pagamentos · Relatórios ·
-Configurações (Asaas, segredos, **criar/gerir usuários**) · Minha conta (nome, e-mail, senha).
+Configurações (Asaas, segredos, **criar/gerir usuários**) · Minha conta (nome, e-mail, senha) ·
+**Ajuda** (manual de uso interativo no painel, `/ajuda` — ver §15).
 
 **Papéis:** admin (tudo) · operador (campanha/chips/templates) · visualizador (leitura).
 
@@ -420,3 +431,36 @@ ignoradas) → carteira fica **Pausada** → ajusta prompt/descontos → **Ativa
 
 **Verificado (SQL):** override de desconto por carteira (60%↔80%), fallback global, dedup
 `(carteira_id,cpf_cnpj)`, e `fn_selecionar_lote` (pausada→0 / ativa→1). Build do front OK.
+
+---
+
+## 15. Central de Ajuda no painel + organização/correções n8n — adicionado nesta sessão
+
+Embasamento: skills `frontend-design`, `n8n-skills`, `chatwoot-conversation-management`.
+
+**Documentação no produto (não só no repo):** nova página **Ajuda** (`/ajuda`,
+`app/(dash)/ajuda/page.tsx`, client component) — manual de uso **interativo** e theme-aware, no
+design system do painel. Recursos: índice fixo com **scroll-spy**, **busca** ao vivo que filtra
+seções, **barra de progresso** de leitura, **voltar ao topo**, acordeão "tela por tela" e fluxo
+visual do go-live. Item **Ajuda** na Sidebar (`LifeBuoy`). Fonte em prosa:
+`docs/manual-do-usuario.md`.
+
+**n8n organizado e revisado** (detalhe em `n8n/README.md`):
+- A **API pública do n8n não gerencia pastas** (`/folders` → 404; `/projects` → 403 por licença)
+  nem move workflows entre pastas. O equivalente possível é **tag**: os 6 workflows do produto
+  (`SAVAN W0x` + `Setup Chatwoot`) recebem a tag **`SAVAN`** (`n8n/organizar_tags.py`; o
+  `criar_workflows.py` também já aplica). Para a pasta "Cobrador Maurelio v2": filtrar por tag e
+  arrastar no app web (1×). A instância é **compartilhada** com outros clientes — **só os `SAVAN`
+  são deste produto; o resto não se toca.**
+- **Review n8n ✕ código:** contratos batem. Correções aplicadas:
+  1. **W02 — escalada agora é visível no Chatwoot.** Ramo dedicado `Bot responder → Escalou?
+     → Labels atuais (GET) → Marcar escalado (mescla a label `escalado-humano`; o POST de labels
+     **substitui** o conjunto, daí o GET antes) → Nota interna (privada, com o motivo)`. Antes o
+     caminho mandava `content: undefined`. (W02 atualizado e **ativo**.)
+  2. **`campanha-registrar` (sem_whatsapp)** busca `devedores.carteira_id` antes de criar a linha
+     de retry (evita `carteira_id` nulo). Repo + **deploy (versão 3)**. Não quebrava envio
+     (`fn_selecionar_lote` usa a carteira do devedor), era só consistência.
+  3. **`SAVAN W01 - Setup Chatwoot`** documentado: utilitário de **setup único** (cria labels e
+     custom attributes no Chatwoot), correto ficar fora do runtime (não está no script).
+  4. **`chips-monitor` e `metricas-sync` trazidas ao repo** (versão self-contained = a deployada).
+     Agora `supabase/functions/` tem as **9** funções.

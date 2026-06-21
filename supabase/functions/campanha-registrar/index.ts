@@ -65,13 +65,19 @@ Deno.serve(async (req) => {
   } else if (b.status === "sem_whatsapp") {
     await sb.from("fila_envios").update({ status: "sem_whatsapp", erro: b.erro ?? "on_whatsapp_false" })
       .eq("id", b.fila_id);
+    // carteira do devedor (mantém o escopo na linha de retry; o W01 não a envia aqui)
+    let carteiraId = b.carteira_id ?? null;
+    if (!carteiraId) {
+      const { data: d } = await sb.from("devedores").select("carteira_id").eq("id", b.devedor_id).maybeSingle();
+      carteiraId = d?.carteira_id ?? null;
+    }
     // tenta próximo telefone do devedor
     const { data: prox } = await sb.rpc("fn_proximo_telefone", {
       p_devedor_id: b.devedor_id, p_excluir: b.telefone_id,
     });
     if (prox && prox.length) {
       await sb.from("fila_envios").insert({
-        devedor_id: b.devedor_id, telefone_id: prox[0].id, carteira_id: b.carteira_id ?? null,
+        devedor_id: b.devedor_id, telefone_id: prox[0].id, carteira_id: carteiraId,
         prioridade: b.prioridade ?? 0, status: "aguardando",
       });
     } else {
