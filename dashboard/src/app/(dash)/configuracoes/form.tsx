@@ -2,7 +2,46 @@
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Card, Input, Label, Button, Badge, Switch } from "@/components/ui/primitives";
-import { Save, CheckCircle2, KeyRound, Users, CreditCard, Bot, UserPlus } from "lucide-react";
+import { Save, CheckCircle2, KeyRound, Users, CreditCard, Bot, UserPlus, Eye, EyeOff } from "lucide-react";
+
+type Segredo = { chave: string; descricao?: string; preenchido: boolean; valor: string };
+
+// Campo de chave: vem pré-preenchido com o valor já salvo, mascarado por padrão;
+// o olho revela e o "Salvar" só ativa quando o valor muda.
+function CampoSegredo({ s, onSalvar, pending }: {
+  s: Segredo; onSalvar: (chave: string, valor: string) => void; pending: boolean;
+}) {
+  const [valor, setValor] = useState(s.valor ?? "");
+  const [ver, setVer] = useState(false);
+  // re-sincroniza quando a lista é recarregada após salvar
+  useEffect(() => { setValor(s.valor ?? ""); }, [s.valor]);
+  const mudou = valor !== (s.valor ?? "");
+  return (
+    <div className="rounded-xl border border-line bg-ink-850 p-3">
+      <div className="mb-2 flex items-center justify-between">
+        <div>
+          <div className="font-mono text-xs text-chalk">{s.chave}</div>
+          <div className="text-[11px] text-mist">{s.descricao}</div>
+        </div>
+        <Badge tone={s.preenchido ? "green" : "neutral"}>{s.preenchido ? "Configurado" : "Vazio"}</Badge>
+      </div>
+      <div className="flex gap-2">
+        <div className="relative flex-1">
+          <Input type={ver ? "text" : "password"} placeholder="Cole o valor…" value={valor}
+                 onChange={(e) => setValor(e.target.value)} className="pr-10 font-mono text-xs" />
+          <button type="button" onClick={() => setVer((v) => !v)} tabIndex={-1}
+                  aria-label={ver ? "Ocultar" : "Mostrar"}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-mist hover:text-chalk">
+            {ver ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+          </button>
+        </div>
+        <Button size="sm" onClick={() => onSalvar(s.chave, valor)} disabled={pending || !mudou}>
+          Salvar
+        </Button>
+      </div>
+    </div>
+  );
+}
 
 export function ConfigForm({ ehAdmin, asaas, ia, usuarios }: {
   ehAdmin: boolean; asaas: any; ia: any; usuarios: any[];
@@ -17,8 +56,7 @@ export function ConfigForm({ ehAdmin, asaas, ia, usuarios }: {
   const [nomeBot, setNomeBot] = useState<string>(ia.nome_bot ?? "Ana");
   const [modelo, setModelo] = useState<string>(ia.modelo ?? "gpt-4.1-mini");
 
-  const [segredos, setSegredos] = useState<any[]>([]);
-  const [valoresSecretos, setValoresSecretos] = useState<Record<string, string>>({});
+  const [segredos, setSegredos] = useState<Segredo[]>([]);
 
   // criar usuário
   const [novo, setNovo] = useState({ nome: "", email: "", senha: "", role: "operador" });
@@ -44,13 +82,12 @@ export function ConfigForm({ ehAdmin, asaas, ia, usuarios }: {
     });
   }
 
-  function salvarSegredo(chave: string) {
+  function salvarSegredo(chave: string, valor: string) {
     start(async () => {
       await fetch("/api/segredos", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chave, valor: valoresSecretos[chave] ?? "" }),
+        body: JSON.stringify({ chave, valor }),
       });
-      setValoresSecretos((p) => ({ ...p, [chave]: "" }));
       const d = await (await fetch("/api/segredos")).json();
       setSegredos(d.segredos ?? []);
       flash("Chave atualizada");
@@ -147,25 +184,9 @@ export function ConfigForm({ ehAdmin, asaas, ia, usuarios }: {
           <h3 className="flex items-center gap-2 font-display text-base font-600 text-chalk">
             <KeyRound className="h-4 w-4 text-amber" /> Chaves de integração
           </h3>
-          <p className="text-xs text-mist">Cole as chaves para ativar o bot (OpenAI) e o Asaas em produção. Ficam ocultas após salvar.</p>
+          <p className="text-xs text-mist">As chaves já salvas vêm preenchidas e mascaradas — clique no olho para revelar. Cada conta tem a sua própria configuração.</p>
           {segredos.map((s) => (
-            <div key={s.chave} className="rounded-xl border border-line bg-ink-850 p-3">
-              <div className="mb-2 flex items-center justify-between">
-                <div>
-                  <div className="font-mono text-xs text-chalk">{s.chave}</div>
-                  <div className="text-[11px] text-mist">{s.descricao}</div>
-                </div>
-                <Badge tone={s.preenchido ? "green" : "neutral"}>{s.preenchido ? "Configurado" : "Vazio"}</Badge>
-              </div>
-              <div className="flex gap-2">
-                <Input type="password" placeholder="Cole o novo valor…" value={valoresSecretos[s.chave] ?? ""}
-                       onChange={(e) => setValoresSecretos((p) => ({ ...p, [s.chave]: e.target.value }))}
-                       className="font-mono text-xs" />
-                <Button size="sm" onClick={() => salvarSegredo(s.chave)} disabled={pending || !(valoresSecretos[s.chave])}>
-                  Salvar
-                </Button>
-              </div>
-            </div>
+            <CampoSegredo key={s.chave} s={s} onSalvar={salvarSegredo} pending={pending} />
           ))}
         </Card>
       )}

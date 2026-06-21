@@ -10,14 +10,18 @@ async function exigirAdmin() {
   return { user };
 }
 
-// GET: lista quais segredos estão preenchidos (sem expor o valor).
+// GET: lista os segredos com o valor já salvo (rota admin-only; o painel exibe
+// mascarado e só revela ao clicar no olho). Cada instância/conta lê os seus próprios
+// segredos do seu próprio banco — não há mistura entre contas.
 export async function GET() {
   const guard = await exigirAdmin();
   if ("erro" in guard) return NextResponse.json({ erro: guard.erro }, { status: guard.status });
   const admin = supabaseAdmin();
   const { data } = await admin.from("segredos").select("chave, valor, descricao").order("chave");
   const segredos = (data ?? []).map((s) => ({
-    chave: s.chave, descricao: s.descricao, preenchido: !!s.valor && s.valor.length > 0,
+    chave: s.chave, descricao: s.descricao,
+    preenchido: !!s.valor && s.valor.length > 0,
+    valor: s.valor ?? "",
   }));
   return NextResponse.json({ segredos });
 }
