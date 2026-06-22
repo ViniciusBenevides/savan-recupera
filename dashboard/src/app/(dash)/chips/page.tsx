@@ -17,7 +17,13 @@ export default async function ChipsPage() {
   ]);
   const porChip: Record<number, any> = {};
   for (const m of metr ?? []) porChip[m.chip_id] = m;
-  const numTeste = (cfgTeste?.valor as any) ?? { e164: "", ativo: false };
+  // numero_teste: formato novo {numeros:[{e164,label,ativo}]} com compat do antigo {e164,ativo}
+  const ntRaw = (cfgTeste?.valor as any) ?? {};
+  const numerosTeste: { e164: string; label: string; ativo: boolean }[] = Array.isArray(ntRaw.numeros)
+    ? ntRaw.numeros
+    : ntRaw.e164
+      ? [{ e164: ntRaw.e164, label: "Principal", ativo: ntRaw.ativo ?? false }]
+      : [];
 
   return (
     <>
@@ -49,7 +55,7 @@ export default async function ChipsPage() {
             ))}
           </div>
           <div className="mt-4">
-            <TesteCard numeroInicial={numTeste.e164 ?? ""} ativoInicial={numTeste.ativo ?? false} chips={chips ?? []} />
+            <TesteCard numerosIniciais={numerosTeste} chips={chips ?? []} />
           </div>
         </>
       )}

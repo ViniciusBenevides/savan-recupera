@@ -1,8 +1,9 @@
 // SAVAN Recupera — disparar-teste (self-contained; = deployada)
-// Manda a 1ª mensagem do bot para o NÚMERO DE TESTE (configurado na tela de Chips), usando
+// Manda a 1ª mensagem do bot para um NÚMERO DE TESTE (configurado na tela de Chips), usando
 // um chip escolhido, e cria a conversa marcada como simulacao=true. Assim a conversa
 // "avança": você responde no seu WhatsApp e o bot negocia em modo teste (Pix sandbox/fake).
-// Entrada: { chip_id }
+// Entrada: { chip_id, numero_e164? }  — numero_e164 escolhe qual número de teste recebe
+// (precisa estar cadastrado em configuracoes.numero_teste). Sem ele, usa o primeiro ativo.
 import { createClient, SupabaseClient } from "jsr:@supabase/supabase-js@2";
 
 const cors = {
@@ -47,8 +48,21 @@ Deno.serve(async (req) => {
   const cfg = await getConfig(sb);
   const b = await req.json();
 
-  const numeroTeste: string = (cfg.numero_teste?.e164 ?? "").trim();
-  if (!numeroTeste) return json({ ok: false, erro: "numero_teste_ausente", detalhe: "Defina o número de teste na tela de Chips antes de disparar." }, 400);
+  // números de teste: aceita o formato novo {numeros:[{e164,label,ativo}]} e o antigo {e164,ativo}
+  const nt = cfg.numero_teste ?? {};
+  const lista: { e164?: string; label?: string; ativo?: boolean }[] = Array.isArray(nt.numeros)
+    ? nt.numeros
+    : (nt.e164 ? [{ e164: nt.e164, ativo: nt.ativo }] : []);
+  const pedido: string = (b.numero_e164 ?? "").trim();
+  let numeroTeste = "";
+  if (pedido) {
+    const achou = lista.find((n) => (n.e164 ?? "").trim() === pedido);
+    if (!achou) return json({ ok: false, erro: "numero_nao_cadastrado", detalhe: "Esse número de teste não está salvo. Cadastre e salve na tela de Chips." }, 400);
+    numeroTeste = pedido;
+  } else {
+    numeroTeste = ((lista.find((n) => n.ativo) ?? lista[0])?.e164 ?? "").trim();
+  }
+  if (!numeroTeste) return json({ ok: false, erro: "numero_teste_ausente", detalhe: "Defina um número de teste na tela de Chips antes de disparar." }, 400);
 
   const { data: chip } = await sb.from("chips").select("id, nome, chatwoot_inbox_id, status").eq("id", b.chip_id).maybeSingle();
   if (!chip) return json({ ok: false, erro: "chip_nao_encontrado" }, 404);

@@ -16,13 +16,14 @@ export async function POST(req: Request) {
   const guard = await exigirOperador();
   if ("erro" in guard) return NextResponse.json({ erro: guard.erro }, { status: guard.status });
 
-  const { nome, instance_id, token, client_token, maturidade, aquecimento_perfil, limite_dia_override, papel, agente_nome } = await req.json();
+  const { nome, instance_id, token, client_token, maturidade, aquecimento_perfil, limite_dia_override, papel, agente_nome, tipo } = await req.json();
   if (!nome || !instance_id || !token || !client_token) {
     return NextResponse.json({ erro: "campos_obrigatorios" }, { status: 400 });
   }
   const admin = supabaseAdmin();
 
   const novo: Record<string, unknown> = { nome, status: "cadastrado" };
+  if (["fisico", "esim", "voip", "virtual_api"].includes(tipo)) novo.tipo = tipo;
   if (papel === "bot" || papel === "equipe") novo.papel = papel;
   if (typeof agente_nome === "string" && agente_nome.trim()) novo.agente_nome = agente_nome.trim();
   if (maturidade === "aquecido" || maturidade === "novo") novo.maturidade = maturidade;

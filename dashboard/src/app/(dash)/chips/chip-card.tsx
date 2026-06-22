@@ -3,6 +3,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Card, Badge, Button, Input, Label } from "@/components/ui/primitives";
 import { MaturidadeField, type MaturidadeValor } from "@/components/MaturidadeField";
+import { TipoChipField, type TipoChip } from "@/components/TipoChipField";
 import { num } from "@/lib/utils";
 import { Play, Pause, QrCode, Smartphone, AlertTriangle, MoreVertical, Pencil, Trash2, X, Eye, EyeOff, Loader2 } from "lucide-react";
 import Link from "next/link";
@@ -27,6 +28,13 @@ function CampoToken({ label, value, onChange, disabled }: {
     </div>
   );
 }
+
+const TIPO: Record<string, { tone: any; label: string }> = {
+  fisico: { tone: "neutral", label: "Físico" },
+  esim: { tone: "blue", label: "eSIM" },
+  voip: { tone: "amber", label: "VoIP" },
+  virtual_api: { tone: "rose", label: "Virtual API" },
+};
 
 const STATUS: Record<string, { tone: any; label: string }> = {
   cadastrado: { tone: "neutral", label: "Cadastrado" },
@@ -60,6 +68,8 @@ export function ChipCard({ chip, metrica }: { chip: any; metrica?: any }) {
   const [ePapel, setEPapel] = useState<string>("bot");
   const [eAgente, setEAgente] = useState<string>("");
   const [origPapel, setOrigPapel] = useState({ papel: "bot", agente: "" });
+  const [eTipo, setETipo] = useState<TipoChip>("fisico");
+  const [origTipo, setOrigTipo] = useState<TipoChip>("fisico");
   const [carregando, setCarregando] = useState(false);
   const [orig, setOrig] = useState({ instance: "", token: "", clientToken: "" });
 
@@ -91,6 +101,7 @@ export function ChipCard({ chip, metrica }: { chip: any; metrica?: any }) {
         setEMaturidade(mat); setOrigMat(mat);
         setEPapel(d.papel ?? "bot"); setEAgente(d.agente_nome ?? "");
         setOrigPapel({ papel: d.papel ?? "bot", agente: d.agente_nome ?? "" });
+        setETipo((d.tipo ?? "fisico") as TipoChip); setOrigTipo((d.tipo ?? "fisico") as TipoChip);
       })
       .catch(() => setErro("Falha ao carregar os dados do chip."))
       .finally(() => setCarregando(false));
@@ -109,6 +120,7 @@ export function ChipCard({ chip, metrica }: { chip: any; metrica?: any }) {
     }
     if (ePapel !== origPapel.papel) body.papel = ePapel;
     if (eAgente.trim() !== origPapel.agente) body.agente_nome = eAgente.trim();
+    if (eTipo !== origTipo) body.tipo = eTipo;
     if (Object.keys(body).length === 0) { setEditando(false); return; }
     start(async () => {
       const r = await fetch(`/api/chips/${chip.id}`, {
@@ -157,6 +169,7 @@ export function ChipCard({ chip, metrica }: { chip: any; metrica?: any }) {
             </div>
             <CampoToken label="Token da instância (Z-API)" value={eToken} onChange={setEToken} />
             <CampoToken label="Token de Segurança (Z-API)" value={eClientToken} onChange={setEClientToken} />
+            <TipoChipField value={eTipo} onChange={setETipo} />
             <div>
               <Label>Papel do chip</Label>
               <select value={ePapel} onChange={(e) => setEPapel(e.target.value)}
@@ -193,9 +206,12 @@ export function ChipCard({ chip, metrica }: { chip: any; metrica?: any }) {
             <Smartphone className="h-5 w-5" />
           </span>
           <div>
-            <div className="flex items-center gap-1.5">
+            <div className="flex flex-wrap items-center gap-1.5">
               <span className="font-medium text-chalk">{chip.nome}</span>
-              {(chip.papel ?? "bot") === "equipe" && <Badge tone="violet">Equipe</Badge>}
+              {(chip.papel ?? "bot") === "equipe"
+                ? <Badge tone="violet">Cobrador{chip.agente_nome ? ` · ${chip.agente_nome}` : ""}</Badge>
+                : <Badge tone="blue">Bot</Badge>}
+              {(() => { const t = TIPO[chip.tipo ?? "fisico"] ?? TIPO.fisico; return <Badge tone={t.tone}>{t.label}</Badge>; })()}
             </div>
             <div className="font-mono text-xs text-mist tabnums">{chip.numero_e164 ?? "sem número"}</div>
           </div>

@@ -12,7 +12,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ erro: "sem_permissao" }, { status: 403 });
   }
 
-  const { chip_id } = await req.json();
+  const { chip_id, numero_e164 } = await req.json();
   if (!chip_id) return NextResponse.json({ erro: "chip_obrigatorio" }, { status: 400 });
 
   const r = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/disparar-teste`, {
@@ -21,7 +21,7 @@ export async function POST(req: Request) {
       "Authorization": `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ chip_id }),
+    body: JSON.stringify({ chip_id, numero_e164 }),
   });
   const d = await r.json().catch(() => ({}));
   if (!d?.ok) {

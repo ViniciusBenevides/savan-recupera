@@ -1,10 +1,11 @@
 # Contexto do Projeto — SAVAN Recupera
 
 > Documento para retomar o contexto em novas sessões com Claude.
-> Última atualização: **Distribuição de carteira entre chips + maturidade do chip (aquecido/novo)
-> + failover de chip com confirmação + ledger de Escalações (transparência) — ver §16.**
-> (Anteriores: Central de Ajuda §15, conexão de chips ponta a ponta Z-API ↔ Chatwoot §9.12, tema
-> claro/escuro §8, white-label `NEXT_PUBLIC_APP_NAME`, GitHub público + deploy Vercel §13.)
+> Última atualização: **Segmentação de tipo de chip (físico/eSIM/VoIP/virtual só-API, informativo
+> com alertas) + múltiplos números de teste com escolha do alvo no disparo — ver §18.**
+> (Anteriores: modo teste de verdade + papel de chip §17, distribuição/maturidade/failover §16,
+> Central de Ajuda §15, conexão de chips ponta a ponta Z-API ↔ Chatwoot §9.12, tema claro/escuro §8,
+> white-label `NEXT_PUBLIC_APP_NAME`, GitHub público + deploy Vercel §13.)
 
 ---
 
@@ -575,3 +576,39 @@ re-aplicado.
 **Pendências menores (documentadas, não bloqueiam):** os arquivos de referência de `bot-turno`/
 `campanha-registrar` em `supabase/functions/` seguem em estilo "reference"; **as deployadas (self-contained)
 são a fonte da verdade** e carregam a lógica de teste/escalação — `gerar-pix` e `disparar-teste` já estão no repo.
+
+---
+
+## 18. Tipo de chip (segmentação) + múltiplos números de teste
+
+Pedidos do dono: **segmentar o tipo de número de cada chip** e poder **cadastrar mais de um número de
+teste** (escolhendo qual recebe o disparo na hora). Decisões: tipo de chip é **informativo + alertas**
+(não muda o disparo); disparo de teste **escolhe o número alvo na hora**.
+
+**Migration `018_tipo_chip_multi_teste.sql`:**
+- `chips.tipo` (`fisico|esim|voip|virtual_api`, default `fisico`) — campo informativo.
+- `configuracoes.numero_teste` migrado de `{e164, ativo}` para **`{numeros: [{e164, label, ativo}]}`**
+  (idempotente: só converte se ainda não tiver a chave `numeros`; o app lê os dois formatos).
+
+**Tipo de chip — segmentação (informativa, com alerta de risco/conexão):**
+- **`fisico`** SIM tradicional · **`esim`** chip de operadora digital — ambos conectam normal pelo QR,
+  menor risco de bloqueio.
+- **`voip`** número VoIP — alerta amber: risco maior de bloqueio; preferir maturidade `novo`/aquecimento.
+- **`virtual_api`** número virtual que **não recebe ligação/SMS** — alerta rose: **não conecta por QR**
+  (Z-API usa protocolo do WhatsApp Web); só funciona na **API oficial do WhatsApp (Meta Cloud API)**,
+  que **não é o conector atual**. Gatear conexão por tipo (usar Cloud API) ficou fora do escopo.
+
+**Edge Function `disparar-teste` (atualizada, self-contained):** aceita `{ chip_id, numero_e164? }`;
+suporta os dois formatos do config; valida que o `numero_e164` pedido está cadastrado
+(`numero_nao_cadastrado`); sem ele, usa o primeiro ativo. **Redeploy pendente** (ver MCP).
+
+**Front (Next.js — vai pra produção no próximo `git push`):**
+- `components/TipoChipField.tsx` (novo, padrão visual do `MaturidadeField`) — 4 cards + alerta contextual;
+  usado no cadastro (`chips/novo/flow.tsx`) e edição (`chips/chip-card.tsx`); selo de tipo no card.
+- `chips/teste-card.tsx` reescrito: lista de números de teste (apelido + ativo + remover + adicionar),
+  "Salvar" persiste a lista em `numero_teste`; no disparo escolhe **número alvo** (entre os salvos ativos)
+  **+ chip**. `api/chips/teste` repassa `numero_e164`; `chips/page.tsx` normaliza o config para lista.
+- `api/chips` (POST) e `api/chips/[id]` (GET/PATCH) aceitam/retornam `tipo`.
+
+**Verificado:** `npm run build` do front OK (14 páginas). **Pendente de aplicar em produção:** migration 018
+(MCP `apply_migration`) + deploy de `disparar-teste` (MCP `deploy_edge_function`).
