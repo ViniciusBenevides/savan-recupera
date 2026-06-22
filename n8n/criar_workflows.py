@@ -258,7 +258,7 @@ def w02():
         "for (const m of (r.mensagens || [])) {\n"
         "  out.push({ json: { conv, texto: m } });\n"
         "}\n"
-        "// a escalada é tratada no ramo dedicado (label + nota interna), não aqui\n"
+        "// a escalada (aviso ao cobrador + nota/label/atribuição no Chatwoot) é feita pelo bot-turno\n"
         "return out;"
     )})
     loop = node("Loop msgs", "n8n-nodes-base.splitInBatches", 3, [1120, 300],
@@ -270,25 +270,10 @@ def w02():
     espera = node("Aguardar", "n8n-nodes-base.wait", 1.1, [1560, 360],
                   {"amount": 3, "unit": "seconds"}, {"webhookId": "savan-w02-wait"})
 
-    # --- ramo de escalada para humano (torna a transferência visível no Chatwoot) ---
-    cw = env("chatwoot url").rstrip("/")
-    conv_url = lambda rec: (f"={cw}/api/v1/accounts/1/conversations/"
-                            f"{{{{ $('Filtrar').item.json.chatwoot_conversation_id }}}}/{rec}")
-    cond_esc = node("Escalou?", "n8n-nodes-base.if", 2.2, [900, 520], {
-        "conditions": {"options": {"caseSensitive": True, "typeValidation": "loose"},
-                       "combinator": "and", "conditions": [
-            {"leftValue": "={{ !!$('Bot responder').item.json.escalar }}", "rightValue": True,
-             "operator": {"type": "boolean", "operation": "true", "singleValue": True}}]}})
-    # labels no Chatwoot SUBSTITUEM o conjunto → ler as atuais e mesclar 'escalado-humano'
-    get_labels = http_chatwoot_get("Labels atuais", [1120, 520], conv_url("labels"))
-    set_labels = http_chatwoot("Marcar escalado", [1340, 520], conv_url("labels"),
-        '={ "labels": {{ JSON.stringify([...new Set([...($json.payload || []), "escalado-humano"])]) }} }')
-    nota = http_chatwoot("Nota interna", [1560, 520], conv_url("messages"),
-        '={ "content": {{ JSON.stringify("Conversa escalada para atendimento humano pelo robo. Motivo: " '
-        '+ ($(\'Bot responder\').item.json.escalar || "nao especificado")) }}, '
-        '"message_type": "outgoing", "private": true }')
-
-    nodes = [wh, filtro, bot, prep, loop, envia, espera, cond_esc, get_labels, set_labels, nota]
+    # A escalada (aviso ao cobrador via WhatsApp + nota/label/atribuição ao time no Chatwoot)
+    # é feita inteiramente pelo bot-turno (Edge Function), usando o cobrador/número da carteira
+    # (config_override.equipe). Não há mais ramo de escalada aqui — evita nota/label duplicados.
+    nodes = [wh, filtro, bot, prep, loop, envia, espera]
     connections = {}
     def add(src, dst, idx=0):
         connections.setdefault(src, {}).setdefault("main", [])
@@ -298,14 +283,10 @@ def w02():
     add("Webhook Chatwoot", "Filtrar")
     add("Filtrar", "Bot responder")
     add("Bot responder", "Preparar envios")
-    add("Bot responder", "Escalou?")          # 2ª saída: ramo de escalada (paralelo ao envio)
     add("Preparar envios", "Loop msgs")
     add("Loop msgs", "Enviar resposta", 1)
     add("Enviar resposta", "Aguardar")
     add("Aguardar", "Loop msgs")
-    add("Escalou?", "Labels atuais", 0)        # true: tem motivo de escalada
-    add("Labels atuais", "Marcar escalado")
-    add("Marcar escalado", "Nota interna")
     upsert("SAVAN W02 - Bot Negociador", nodes, connections)
 
 

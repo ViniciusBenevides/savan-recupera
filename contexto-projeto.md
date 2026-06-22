@@ -561,11 +561,17 @@ permitir **Asaas por carteira** + **escalar para um cobrador humano** (chip da e
 número de teste → "Enviar teste" → responda no seu WhatsApp. Bot negocia e gera Pix sandbox/fake; nada
 real sai nem move dinheiro; tudo marcado "Teste".
 
-**Verificado:** `npm run build` do front OK (14 páginas, rota `api/chips/teste` incluída); migration e os
-4 deploys retornaram sucesso.
+**Escalação "os dois" (concluída):** `bot-turno` v6 faz tudo na escalação — (a) o bot avisa o devedor e
+passa o WhatsApp do cobrador; (b) **avisa o cobrador no WhatsApp** (Z-API send-text pelo chip do bot, com
+o resumo); (c) no Chatwoot: **nota interna com o resumo + label `escalado-humano` + atribuição ao time**
+(`cfg.chatwoot.team_escalacao`, padrão "Cobranca SAVAN"). Tudo guardado por `!simulacao` (teste não dispara
+avisos reais). O ramo de escalada do **n8n W02 foi removido** (centralizado no bot-turno; evita nota/label
+duplicados) — `python n8n/criar_workflows.py` re-rodado, os 5 workflows atualizados.
 
-**Pendências menores (documentadas, não bloqueiam):** (1) **atribuição automática no Chatwoot** ao chip
-da equipe na escalação ainda não está no n8n W02 (o `bot-turno` já devolve `equipe` no retorno e passa o
-número ao devedor; o resumo fica no ledger/Escalações). (2) Os arquivos de referência de `bot-turno`/
+**Verificado:** `npm run build` do front OK (14 páginas, rota `api/chips/teste` incluída); migration e os
+5 deploys (gerar-pix v4, bot-turno v6, campanha-registrar v4, disparar-teste v1) retornaram sucesso; n8n
+re-aplicado.
+
+**Pendências menores (documentadas, não bloqueiam):** os arquivos de referência de `bot-turno`/
 `campanha-registrar` em `supabase/functions/` seguem em estilo "reference"; **as deployadas (self-contained)
-são a fonte da verdade** e carregam a lógica de teste — `gerar-pix` e `disparar-teste` já estão no repo.
+são a fonte da verdade** e carregam a lógica de teste/escalação — `gerar-pix` e `disparar-teste` já estão no repo.
