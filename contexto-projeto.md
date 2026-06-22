@@ -579,11 +579,12 @@ são a fonte da verdade** e carregam a lógica de teste/escalação — `gerar-p
 
 ---
 
-## 18. Tipo de chip (segmentação) + múltiplos números de teste
+## 18. Tipo de chip (segmentação) + múltiplos números de teste + selo Bot/Cobrador
 
-Pedidos do dono: **segmentar o tipo de número de cada chip** e poder **cadastrar mais de um número de
-teste** (escolhendo qual recebe o disparo na hora). Decisões: tipo de chip é **informativo + alertas**
-(não muda o disparo); disparo de teste **escolhe o número alvo na hora**.
+Pedidos do dono: **segmentar o tipo de número de cada chip**, poder **cadastrar mais de um número de
+teste** (escolhendo qual recebe o disparo na hora) e **mostrar no card do chip se ele é do bot ou do
+cobrador**. Decisões: tipo de chip é **informativo + alertas** (não muda o disparo); disparo de teste
+**escolhe o número alvo na hora**.
 
 **Migration `018_tipo_chip_multi_teste.sql`:**
 - `chips.tipo` (`fisico|esim|voip|virtual_api`, default `fisico`) — campo informativo.
@@ -600,15 +601,20 @@ teste** (escolhendo qual recebe o disparo na hora). Decisões: tipo de chip é *
 
 **Edge Function `disparar-teste` (atualizada, self-contained):** aceita `{ chip_id, numero_e164? }`;
 suporta os dois formatos do config; valida que o `numero_e164` pedido está cadastrado
-(`numero_nao_cadastrado`); sem ele, usa o primeiro ativo. **Redeploy pendente** (ver MCP).
+(`numero_nao_cadastrado`); sem ele, usa o primeiro ativo. **Deployada (v2)** via MCP.
 
-**Front (Next.js — vai pra produção no próximo `git push`):**
+**Front (Next.js — commitado e pushado p/ `main`, deploy automático Vercel):**
 - `components/TipoChipField.tsx` (novo, padrão visual do `MaturidadeField`) — 4 cards + alerta contextual;
   usado no cadastro (`chips/novo/flow.tsx`) e edição (`chips/chip-card.tsx`); selo de tipo no card.
+- **Selo de papel no card do chip** (`chips/chip-card.tsx`): chip de bot → selo azul "Bot"; chip de
+  cobrador → selo violeta "Cobrador · {agente_nome}". Antes só o "equipe" tinha selo e o bot ficava sem
+  nada. (O número do cobrador que recebe a escalação continua sendo definido **por carteira**, na aba
+  "Asaas & cobrador" → `config_override.equipe` — ver §17.)
 - `chips/teste-card.tsx` reescrito: lista de números de teste (apelido + ativo + remover + adicionar),
   "Salvar" persiste a lista em `numero_teste`; no disparo escolhe **número alvo** (entre os salvos ativos)
   **+ chip**. `api/chips/teste` repassa `numero_e164`; `chips/page.tsx` normaliza o config para lista.
 - `api/chips` (POST) e `api/chips/[id]` (GET/PATCH) aceitam/retornam `tipo`.
 
-**Verificado:** `npm run build` do front OK (14 páginas). **Pendente de aplicar em produção:** migration 018
-(MCP `apply_migration`) + deploy de `disparar-teste` (MCP `deploy_edge_function`).
+**Aplicado em produção (projeto `wmggqsmqvklxlqwsksjs`):** migration 018 (MCP `apply_migration`, sucesso;
+`chips.tipo` default `fisico`, `numero_teste` = `{"numeros":[]}`) + deploy de `disparar-teste` (v2). Build
+do front OK (14 páginas).
