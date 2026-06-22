@@ -517,3 +517,55 @@ failover vem do histórico em `mensagens` (por devedor) que o `bot-turno` agora 
 mover a conversa do Chatwoot. **Distribuição geográfica depende de `devedores.uf`/`cidade` na
 planilha; quem não tem região cai no pool livre.** **n8n inalterado** (a designação é interna ao
 `fn_selecionar_lote`, que o W01 já chama por chip).
+
+---
+
+## 17. Modo teste de verdade + segurança do split + Asaas por carteira + papel de chip
+
+Pedidos do dono (perguntas sobre dinheiro/teste): tornar o split à prova de erro, deixar o
+**bot e o Asaas entenderem que a campanha está em teste**, separar real×teste no painel, e
+permitir **Asaas por carteira** + **escalar para um cobrador humano** (chip da equipe).
+
+**Migration `017_modo_teste_papel_chip.sql` (aplicada via MCP no projeto `wmggqsmqvklxlqwsksjs`):**
+- Flag `simulacao boolean` em `fila_envios`/`conversas`/`mensagens`/`negociacoes`/`pagamentos` (+ índices).
+- `chips.papel` (`bot|equipe`) + `chips.agente_nome` (cobrador dono do chip de equipe).
+- `escalacoes`: `equipe_chip_id`, `atendente_numero`, `resumo` (transparência/roteamento).
+- Config `numero_teste` (`{e164, ativo}`) — **definido na tela de Chips**.
+- `fn_pagamento_confirmado` reescrita: **pagamento `simulacao=true` NÃO entra em `metricas_diarias`**
+  (números reais nunca contam teste); evento de pagamento carrega `simulacao` no payload.
+
+**Edge Functions (deployadas, self-contained):**
+- `gerar-pix` (v4): **trava de segurança** — em produção SEM `wallet` do credor, recusa (`wallet_credor_ausente`)
+  em vez de mandar 100% pro operador. **Modo teste**: nunca toca produção; com chave sandbox cria Pix
+  sandbox, sem chave gera **copia-e-cola fake** ("PIX DE TESTE — NÃO PAGUE"); grava `negociacoes`/`pagamentos`
+  com `simulacao`. Lê wallet/comissão por carteira (`config_override.asaas.wallet`/`comissao_pct`) → global.
+- `bot-turno` (v5): herda `conversas.simulacao` → não suja métricas, passa `simulacao` ao `gerar-pix`,
+  carimba mensagens. **Escalação**: lê o cobrador da carteira (`config_override.equipe = {nome, numero, chip_id}`),
+  grava `resumo`/`atendente_numero`/`equipe_chip_id` em `escalacoes` e instrui o bot a se despedir
+  passando o WhatsApp do cobrador (fallback: avisa transferência sem número).
+- `campanha-registrar` (v4): carimba `simulacao` em fila/conversa; teste **não consome aquecimento do chip
+  nem entra em `enviados`/`falhas`**.
+- `disparar-teste` (v1, **nova**): manda a 1ª mensagem ao número de teste por um chip escolhido e cria a
+  conversa `simulacao=true` (carteira/devedor/telefone de teste find-or-create). É o que faz a conversa
+  "avançar" (você responde no seu zap) sem incomodar devedores reais. Reusa `contato-criar`.
+
+**Front (Next.js — vai pra produção no próximo `git push`):**
+- **Chips**: card "Número de teste" (salva `numero_teste`) + botão "Enviar teste" (rota `api/chips/teste`
+  → `disparar-teste`); seletor de **papel** (bot/equipe) + nome do cobrador na edição do chip + selo "Equipe".
+- **Carteira**: nova aba **"Asaas & cobrador"** (`painel.tsx` `AbaAsaas`) — wallet+comissão por carteira
+  (com aviso se vazio) e o cobrador humano (chip de equipe + nome + número). Patch em `config_override`.
+- **Pagamentos**: totais reais excluem teste; badge **"Teste"** nas linhas `simulacao`.
+- **Escalações**: mostra o **resumo p/ o atendente** e o **número do cobrador**.
+
+**Como testar com segurança:** modo simulação ligado (Campanha) + Asaas em sandbox → Chips: defina seu
+número de teste → "Enviar teste" → responda no seu WhatsApp. Bot negocia e gera Pix sandbox/fake; nada
+real sai nem move dinheiro; tudo marcado "Teste".
+
+**Verificado:** `npm run build` do front OK (14 páginas, rota `api/chips/teste` incluída); migration e os
+4 deploys retornaram sucesso.
+
+**Pendências menores (documentadas, não bloqueiam):** (1) **atribuição automática no Chatwoot** ao chip
+da equipe na escalação ainda não está no n8n W02 (o `bot-turno` já devolve `equipe` no retorno e passa o
+número ao devedor; o resumo fica no ledger/Escalações). (2) Os arquivos de referência de `bot-turno`/
+`campanha-registrar` em `supabase/functions/` seguem em estilo "reference"; **as deployadas (self-contained)
+são a fonte da verdade** e carregam a lógica de teste — `gerar-pix` e `disparar-teste` já estão no repo.

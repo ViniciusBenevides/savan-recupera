@@ -30,6 +30,19 @@ Deno.serve(async (req) => {
   }
   const asaasCfg = { ...(cfg.asaas ?? {}), ...cartAsaas };
   const ambiente = asaasCfg.ambiente === "producao" ? "producao" : "sandbox";
+
+  // Trava de segurança (dinheiro): em produção, SEM o walletId do credor o split 90/10
+  // não acontece e 100% ficaria na conta emissora (operador). Recusa em vez de mandar
+  // o dinheiro pro lugar errado. Em sandbox é liberado (não move dinheiro real).
+  const walletCredor = asaasCfg.wallet_savan || "";
+  if (ambiente === "producao" && !walletCredor) {
+    return json({
+      ok: false,
+      erro: "wallet_credor_ausente",
+      detalhe: "Configure o Wallet ID do credor (Configurações → Asaas, ou na carteira) antes de gerar Pix em produção. Sem ele, o split 90/10 não acontece e tudo cairia na conta do operador.",
+    }, 400);
+  }
+
   const apiKey = ambiente === "producao"
     ? Deno.env.get("ASAAS_API_KEY_PROD") ?? ""
     : Deno.env.get("ASAAS_API_KEY_SANDBOX") ?? "";
@@ -74,7 +87,7 @@ Deno.serve(async (req) => {
     dueDate,
     externalReference: String(neg?.id ?? dev.id),
     description: `Quitacao - processo ${dev.processo}`,
-    walletSavan: asaasCfg.wallet_savan || undefined,
+    walletSavan: walletCredor || undefined,
     comissaoPct,
   });
   const qr = await asaas.pixQrCode(pay.id);

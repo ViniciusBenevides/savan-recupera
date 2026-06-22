@@ -57,6 +57,9 @@ export function ChipCard({ chip, metrica }: { chip: any; metrica?: any }) {
   const [eClientToken, setEClientToken] = useState("");
   const [eMaturidade, setEMaturidade] = useState<MaturidadeValor>({ maturidade: "novo", limite_dia_override: null });
   const [origMat, setOrigMat] = useState<MaturidadeValor>({ maturidade: "novo", limite_dia_override: null });
+  const [ePapel, setEPapel] = useState<string>("bot");
+  const [eAgente, setEAgente] = useState<string>("");
+  const [origPapel, setOrigPapel] = useState({ papel: "bot", agente: "" });
   const [carregando, setCarregando] = useState(false);
   const [orig, setOrig] = useState({ instance: "", token: "", clientToken: "" });
 
@@ -86,6 +89,8 @@ export function ChipCard({ chip, metrica }: { chip: any; metrica?: any }) {
         setOrig({ instance: d.instance_id ?? "", token: d.token ?? "", clientToken: d.client_token ?? "" });
         const mat: MaturidadeValor = { maturidade: d.maturidade ?? "novo", limite_dia_override: d.limite_dia_override ?? null };
         setEMaturidade(mat); setOrigMat(mat);
+        setEPapel(d.papel ?? "bot"); setEAgente(d.agente_nome ?? "");
+        setOrigPapel({ papel: d.papel ?? "bot", agente: d.agente_nome ?? "" });
       })
       .catch(() => setErro("Falha ao carregar os dados do chip."))
       .finally(() => setCarregando(false));
@@ -102,6 +107,8 @@ export function ChipCard({ chip, metrica }: { chip: any; metrica?: any }) {
     if (eMaturidade.limite_dia_override !== origMat.limite_dia_override) {
       body.limite_dia_override = eMaturidade.limite_dia_override;
     }
+    if (ePapel !== origPapel.papel) body.papel = ePapel;
+    if (eAgente.trim() !== origPapel.agente) body.agente_nome = eAgente.trim();
     if (Object.keys(body).length === 0) { setEditando(false); return; }
     start(async () => {
       const r = await fetch(`/api/chips/${chip.id}`, {
@@ -150,6 +157,20 @@ export function ChipCard({ chip, metrica }: { chip: any; metrica?: any }) {
             </div>
             <CampoToken label="Token da instância (Z-API)" value={eToken} onChange={setEToken} />
             <CampoToken label="Token de Segurança (Z-API)" value={eClientToken} onChange={setEClientToken} />
+            <div>
+              <Label>Papel do chip</Label>
+              <select value={ePapel} onChange={(e) => setEPapel(e.target.value)}
+                      className="h-10 w-full rounded-xl border border-line bg-ink-850 px-3 text-sm text-chalk outline-none">
+                <option value="bot">Bot (dispara e negocia automaticamente)</option>
+                <option value="equipe">Equipe (cobrador humano — recebe escalações)</option>
+              </select>
+            </div>
+            {ePapel === "equipe" && (
+              <div>
+                <Label>Nome do cobrador (dono deste chip)</Label>
+                <Input value={eAgente} onChange={(e) => setEAgente(e.target.value)} placeholder="Ex.: Carlos" />
+              </div>
+            )}
             <MaturidadeField value={eMaturidade} onChange={setEMaturidade} />
           </>
         )}
@@ -172,7 +193,10 @@ export function ChipCard({ chip, metrica }: { chip: any; metrica?: any }) {
             <Smartphone className="h-5 w-5" />
           </span>
           <div>
-            <div className="font-medium text-chalk">{chip.nome}</div>
+            <div className="flex items-center gap-1.5">
+              <span className="font-medium text-chalk">{chip.nome}</span>
+              {(chip.papel ?? "bot") === "equipe" && <Badge tone="violet">Equipe</Badge>}
+            </div>
             <div className="font-mono text-xs text-mist tabnums">{chip.numero_e164 ?? "sem número"}</div>
           </div>
         </div>

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { supabaseServer } from "@/lib/supabase-server";
 import { Card, SectionTitle, Button } from "@/components/ui/primitives";
 import { ChipCard } from "./chip-card";
+import { TesteCard } from "./teste-card";
 import { Plus, Smartphone } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -9,12 +10,14 @@ export const dynamic = "force-dynamic";
 export default async function ChipsPage() {
   const sb = await supabaseServer();
   const hoje = new Date().toISOString().slice(0, 10);
-  const [{ data: chips }, { data: metr }] = await Promise.all([
+  const [{ data: chips }, { data: metr }, { data: cfgTeste }] = await Promise.all([
     sb.from("chips").select("*").order("id"),
     sb.from("chip_metricas_diarias").select("chip_id, novos_contatos, msgs_enviadas").eq("dia", hoje),
+    sb.from("configuracoes").select("valor").eq("chave", "numero_teste").maybeSingle(),
   ]);
   const porChip: Record<number, any> = {};
   for (const m of metr ?? []) porChip[m.chip_id] = m;
+  const numTeste = (cfgTeste?.valor as any) ?? { e164: "", ativo: false };
 
   return (
     <>
@@ -39,11 +42,16 @@ export default async function ChipsPage() {
           <Link href="/chips/novo"><Button><Plus className="h-4 w-4" /> Adicionar primeiro chip</Button></Link>
         </Card>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {(chips ?? []).map((c) => (
-            <ChipCard key={c.id} chip={c} metrica={porChip[c.id]} />
-          ))}
-        </div>
+        <>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {(chips ?? []).map((c) => (
+              <ChipCard key={c.id} chip={c} metrica={porChip[c.id]} />
+            ))}
+          </div>
+          <div className="mt-4">
+            <TesteCard numeroInicial={numTeste.e164 ?? ""} ativoInicial={numTeste.ativo ?? false} chips={chips ?? []} />
+          </div>
+        </>
       )}
     </>
   );

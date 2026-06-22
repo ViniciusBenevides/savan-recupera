@@ -10,14 +10,16 @@ export default async function PagamentosPage() {
   const sb = await supabaseServer();
   const { data: pagamentos } = await sb
     .from("pagamentos")
-    .select("id, valor, comissao_operador, status, criado_em, pago_em, devedores(nome, processo)")
+    .select("id, valor, comissao_operador, status, simulacao, criado_em, pago_em, devedores(nome, processo)")
     .order("criado_em", { ascending: false })
     .limit(100);
 
-  const pagos = (pagamentos ?? []).filter((p) => ["recebido", "confirmado"].includes(p.status));
+  // totais REAIS não contam teste (simulacao)
+  const reais = (pagamentos ?? []).filter((p) => !p.simulacao);
+  const pagos = reais.filter((p) => ["recebido", "confirmado"].includes(p.status));
   const totalRecebido = pagos.reduce((s, p) => s + Number(p.valor), 0);
   const totalComissao = pagos.reduce((s, p) => s + Number(p.comissao_operador ?? 0), 0);
-  const pendentes = (pagamentos ?? []).filter((p) => p.status === "pendente").length;
+  const pendentes = reais.filter((p) => p.status === "pendente").length;
 
   return (
     <>
@@ -45,7 +47,10 @@ export default async function PagamentosPage() {
               {(pagamentos ?? []).map((p: any) => (
                 <tr key={p.id} className="border-b border-line/50 hover:bg-ink-850">
                   <td className="px-5 py-3">
-                    <div className="font-medium text-chalk">{p.devedores?.nome ?? "—"}</div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-medium text-chalk">{p.devedores?.nome ?? "—"}</span>
+                      {p.simulacao && <Badge tone="amber">Teste</Badge>}
+                    </div>
                     <div className="font-mono text-[11px] text-mist">{p.devedores?.processo}</div>
                   </td>
                   <td className="px-5 py-3 font-mono text-chalk tabnums">{brl(p.valor)}</td>

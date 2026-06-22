@@ -6,15 +6,18 @@ import {
   Card, Button, Input, Label, Textarea, Switch, Badge, HelpHint, Tooltip,
 } from "@/components/ui/primitives";
 import { brl, num, dataHoraBR } from "@/lib/utils";
+import { supabaseBrowser } from "@/lib/supabase-browser";
 import { DistribuicaoCard } from "./distribuicao";
 import {
   Play, Pause, Archive, Trash2, Save, CheckCircle2, Loader2, Upload, Users, FileSpreadsheet, AlertTriangle,
+  CreditCard, Headset,
 } from "lucide-react";
 
 const TABS = [
   { k: "status", t: "Status & envios" },
   { k: "prompt", t: "Prompt do robô" },
   { k: "descontos", t: "Descontos" },
+  { k: "asaas", t: "Asaas & cobrador" },
   { k: "historico", t: "Importações" },
 ] as const;
 type Tab = typeof TABS[number]["k"];
@@ -34,6 +37,7 @@ export function CarteiraPainel({ carteira, importacoes, padrao, tabInicial }: { 
       {tab === "status" && <AbaStatus carteira={carteira} />}
       {tab === "prompt" && <AbaPrompt carteira={carteira} padrao={padrao} />}
       {tab === "descontos" && <AbaDescontos carteira={carteira} padrao={padrao} />}
+      {tab === "asaas" && <AbaAsaas carteira={carteira} padrao={padrao} />}
       {tab === "historico" && <AbaHistorico carteira={carteira} importacoes={importacoes} />}
     </>
   );
@@ -309,6 +313,115 @@ function AbaDescontos({ carteira, padrao }: { carteira: any; padrao: Record<stri
         {erro && <span className="text-xs text-rose">{erro}</span>}
       </div>
     </Card>
+  );
+}
+
+/* ---------- Asaas & cobrador ---------- */
+function AbaAsaas({ carteira, padrao }: { carteira: any; padrao: Record<string, any> }) {
+  const { patch, salvando, ok, erro } = useSalvar(carteira.id);
+  const over = carteira.config_override ?? {};
+  const a0 = over.asaas ?? {};
+  const e0 = over.equipe ?? {};
+  const asaasGlobal = padrao.asaas ?? {};
+
+  const [usarGlobal, setUsarGlobal] = React.useState(!over.asaas);
+  const [wallet, setWallet] = React.useState(a0.wallet ?? a0.wallet_savan ?? "");
+  const [comissao, setComissao] = React.useState<number | string>(a0.comissao_pct ?? "");
+
+  const [cobNome, setCobNome] = React.useState(e0.nome ?? "");
+  const [cobNum, setCobNum] = React.useState(e0.numero ?? "");
+  const [cobChip, setCobChip] = React.useState<number | "">(e0.chip_id ?? "");
+  const [chipsEquipe, setChipsEquipe] = React.useState<any[]>([]);
+
+  React.useEffect(() => {
+    supabaseBrowser().from("chips").select("id, nome, agente_nome").eq("papel", "equipe").order("id")
+      .then(({ data }) => setChipsEquipe(data ?? []));
+  }, []);
+
+  async function salvar() {
+    const novoOver: Record<string, any> = { ...over };
+    if (usarGlobal) { delete novoOver.asaas; }
+    else { novoOver.asaas = { wallet: String(wallet).trim(), comissao_pct: Number(comissao || 10) }; }
+    if (String(cobNum).trim() || String(cobNome).trim() || cobChip) {
+      novoOver.equipe = { nome: String(cobNome).trim(), numero: String(cobNum).trim(), chip_id: cobChip || null };
+    } else { delete novoOver.equipe; }
+    await patch({ config_override: Object.keys(novoOver).length ? novoOver : null });
+  }
+
+  return (
+    <div className="grid gap-4 lg:grid-cols-2">
+      <Card className="space-y-4">
+        <h3 className="flex items-center gap-2 font-display text-base font-600 text-chalk">
+          <CreditCard className="h-4 w-4 text-emerald" /> Split do Pix desta carteira
+        </h3>
+        <div className="flex items-center justify-between rounded-xl border border-line bg-ink-850 px-3.5 py-2.5">
+          <span className="flex items-center gap-1.5 text-sm text-chalk">
+            Usar o Asaas global <HelpHint text="Ligado: usa o Wallet ID e a comissão de Configurações. Desligado: este credor recebe em um Wallet ID próprio (cada carteira é de um credor diferente)." />
+          </span>
+          <Switch checked={usarGlobal} onChange={setUsarGlobal} />
+        </div>
+        {!usarGlobal && (
+          <>
+            <div>
+              <Label className="flex items-center gap-1.5">Wallet ID do credor (recebe 90%) <HelpHint text="O walletId da conta Asaas do credor desta carteira. É para lá que vão os 90%." /></Label>
+              <Input value={wallet} onChange={(e) => setWallet(e.target.value)} placeholder="walletId do Asaas do credor" className="font-mono text-xs" />
+            </div>
+            <div>
+              <Label className="flex items-center gap-1.5">Sua comissão (%) <HelpHint text="Quanto fica para o operador. O resto (100 − comissão) vai para o credor." /></Label>
+              <Input type="number" value={comissao} onChange={(e) => setComissao(e.target.value)} placeholder="10" />
+            </div>
+            {!String(wallet).trim() && (
+              <p className="flex items-center gap-1.5 rounded-lg border border-amber/30 bg-amber/10 px-3 py-2 text-xs text-amber">
+                <AlertTriangle className="h-3.5 w-3.5 shrink-0" /> Sem o Wallet ID, em produção o Pix é recusado (o split 90/10 não acontece).
+              </p>
+            )}
+          </>
+        )}
+        {usarGlobal && (
+          <p className="text-xs text-mist">
+            Usando o global: credor recebe no Wallet <b className="text-chalk">{asaasGlobal.wallet_savan || asaasGlobal.wallet || "—"}</b>, comissão <b className="text-chalk">{asaasGlobal.comissao_pct ?? 10}%</b>.
+          </p>
+        )}
+      </Card>
+
+      <Card className="space-y-4">
+        <h3 className="flex items-center gap-2 font-display text-base font-600 text-chalk">
+          <Headset className="h-4 w-4 text-violet" /> Cobrador humano (escalação)
+        </h3>
+        <p className="text-xs text-mist">
+          Quando o bot escala um caso desta carteira, ele avisa o devedor e passa este contato; a escalação fica registrada para o cobrador assumir.
+        </p>
+        <div>
+          <Label>Chip da equipe (opcional)</Label>
+          <select value={cobChip} onChange={(e) => {
+            const v = e.target.value ? Number(e.target.value) : "";
+            setCobChip(v);
+            const c = chipsEquipe.find((x) => x.id === v);
+            if (c?.agente_nome && !cobNome) setCobNome(c.agente_nome);
+          }} className="h-10 w-full rounded-xl border border-line bg-ink-850 px-3 text-sm text-chalk outline-none">
+            <option value="">— Nenhum (atende no mesmo número) —</option>
+            {chipsEquipe.map((c) => <option key={c.id} value={c.id}>{c.nome}{c.agente_nome ? ` (${c.agente_nome})` : ""}</option>)}
+          </select>
+          {chipsEquipe.length === 0 && <p className="mt-1 text-[11px] text-mist">Nenhum chip marcado como "equipe" ainda — cadastre o chip do cobrador em Chips e marque o papel como Equipe.</p>}
+        </div>
+        <div>
+          <Label>Nome do cobrador</Label>
+          <Input value={cobNome} onChange={(e) => setCobNome(e.target.value)} placeholder="Ex.: Carlos" />
+        </div>
+        <div>
+          <Label>WhatsApp do cobrador (o bot passa este número)</Label>
+          <Input value={cobNum} onChange={(e) => setCobNum(e.target.value)} placeholder="+5511999998888" className="font-mono text-xs" />
+        </div>
+      </Card>
+
+      <div className="lg:col-span-2 flex items-center gap-3">
+        <Button onClick={salvar} disabled={salvando}>
+          {salvando ? <Loader2 className="h-4 w-4 animate-spin" /> : ok ? <CheckCircle2 className="h-4 w-4" /> : <Save className="h-4 w-4" />}
+          {ok ? "Salvo!" : "Salvar"}
+        </Button>
+        {erro && <span className="text-xs text-rose">{erro}</span>}
+      </div>
+    </div>
   );
 }
 

@@ -20,7 +20,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
   const admin = supabaseAdmin();
   const [{ data: chip }, { data: cred }] = await Promise.all([
-    admin.from("chips").select("nome, maturidade, aquecimento_perfil, limite_dia_override").eq("id", Number(id)).maybeSingle(),
+    admin.from("chips").select("nome, maturidade, aquecimento_perfil, limite_dia_override, papel, agente_nome").eq("id", Number(id)).maybeSingle(),
     admin.from("chips_credenciais").select("zapi_instance_id, zapi_token, zapi_client_token").eq("chip_id", Number(id)).maybeSingle(),
   ]);
   if (!chip) return NextResponse.json({ erro: "chip_nao_encontrado" }, { status: 404 });
@@ -30,6 +30,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     maturidade: chip.maturidade ?? "novo",
     aquecimento_perfil: chip.aquecimento_perfil ?? null,
     limite_dia_override: chip.limite_dia_override ?? null,
+    papel: chip.papel ?? "bot",
+    agente_nome: chip.agente_nome ?? "",
     instance_id: cred?.zapi_instance_id ?? "",
     token: cred?.zapi_token ?? "",
     client_token: cred?.zapi_client_token ?? "",
@@ -42,11 +44,13 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const guard = await exigirOperador();
   if ("erro" in guard) return NextResponse.json({ erro: guard.erro }, { status: guard.status });
 
-  const { nome, instance_id, token, client_token, maturidade, aquecimento_perfil, limite_dia_override } = await req.json();
+  const { nome, instance_id, token, client_token, maturidade, aquecimento_perfil, limite_dia_override, papel, agente_nome } = await req.json();
   const admin = supabaseAdmin();
 
   const chipPatch: Record<string, unknown> = {};
   if (typeof nome === "string" && nome.trim()) chipPatch.nome = nome.trim();
+  if (papel === "bot" || papel === "equipe") chipPatch.papel = papel;
+  if (agente_nome !== undefined) chipPatch.agente_nome = (typeof agente_nome === "string" && agente_nome.trim()) ? agente_nome.trim() : null;
   if (maturidade === "aquecido" || maturidade === "novo") chipPatch.maturidade = maturidade;
   if (aquecimento_perfil !== undefined) chipPatch.aquecimento_perfil = aquecimento_perfil || null;
   if (limite_dia_override !== undefined) {

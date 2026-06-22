@@ -108,6 +108,7 @@ function ItemEscalacao({ e }: { e: any }) {
               <span className="inline-flex items-center gap-1"><Smartphone className="h-3 w-3" /> {e.chips?.nome ?? "chip removido"}</span>
               <span className="inline-flex items-center gap-1"><Clock className="h-3 w-3" /> {dataHoraBR(e.criado_em)}</span>
               {e.assumido_por && <span className="inline-flex items-center gap-1"><User className="h-3 w-3" /> {e.assumido_por}</span>}
+              {e.atendente_numero && <span className="inline-flex items-center gap-1 text-violet"><Smartphone className="h-3 w-3" /> cobrador: {e.atendente_numero}</span>}
             </div>
           </div>
         </div>
@@ -115,6 +116,13 @@ function ItemEscalacao({ e }: { e: any }) {
           {aberto ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
         </button>
       </div>
+
+      {/* resumo para o atendente se situar rápido */}
+      {e.resumo && (
+        <div className="rounded-lg border border-violet/25 bg-violet/5 px-3 py-2 text-xs text-mist">
+          <span className="font-medium text-violet">Resumo p/ o atendente:</span> {e.resumo}
+        </div>
+      )}
 
       {/* desfecho registrado */}
       {(e.pagamentos || e.valor_combinado || e.observacao) && (
