@@ -12,7 +12,7 @@ const DESCRICAO_CAMPOS = `Campos de DESTINO (use só estes; omita os que não ex
 - nome: nome do devedor (obrigatório).
 - saldo: valor da dívida em reais (obrigatório).
 - telefone: telefone/celular principal (obrigatório).
-- telefone2: telefone/celular adicional (opcional).
+- telefone2, telefone3, telefone4, telefone5, telefone6: telefones adicionais (opcional).
 - vencimento: data da dívida / vencimento (opcional).
 - cidade, uf: localização (opcional).
 - referencia: nº de contrato/processo/código (opcional).

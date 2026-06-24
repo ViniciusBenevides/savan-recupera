@@ -16,10 +16,10 @@ type Receita = {
 };
 
 const ROTULO_CAMPO: Record<string, string> = {
-  cpf: "CPF/CNPJ", nome: "Nome", saldo: "Saldo (R$)", telefone: "Telefone", telefone2: "Telefone 2",
+  cpf: "CPF/CNPJ", nome: "Nome", saldo: "Saldo (R$)", telefone: "Telefone", telefone2: "Telefone 2", telefone3: "Telefone 3", telefone4: "Telefone 4", telefone5: "Telefone 5", telefone6: "Telefone 6",
   vencimento: "Vencimento", cidade: "Cidade", uf: "UF", referencia: "Referência", email: "E-mail",
 };
-const CAMPOS = ["cpf", "nome", "saldo", "telefone", "telefone2", "vencimento", "cidade", "uf", "referencia", "email"] as const;
+const CAMPOS = ["cpf", "nome", "saldo", "telefone", "telefone2", "telefone3", "telefone4", "telefone5", "telefone6", "vencimento", "cidade", "uf", "referencia", "email"] as const;
 const OBRIGATORIOS = new Set(["cpf", "nome", "saldo", "telefone"]);
 const TRANSFORMS: { v: string; t: string }[] = [
   { v: "nenhum", t: "direto" },

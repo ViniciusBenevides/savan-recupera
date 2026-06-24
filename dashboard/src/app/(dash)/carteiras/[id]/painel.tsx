@@ -67,7 +67,11 @@ function useSalvar(carteiraId: number) {
 function AbaStatus({ carteira, podeEditar = true }: { carteira: any; podeEditar?: boolean }) {
   const router = useRouter();
   const { patch, salvando, erro } = useSalvar(carteira.id);
+  const infoCtrl = useSalvar(carteira.id);
   const status = carteira.status as string;
+
+  const [nome, setNome] = React.useState(carteira.nome ?? "");
+  const [credor, setCredor] = React.useState(carteira.credor ?? "");
 
   async function apagar() {
     if (!confirm(`Apagar a carteira "${carteira.nome}" e TODOS os seus devedores? Esta ação não pode ser desfeita.`)) return;
@@ -111,6 +115,31 @@ function AbaStatus({ carteira, podeEditar = true }: { carteira: any; podeEditar?
           </p>
         )}
       </Card>
+
+      {podeEditar && (
+        <Card className="space-y-4">
+          <h3 className="font-display text-base font-600 text-chalk">Informações da carteira</h3>
+          <div>
+            <Label className="flex items-center gap-1.5">
+              Nome da carteira <HelpHint text="Como você quer chamar esta lista. Ex.: 'Inadimplentes Maio 2026'. Não pode repetir o nome de outra carteira." />
+            </Label>
+            <Input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Ex.: Inadimplentes Maio 2026" />
+          </div>
+          <div>
+            <Label className="flex items-center gap-1.5">
+              Credor (opcional) <HelpHint text="Nome da empresa/credor que o robô menciona ao devedor. Se vazio, usa o texto padrão das configurações." />
+            </Label>
+            <Input value={credor} onChange={(e) => setCredor(e.target.value)} placeholder="Ex.: Loja do João" />
+          </div>
+          <div className="flex items-center gap-3">
+            <Button onClick={() => infoCtrl.patch({ nome, credor })} disabled={infoCtrl.salvando || !nome.trim()}>
+              {infoCtrl.salvando ? <Loader2 className="h-4 w-4 animate-spin" /> : infoCtrl.ok ? <CheckCircle2 className="h-4 w-4" /> : <Save className="h-4 w-4" />}
+              {infoCtrl.ok ? "Salvo!" : "Salvar informações"}
+            </Button>
+            {infoCtrl.erro && <span className="text-xs text-rose">{infoCtrl.erro}</span>}
+          </div>
+        </Card>
+      )}
 
       <div className="grid grid-cols-2 gap-3">
         <Card>

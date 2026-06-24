@@ -41,7 +41,7 @@ export type LinhaBruta = {
 
 // ----- Receita gerada pela IA (schema fechado; ver mapear-ia.ts) -----
 export type CampoReceita =
-  | "cpf" | "nome" | "saldo" | "telefone" | "telefone2"
+  | "cpf" | "nome" | "saldo" | "telefone" | "telefone2" | "telefone3" | "telefone4" | "telefone5" | "telefone6"
   | "vencimento" | "cidade" | "uf" | "referencia" | "email";
 export type TransformReceita =
   | "nenhum" | "centavos" | "extrair_documento" | "extrair_telefones" | "juntar" | "so_digitos";
@@ -54,7 +54,7 @@ export type Receita = {
 };
 
 export const CAMPOS_RECEITA: CampoReceita[] = [
-  "cpf", "nome", "saldo", "telefone", "telefone2", "vencimento", "cidade", "uf", "referencia", "email",
+  "cpf", "nome", "saldo", "telefone", "telefone2", "telefone3", "telefone4", "telefone5", "telefone6", "vencimento", "cidade", "uf", "referencia", "email",
 ];
 export const TRANSFORMS_RECEITA: TransformReceita[] = [
   "nenhum", "centavos", "extrair_documento", "extrair_telefones", "juntar", "so_digitos",
@@ -110,7 +110,7 @@ function extrairPadrao(grade: unknown[][]): { linhas?: LinhaBruta[]; erro?: { li
       cidade: get("cidade"), uf: get("uf"), referencia: get("referencia"), email: get("email"),
     };
     const telefonesBrutos: string[] = [];
-    for (const campo of ["telefone", "telefone2"] as const) {
+    for (const campo of ["telefone", "telefone2", "telefone3", "telefone4", "telefone5", "telefone6"] as const) {
       const val = get(campo);
       if (val) for (const b of String(val).split(/[,;/]+/)) if (b.trim()) telefonesBrutos.push(b.trim());
     }
@@ -180,7 +180,7 @@ function extrairReceita(grade: unknown[][], receita: Receita): LinhaBruta[] {
       if (!regra) continue;
       const cols = (regra.colunas ?? []).filter((c) => Number.isInteger(c) && c >= 0);
       if (cols.length === 0) continue;
-      if (campo === "telefone" || campo === "telefone2") {
+      if (campo.startsWith("telefone")) {
         if (regra.transform === "extrair_telefones") {
           for (const c of cols) telefonesBrutos.push(...extrairTelefones(celulaStr(row, c)));
         } else {
