@@ -7,12 +7,14 @@ import {
 } from "@/components/ui/primitives";
 import { brl, num } from "@/lib/utils";
 import { Download, Upload, CheckCircle2, AlertTriangle, Loader2, FileSpreadsheet, ArrowRight } from "lucide-react";
+import { ImportadorIA, ModoSeletor } from "../importador-ia";
 
 type Etapa = "dados" | "upload" | "resultado";
 
 export function NovaCarteiraFlow() {
   const router = useRouter();
   const [etapa, setEtapa] = React.useState<Etapa>("dados");
+  const [modo, setModo] = React.useState<"modelo" | "ia">("modelo");
   const [carteira, setCarteira] = React.useState<{ id: number; nome: string } | null>(null);
   const [nome, setNome] = React.useState("");
   const [credor, setCredor] = React.useState("");
@@ -21,6 +23,10 @@ export function NovaCarteiraFlow() {
   const [carregando, setCarregando] = React.useState(false);
   const [erro, setErro] = React.useState<string | null>(null);
   const [relatorio, setRelatorio] = React.useState<any>(null);
+
+  function importadoPelaIA(rel: any) {
+    setRelatorio(rel); setEtapa("resultado"); router.refresh();
+  }
 
   async function criarCarteira() {
     setErro(null);
@@ -95,39 +101,47 @@ export function NovaCarteiraFlow() {
 
       {etapa === "upload" && carteira && (
         <Card className="space-y-5">
-          <div className="rounded-xl border border-line bg-ink-850 p-4">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-sm font-medium text-chalk">1. Baixe o modelo e preencha</p>
-                <p className="mt-1 text-xs text-mist">Use exatamente as colunas do modelo. Obrigatórias: CPF/CNPJ, Nome, Saldo e Telefone.</p>
+          <ModoSeletor modo={modo} setModo={setModo} />
+
+          {modo === "modelo" ? (
+            <>
+              <div className="rounded-xl border border-line bg-ink-850 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium text-chalk">1. Baixe o modelo e preencha</p>
+                    <p className="mt-1 text-xs text-mist">Use exatamente as colunas do modelo. Obrigatórias: CPF/CNPJ, Nome, Saldo e Telefone.</p>
+                  </div>
+                  <Tooltip text="Baixa uma planilha .xlsx em branco, com as colunas certas e uma aba de instruções.">
+                    <a href="/api/carteiras/modelo">
+                      <Button variant="outline"><Download className="h-4 w-4" /> Baixar modelo</Button>
+                    </a>
+                  </Tooltip>
+                </div>
               </div>
-              <Tooltip text="Baixa uma planilha .xlsx em branco, com as colunas certas e uma aba de instruções.">
-                <a href="/api/carteiras/modelo">
-                  <Button variant="outline"><Download className="h-4 w-4" /> Baixar modelo</Button>
-                </a>
-              </Tooltip>
-            </div>
-          </div>
 
-          <div className="rounded-xl border border-line bg-ink-850 p-4">
-            <p className="text-sm font-medium text-chalk">2. Envie a planilha preenchida</p>
-            <p className="mt-1 text-xs text-mist">Aceita .xlsx. O sistema valida os telefones e ignora linhas inválidas, mostrando um relatório.</p>
-            <label className="mt-3 flex cursor-pointer items-center gap-3 rounded-xl border border-dashed border-line bg-ink-900 px-4 py-3 hover:border-emerald/50">
-              <FileSpreadsheet className="h-5 w-5 text-emerald" />
-              <span className="flex-1 truncate text-sm text-chalk">{arquivo ? arquivo.name : "Clique para escolher o arquivo .xlsx"}</span>
-              <input type="file" accept=".xlsx,.xls" className="hidden" onChange={(e) => setArquivo(e.target.files?.[0] ?? null)} />
-            </label>
-          </div>
+              <div className="rounded-xl border border-line bg-ink-850 p-4">
+                <p className="text-sm font-medium text-chalk">2. Envie a planilha preenchida</p>
+                <p className="mt-1 text-xs text-mist">Aceita .xlsx. O sistema valida os telefones e ignora linhas inválidas, mostrando um relatório.</p>
+                <label className="mt-3 flex cursor-pointer items-center gap-3 rounded-xl border border-dashed border-line bg-ink-900 px-4 py-3 hover:border-emerald/50">
+                  <FileSpreadsheet className="h-5 w-5 text-emerald" />
+                  <span className="flex-1 truncate text-sm text-chalk">{arquivo ? arquivo.name : "Clique para escolher o arquivo .xlsx"}</span>
+                  <input type="file" accept=".xlsx,.xls" className="hidden" onChange={(e) => setArquivo(e.target.files?.[0] ?? null)} />
+                </label>
+              </div>
 
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-mist">Carteira: <b className="text-chalk">{carteira.nome}</b></span>
-            <Tooltip text="Lê a planilha, importa os devedores e mostra o relatório. Pode levar alguns segundos.">
-              <Button onClick={enviarPlanilha} disabled={carregando || !arquivo}>
-                {carregando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-                Enviar planilha
-              </Button>
-            </Tooltip>
-          </div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-mist">Carteira: <b className="text-chalk">{carteira.nome}</b></span>
+                <Tooltip text="Lê a planilha, importa os devedores e mostra o relatório. Pode levar alguns segundos.">
+                  <Button onClick={enviarPlanilha} disabled={carregando || !arquivo}>
+                    {carregando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                    Enviar planilha
+                  </Button>
+                </Tooltip>
+              </div>
+            </>
+          ) : (
+            <ImportadorIA carteiraId={carteira.id} onImportado={importadoPelaIA} />
+          )}
         </Card>
       )}
 

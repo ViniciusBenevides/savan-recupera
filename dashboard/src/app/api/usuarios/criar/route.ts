@@ -1,15 +1,19 @@
 import { NextResponse } from "next/server";
-import { supabaseServer, supabaseAdmin } from "@/lib/supabase-server";
+import { supabaseAdmin } from "@/lib/supabase-server";
+import { exigirCobrador } from "@/lib/auth";
 
-// Cria um novo usuário do painel (apenas admin). E-mail já confirmado, com papel definido.
+// Quem pode criar quais papéis. NINGUÉM cria admin (admin único = dono da plataforma).
+const CRIAVEIS_ADMIN = ["cobrador", "credor", "visualizador"];
+const CRIAVEIS_COBRADOR = ["credor", "visualizador"];
+
+// Cria um novo usuário do painel. Admin cria cobrador/credor/visualizador; cobrador cria
+// o próprio credor/visualizador (já anexados ao tenant dele). E-mail já confirmado.
 export async function POST(req: Request) {
-  const sb = await supabaseServer();
-  const { data: { user } } = await sb.auth.getUser();
-  if (!user) return NextResponse.json({ erro: "nao_autenticado" }, { status: 401 });
-  const { data: perfil } = await sb.from("usuarios_app").select("role").eq("id", user.id).maybeSingle();
-  if (perfil?.role !== "admin") return NextResponse.json({ erro: "Apenas administradores podem criar usuários." }, { status: 403 });
+  const g = await exigirCobrador();
+  if (g.erro) return g.erro;
+  const { sessao } = g;
 
-  const { nome, email, senha, role } = await req.json();
+  const { nome, email, senha, role, cobrador_id, carteira_ids } = await req.json();
   const emailLimpo = (email ?? "").trim().toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailLimpo)) {
     return NextResponse.json({ erro: "E-mail inválido." }, { status: 400 });
@@ -17,7 +21,19 @@ export async function POST(req: Request) {
   if (!senha || senha.length < 8) {
     return NextResponse.json({ erro: "A senha precisa ter pelo menos 8 caracteres." }, { status: 400 });
   }
-  const papel = ["admin", "operador", "visualizador"].includes(role) ? role : "visualizador";
+  if (role === "admin") {
+    return NextResponse.json({ erro: "Não é possível criar outro administrador." }, { status: 400 });
+  }
+  const permitidos = sessao.role === "admin" ? CRIAVEIS_ADMIN : CRIAVEIS_COBRADOR;
+  const papel = permitidos.includes(role) ? role : "visualizador";
+
+  // tenant (cobrador dono): cobrador => sempre ele; admin => o cobrador alvo (p/ credor/visualizador)
+  let tenant: string | null = null;
+  if (sessao.role === "cobrador") {
+    tenant = sessao.user.id;
+  } else if (papel === "credor" || papel === "visualizador") {
+    tenant = typeof cobrador_id === "string" && cobrador_id ? cobrador_id : null;
+  }
 
   const admin = supabaseAdmin();
   const { data: novo, error } = await admin.auth.admin.createUser({
@@ -34,14 +50,23 @@ export async function POST(req: Request) {
     );
   }
 
-  // o trigger cria a linha em usuarios_app como visualizador; ajusta o papel e o nome
   if (novo?.user?.id) {
+    // o trigger cria como visualizador; ajusta papel, nome, tenant e atribuição
     await admin.from("usuarios_app").upsert({
       id: novo.user.id,
       email: emailLimpo,
       nome: nome?.trim() || emailLimpo.split("@")[0],
       role: papel,
+      cobrador_id: tenant,
+      criado_por: sessao.user.id,
     }, { onConflict: "id" });
+
+    // credor: liga às carteiras escolhidas (só as que o ator pode editar)
+    if (papel === "credor" && Array.isArray(carteira_ids) && carteira_ids.length) {
+      let q = admin.from("carteiras").update({ credor_id: novo.user.id }).in("id", carteira_ids.map(Number));
+      if (sessao.role === "cobrador") q = q.eq("cobrador_id", sessao.user.id);
+      await q;
+    }
   }
 
   return NextResponse.json({ ok: true });

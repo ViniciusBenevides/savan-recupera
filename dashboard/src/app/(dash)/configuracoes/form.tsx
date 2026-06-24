@@ -5,6 +5,13 @@ import { Card, Input, Label, Button, Badge, Switch } from "@/components/ui/primi
 import { Save, CheckCircle2, KeyRound, Users, CreditCard, Bot, UserPlus, Eye, EyeOff } from "lucide-react";
 
 type Segredo = { chave: string; descricao?: string; preenchido: boolean; valor: string };
+type Usuario = { id: string; nome: string; email: string; role: string; cobrador_id: string | null };
+type Carteira = { id: number; nome: string };
+type Cobrador = { id: string; nome: string; email: string };
+
+const ROLE_LABEL: Record<string, string> = {
+  admin: "Admin", cobrador: "Cobrador", credor: "Credor", visualizador: "Visualizador",
+};
 
 // Campo de chave: vem pré-preenchido com o valor já salvo, mascarado por padrão;
 // o olho revela e o "Salvar" só ativa quando o valor muda.
@@ -13,7 +20,6 @@ function CampoSegredo({ s, onSalvar, pending }: {
 }) {
   const [valor, setValor] = useState(s.valor ?? "");
   const [ver, setVer] = useState(false);
-  // re-sincroniza quando a lista é recarregada após salvar
   useEffect(() => { setValor(s.valor ?? ""); }, [s.valor]);
   const mudou = valor !== (s.valor ?? "");
   return (
@@ -43,29 +49,29 @@ function CampoSegredo({ s, onSalvar, pending }: {
   );
 }
 
-export function ConfigForm({ ehAdmin, asaas, ia, usuarios }: {
-  ehAdmin: boolean; asaas: any; ia: any; usuarios: any[];
+export function ConfigForm({ role, asaas, usuarios, carteiras, cobradores, meuId }: {
+  role: string; asaas: any; usuarios: Usuario[]; carteiras: Carteira[]; cobradores: Cobrador[]; meuId: string;
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [okMsg, setOkMsg] = useState("");
+  const ehAdmin = role === "admin";
 
   const [amb, setAmb] = useState<string>(asaas.ambiente ?? "sandbox");
   const [wallet, setWallet] = useState<string>(asaas.wallet_savan ?? "");
   const [comissao, setComissao] = useState<number>(asaas.comissao_pct ?? 10);
-  const [nomeBot, setNomeBot] = useState<string>(ia.nome_bot ?? "Ana");
-  const [modelo, setModelo] = useState<string>(ia.modelo ?? "gpt-4.1-mini");
 
   const [segredos, setSegredos] = useState<Segredo[]>([]);
 
-  // criar usuário
-  const [novo, setNovo] = useState({ nome: "", email: "", senha: "", role: "operador" });
+  // papéis que o ator pode atribuir (ninguém cria admin)
+  const opcoesPapel = ehAdmin ? ["cobrador", "credor", "visualizador"] : ["credor", "visualizador"];
+  const [novo, setNovo] = useState({ nome: "", email: "", senha: "", role: opcoesPapel[0], cobrador_id: "" });
+  const [carteirasLigadas, setCarteirasLigadas] = useState<number[]>([]);
   const [erroNovo, setErroNovo] = useState("");
 
   useEffect(() => {
-    if (!ehAdmin) return;
     fetch("/api/segredos").then((r) => r.json()).then((d) => setSegredos(d.segredos ?? []));
-  }, [ehAdmin]);
+  }, []);
 
   function flash(m: string) { setOkMsg(m); setTimeout(() => setOkMsg(""), 2500); }
 
@@ -75,7 +81,6 @@ export function ConfigForm({ ehAdmin, asaas, ia, usuarios }: {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ itens: [
           { chave: "asaas", valor: { ambiente: amb, wallet_savan: wallet, comissao_pct: comissao } },
-          { chave: "ia", valor: { ...ia, nome_bot: nomeBot, modelo } },
         ] }),
       });
       flash("Configurações salvas"); router.refresh();
@@ -94,11 +99,11 @@ export function ConfigForm({ ehAdmin, asaas, ia, usuarios }: {
     });
   }
 
-  function mudarRole(id: string, role: string) {
+  function mudarRole(id: string, novoRole: string) {
     start(async () => {
       const r = await fetch("/api/usuarios", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id, role }),
+        body: JSON.stringify({ id, role: novoRole }),
       });
       if (!r.ok) { const d = await r.json().catch(() => ({})); alert(d.erro ?? "Não foi possível alterar."); }
       router.refresh();
@@ -110,14 +115,19 @@ export function ConfigForm({ ehAdmin, asaas, ia, usuarios }: {
     start(async () => {
       const r = await fetch("/api/usuarios/criar", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(novo),
+        body: JSON.stringify({ ...novo, carteira_ids: novo.role === "credor" ? carteirasLigadas : [] }),
       });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) { setErroNovo(d.erro ?? "Não foi possível criar o usuário."); return; }
-      setNovo({ nome: "", email: "", senha: "", role: "operador" });
+      setNovo({ nome: "", email: "", senha: "", role: opcoesPapel[0], cobrador_id: "" });
+      setCarteirasLigadas([]);
       flash("Usuário criado");
       router.refresh();
     });
+  }
+
+  function toggleCarteira(id: number) {
+    setCarteirasLigadas((cur) => cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]);
   }
 
   return (
@@ -128,116 +138,142 @@ export function ConfigForm({ ehAdmin, asaas, ia, usuarios }: {
         </div>
       )}
 
-      {/* Asaas */}
-      <Card className="flex flex-col gap-5">
-        <h3 className="flex items-center gap-2 font-display text-base font-600 text-chalk">
-          <CreditCard className="h-4 w-4 text-emerald" /> Asaas (Pix e split)
-        </h3>
-        <div className="flex items-center justify-between rounded-xl border border-line bg-ink-850 px-4 py-3">
-          <div>
-            <div className="font-medium text-chalk">Ambiente de produção</div>
-            <div className="text-xs text-mist">Desligado = sandbox (testes). Ligue só no go-live.</div>
-          </div>
-          <div className="flex items-center gap-3">
-            <Badge tone={amb === "producao" ? "green" : "amber"}>{amb === "producao" ? "Produção" : "Sandbox"}</Badge>
-            <Switch checked={amb === "producao"} onChange={(v) => setAmb(v ? "producao" : "sandbox")} />
-          </div>
-        </div>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div>
-            <Label>Wallet ID do credor (recebe 90%)</Label>
-            <Input value={wallet} onChange={(e) => setWallet(e.target.value)} placeholder="walletId do Asaas do credor" className="font-mono text-xs" />
-          </div>
-          <div>
-            <Label>Sua comissão (%)</Label>
-            <Input type="number" value={comissao} onChange={(e) => setComissao(Number(e.target.value))} />
-          </div>
-        </div>
-        <Button size="sm" className="self-start" onClick={salvarAsaas} disabled={pending}>
-          <Save className="h-4 w-4" /> Salvar
-        </Button>
-      </Card>
-
-      {/* Bot */}
-      <Card className="flex flex-col gap-5">
-        <h3 className="flex items-center gap-2 font-display text-base font-600 text-chalk">
-          <Bot className="h-4 w-4 text-violet" /> Bot negociador
-        </h3>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div>
-            <Label>Nome do bot</Label>
-            <Input value={nomeBot} onChange={(e) => setNomeBot(e.target.value)} />
-          </div>
-          <div>
-            <Label>Modelo de IA</Label>
-            <Input value={modelo} onChange={(e) => setModelo(e.target.value)} className="font-mono text-xs" />
-          </div>
-        </div>
-        <Button size="sm" className="self-start" onClick={salvarAsaas} disabled={pending}>
-          <Save className="h-4 w-4" /> Salvar
-        </Button>
-      </Card>
-
-      {/* Segredos (admin) */}
+      {/* Asaas + Bot: defaults globais da plataforma — só admin (cobrador ajusta por carteira) */}
       {ehAdmin && (
-        <Card className="flex flex-col gap-4">
+        <Card className="flex flex-col gap-5">
           <h3 className="flex items-center gap-2 font-display text-base font-600 text-chalk">
-            <KeyRound className="h-4 w-4 text-amber" /> Chaves de integração
+            <CreditCard className="h-4 w-4 text-emerald" /> Asaas (Pix e split) — padrão global
           </h3>
-          <p className="text-xs text-mist">As chaves já salvas vêm preenchidas e mascaradas — clique no olho para revelar. Cada conta tem a sua própria configuração.</p>
-          {segredos.map((s) => (
-            <CampoSegredo key={s.chave} s={s} onSalvar={salvarSegredo} pending={pending} />
-          ))}
+          <div className="flex items-center justify-between rounded-xl border border-line bg-ink-850 px-4 py-3">
+            <div>
+              <div className="font-medium text-chalk">Ambiente de produção</div>
+              <div className="text-xs text-mist">Desligado = sandbox (testes). Ligue só no go-live.</div>
+            </div>
+            <div className="flex items-center gap-3">
+              <Badge tone={amb === "producao" ? "green" : "amber"}>{amb === "producao" ? "Produção" : "Sandbox"}</Badge>
+              <Switch checked={amb === "producao"} onChange={(v) => setAmb(v ? "producao" : "sandbox")} />
+            </div>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <Label>Wallet ID do credor (recebe 90%)</Label>
+              <Input value={wallet} onChange={(e) => setWallet(e.target.value)} placeholder="walletId do Asaas do credor" className="font-mono text-xs" />
+            </div>
+            <div>
+              <Label>Comissão (%)</Label>
+              <Input type="number" value={comissao} onChange={(e) => setComissao(Number(e.target.value))} />
+            </div>
+          </div>
+          <p className="text-[11px] text-mist">
+            O nome do bot e o modelo de IA agora são <b>por conta</b> — cada cobrador ajusta os seus em <b>Campanha</b>.
+          </p>
+          <Button size="sm" className="self-start" onClick={salvarAsaas} disabled={pending}>
+            <Save className="h-4 w-4" /> Salvar
+          </Button>
         </Card>
       )}
 
-      {/* Usuários (admin) */}
-      {ehAdmin && (
-        <Card className="flex flex-col gap-4">
-          <h3 className="flex items-center gap-2 font-display text-base font-600 text-chalk">
-            <Users className="h-4 w-4 text-emerald" /> Usuários
-          </h3>
+      {/* Segredos: admin = chaves globais/infra; cobrador = as chaves dele */}
+      <Card className="flex flex-col gap-4">
+        <h3 className="flex items-center gap-2 font-display text-base font-600 text-chalk">
+          <KeyRound className="h-4 w-4 text-amber" /> {ehAdmin ? "Chaves de integração (globais)" : "Suas chaves de integração"}
+        </h3>
+        <p className="text-xs text-mist">
+          {ehAdmin
+            ? "Chaves de infra da plataforma. Cada cobrador pode ter as suas; quando vazias, caem nestas."
+            : "Suas chaves (OpenAI, Asaas, Z-API). Se deixar vazio, o sistema usa as chaves globais da plataforma."}
+          {" "}As já salvas vêm mascaradas — clique no olho para revelar.
+        </p>
+        {segredos.map((s) => (
+          <CampoSegredo key={s.chave} s={s} onSalvar={salvarSegredo} pending={pending} />
+        ))}
+      </Card>
 
-          {/* criar novo */}
-          <div className="rounded-xl border border-emerald/25 bg-emerald/5 p-4">
-            <div className="mb-3 flex items-center gap-2 text-sm font-medium text-chalk">
-              <UserPlus className="h-4 w-4 text-emerald" /> Criar novo usuário
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Input placeholder="Nome" value={novo.nome} onChange={(e) => setNovo({ ...novo, nome: e.target.value })} />
-              <Input type="email" placeholder="E-mail" value={novo.email} onChange={(e) => setNovo({ ...novo, email: e.target.value })} />
-              <Input type="text" placeholder="Senha (mín. 8)" value={novo.senha} onChange={(e) => setNovo({ ...novo, senha: e.target.value })} />
-              <select value={novo.role} onChange={(e) => setNovo({ ...novo, role: e.target.value })}
-                      className="h-10 rounded-xl border border-line bg-ink-850 px-3 text-sm text-chalk outline-none">
-                <option value="admin">Admin</option>
-                <option value="operador">Operador</option>
-                <option value="visualizador">Visualizador</option>
-              </select>
-            </div>
-            {erroNovo && <p className="mt-3 rounded-lg border border-rose/30 bg-rose/10 px-3 py-2 text-xs text-rose">{erroNovo}</p>}
-            <Button size="sm" className="mt-3" onClick={criarUsuario}
-                    disabled={pending || !novo.email || !novo.senha}>
-              <UserPlus className="h-4 w-4" /> Criar usuário
-            </Button>
+      {/* Usuários: admin gere todos; cobrador gere o próprio tenant (credores/visualizadores) */}
+      <Card className="flex flex-col gap-4">
+        <h3 className="flex items-center gap-2 font-display text-base font-600 text-chalk">
+          <Users className="h-4 w-4 text-emerald" /> {ehAdmin ? "Usuários" : "Sua equipe (credores e visualizadores)"}
+        </h3>
+
+        <div className="rounded-xl border border-emerald/25 bg-emerald/5 p-4">
+          <div className="mb-3 flex items-center gap-2 text-sm font-medium text-chalk">
+            <UserPlus className="h-4 w-4 text-emerald" /> Criar novo usuário
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Input placeholder="Nome" value={novo.nome} onChange={(e) => setNovo({ ...novo, nome: e.target.value })} />
+            <Input type="email" placeholder="E-mail" value={novo.email} onChange={(e) => setNovo({ ...novo, email: e.target.value })} />
+            <Input type="text" placeholder="Senha (mín. 8)" value={novo.senha} onChange={(e) => setNovo({ ...novo, senha: e.target.value })} />
+            <select value={novo.role} onChange={(e) => setNovo({ ...novo, role: e.target.value })}
+                    className="h-10 rounded-xl border border-line bg-ink-850 px-3 text-sm text-chalk outline-none">
+              {opcoesPapel.map((p) => <option key={p} value={p}>{ROLE_LABEL[p]}</option>)}
+            </select>
           </div>
 
-          {usuarios.map((u) => (
+          {/* admin designa o cobrador (tenant) de um credor/visualizador */}
+          {ehAdmin && (novo.role === "credor" || novo.role === "visualizador") && (
+            <div className="mt-3">
+              <Label>Cobrador responsável (tenant)</Label>
+              <select value={novo.cobrador_id} onChange={(e) => setNovo({ ...novo, cobrador_id: e.target.value })}
+                      className="h-10 w-full rounded-xl border border-line bg-ink-850 px-3 text-sm text-chalk outline-none">
+                <option value="">— selecione —</option>
+                {cobradores.map((c) => <option key={c.id} value={c.id}>{c.nome} ({c.email})</option>)}
+              </select>
+              <p className="mt-1 text-[11px] text-mist">O visualizador vê o que este cobrador vê (só leitura).</p>
+            </div>
+          )}
+
+          {/* credor: liga às carteiras que ele será dono */}
+          {novo.role === "credor" && (
+            <div className="mt-3">
+              <Label>Carteiras deste credor</Label>
+              {carteiras.length === 0
+                ? <p className="text-[11px] text-mist">Nenhuma carteira disponível para ligar.</p>
+                : (
+                  <div className="flex flex-wrap gap-2">
+                    {carteiras.map((c) => (
+                      <button type="button" key={c.id} onClick={() => toggleCarteira(c.id)}
+                        className={`rounded-lg border px-3 py-1.5 text-xs transition-colors ${
+                          carteirasLigadas.includes(c.id)
+                            ? "border-emerald/50 bg-emerald/15 text-emerald-soft"
+                            : "border-line bg-ink-850 text-mist hover:text-chalk"}`}>
+                        {c.nome}
+                      </button>
+                    ))}
+                  </div>
+                )}
+            </div>
+          )}
+
+          {erroNovo && <p className="mt-3 rounded-lg border border-rose/30 bg-rose/10 px-3 py-2 text-xs text-rose">{erroNovo}</p>}
+          <Button size="sm" className="mt-3" onClick={criarUsuario}
+                  disabled={pending || !novo.email || !novo.senha}>
+            <UserPlus className="h-4 w-4" /> Criar usuário
+          </Button>
+        </div>
+
+        {usuarios.map((u) => {
+          const ehEu = u.id === meuId;
+          const ehAdminAlvo = u.role === "admin";
+          const trava = ehEu || ehAdminAlvo;
+          return (
             <div key={u.id} className="flex items-center justify-between rounded-xl border border-line bg-ink-850 px-4 py-3">
               <div>
-                <div className="font-medium text-chalk">{u.nome}</div>
+                <div className="font-medium text-chalk">{u.nome} {ehEu && <span className="text-[11px] text-mist">(você)</span>}</div>
                 <div className="text-xs text-mist">{u.email}</div>
               </div>
-              <select value={u.role} onChange={(e) => mudarRole(u.id, e.target.value)}
-                      className="rounded-lg border border-line bg-ink-900 px-3 py-1.5 text-sm text-chalk outline-none">
-                <option value="admin">Admin</option>
-                <option value="operador">Operador</option>
-                <option value="visualizador">Visualizador</option>
-              </select>
+              {trava ? (
+                <Badge tone={ehAdminAlvo ? "violet" : "neutral"}>{ROLE_LABEL[u.role] ?? u.role}</Badge>
+              ) : (
+                <select value={u.role} onChange={(e) => mudarRole(u.id, e.target.value)}
+                        className="rounded-lg border border-line bg-ink-900 px-3 py-1.5 text-sm text-chalk outline-none">
+                  {opcoesPapel.map((p) => <option key={p} value={p}>{ROLE_LABEL[p]}</option>)}
+                </select>
+              )}
             </div>
-          ))}
-          <p className="text-xs text-mist">Crie o acesso aqui e passe o e-mail e a senha para a pessoa. Ela pode trocar a senha depois em "Minha conta".</p>
-        </Card>
-      )}
+          );
+        })}
+        <p className="text-xs text-mist">Crie o acesso aqui e passe o e-mail e a senha para a pessoa. Ela pode trocar a senha depois em "Minha conta".</p>
+      </Card>
     </div>
   );
 }

@@ -21,7 +21,7 @@ export default async function DevedorPage({ params }: { params: Promise<{ id: st
       sb.from("negociacoes").select("*").eq("devedor_id", d.id).order("criado_em", { ascending: false }),
       sb.from("pagamentos").select("*").eq("devedor_id", d.id).order("criado_em", { ascending: false }),
       sb.from("eventos_campanha").select("*").eq("devedor_id", d.id).order("criado_em", { ascending: false }).limit(20),
-      sb.from("configuracoes").select("valor").eq("chave", "chatwoot").maybeSingle(),
+      sb.from("configuracoes").select("valor").eq("chave", "chatwoot").is("cobrador_id", null).maybeSingle(),
     ]);
 
   const cwUrl = cfg?.valor?.url ?? "https://chatwoot.example.com";

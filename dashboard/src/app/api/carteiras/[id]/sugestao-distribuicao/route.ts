@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { supabaseServer, supabaseAdmin } from "@/lib/supabase-server";
+import { supabaseAdmin } from "@/lib/supabase-server";
+import { exigirCobrador, podeEditarCarteira, erroDono } from "@/lib/auth";
 import {
   planoIgualitario, planoPorUf, planoPorCidade, recomendarEstrategia,
   type ChipInfo, type Curva, type ContagemUf, type ContagemCidade,
@@ -7,29 +8,25 @@ import {
 
 const USAVEIS = ["cadastrado", "conectado", "aquecendo", "ativo"];
 
-async function exigirOperador() {
-  const sb = await supabaseServer();
-  const { data: { user } } = await sb.auth.getUser();
-  if (!user) return { erro: "nao_autenticado", status: 401 };
-  const { data: perfil } = await sb.from("usuarios_app").select("role").eq("id", user.id).maybeSingle();
-  if (!perfil || !["admin", "operador"].includes(perfil.role)) return { erro: "sem_permissao", status: 403 };
-  return { user };
-}
-
 // GET ?estrategia=uf|cidade|igualitario — devolve o plano da estratégia (ou da recomendada)
 // com volume e ETA por chip, mais a recomendação do sistema e a contagem por UF.
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const guard = await exigirOperador();
-  if ("erro" in guard) return NextResponse.json({ erro: guard.erro }, { status: guard.status });
+  const g = await exigirCobrador();
+  if (g.erro) return g.erro;
+  const carteiraId = Number(id);
+  if (!(await podeEditarCarteira(g.sessao, carteiraId))) return erroDono();
+  const soMeu = g.sessao.role === "cobrador" ? g.sessao.user.id : null;
 
   const admin = supabaseAdmin();
-  const carteiraId = Number(id);
 
-  const [{ data: dados }, { data: chipsRaw }, { data: cfg }] = await Promise.all([
+  let chipsQ = admin.from("chips").select("id, nome, maturidade, aquecimento_perfil, limite_dia_override, status").in("status", USAVEIS).order("id");
+  if (soMeu) chipsQ = chipsQ.eq("cobrador_id", soMeu);
+  const [{ data: dados }, { data: chipsRaw }, { data: carteira }, { data: cfgGlob }] = await Promise.all([
     admin.rpc("fn_distribuicao_dados", { p_carteira_id: carteiraId }),
-    admin.from("chips").select("id, nome, maturidade, aquecimento_perfil, limite_dia_override, status").in("status", USAVEIS).order("id"),
-    admin.from("configuracoes").select("chave, valor").like("chave", "aquecimento%"),
+    chipsQ,
+    admin.from("carteiras").select("cobrador_id").eq("id", carteiraId).maybeSingle(),
+    admin.from("configuracoes").select("chave, valor").like("chave", "aquecimento%").is("cobrador_id", null),
   ]);
 
   const total: number = dados?.total ?? 0;
@@ -39,7 +36,13 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     id: c.id, nome: c.nome, maturidade: c.maturidade ?? "novo",
     aquecimento_perfil: c.aquecimento_perfil ?? null, limite_dia_override: c.limite_dia_override ?? null,
   }));
-  const curvas: Record<string, Curva> = Object.fromEntries((cfg ?? []).map((r) => [r.chave, r.valor as Curva]));
+  // curvas de aquecimento: padrão global + overlay do cobrador dono da carteira (mesmo escopo do fn_limite_chip)
+  const curvas: Record<string, Curva> = Object.fromEntries((cfgGlob ?? []).map((r) => [r.chave, r.valor as Curva]));
+  if (carteira?.cobrador_id) {
+    const { data: cfgCob } = await admin.from("configuracoes").select("chave, valor")
+      .like("chave", "aquecimento%").eq("cobrador_id", carteira.cobrador_id);
+    for (const r of cfgCob ?? []) curvas[r.chave] = r.valor as Curva;
+  }
 
   if (chips.length === 0) {
     return NextResponse.json({ sem_chips: true, total, por_uf: porUf });

@@ -51,7 +51,7 @@ function diaAquecimento(dataAtivacao: string | null): number | null {
   return Math.floor((Date.now() - new Date(dataAtivacao).getTime()) / 86400000) + 1;
 }
 
-export function ChipCard({ chip, metrica }: { chip: any; metrica?: any }) {
+export function ChipCard({ chip, metrica, donoNome }: { chip: any; metrica?: any; donoNome?: string | null }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [menu, setMenu] = useState(false);
@@ -212,6 +212,7 @@ export function ChipCard({ chip, metrica }: { chip: any; metrica?: any }) {
                 ? <Badge tone="violet">Cobrador{chip.agente_nome ? ` · ${chip.agente_nome}` : ""}</Badge>
                 : <Badge tone="blue">Bot</Badge>}
               {(() => { const t = TIPO[chip.tipo ?? "fisico"] ?? TIPO.fisico; return <Badge tone={t.tone}>{t.label}</Badge>; })()}
+              {donoNome && <Badge tone="neutral">Conta: {donoNome}</Badge>}
             </div>
             <div className="font-mono text-xs text-mist tabnums">{chip.numero_e164 ?? "sem número"}</div>
           </div>

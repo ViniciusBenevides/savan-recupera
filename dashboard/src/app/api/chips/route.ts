@@ -1,28 +1,25 @@
 import { NextResponse } from "next/server";
-import { supabaseServer, supabaseAdmin } from "@/lib/supabase-server";
+import { supabaseAdmin } from "@/lib/supabase-server";
+import { exigirCobrador } from "@/lib/auth";
 import { vincularChatwootInbox } from "@/lib/chatwoot";
-
-async function exigirOperador() {
-  const sb = await supabaseServer();
-  const { data: { user } } = await sb.auth.getUser();
-  if (!user) return { erro: "nao_autenticado", status: 401 };
-  const { data: perfil } = await sb.from("usuarios_app").select("role").eq("id", user.id).maybeSingle();
-  if (!perfil || !["admin", "operador"].includes(perfil.role)) return { erro: "sem_permissao", status: 403 };
-  return { user };
-}
 
 // Cria chip + credenciais Z-API + (best-effort) inbox no Chatwoot.
 export async function POST(req: Request) {
-  const guard = await exigirOperador();
-  if ("erro" in guard) return NextResponse.json({ erro: guard.erro }, { status: guard.status });
+  const g = await exigirCobrador();
+  if (g.erro) return g.erro;
+  const { sessao } = g;
 
-  const { nome, instance_id, token, client_token, maturidade, aquecimento_perfil, limite_dia_override, papel, agente_nome, tipo } = await req.json();
+  const { nome, instance_id, token, client_token, maturidade, aquecimento_perfil, limite_dia_override, papel, agente_nome, tipo, cobrador_id } = await req.json();
   if (!nome || !instance_id || !token || !client_token) {
     return NextResponse.json({ erro: "campos_obrigatorios" }, { status: 400 });
   }
   const admin = supabaseAdmin();
 
-  const novo: Record<string, unknown> = { nome, status: "cadastrado" };
+  // dono do chip: cobrador => ele mesmo; admin => o cobrador alvo informado, senão ele mesmo
+  const dono = sessao.role === "cobrador"
+    ? sessao.user.id
+    : (typeof cobrador_id === "string" && cobrador_id ? cobrador_id : sessao.user.id);
+  const novo: Record<string, unknown> = { nome, status: "cadastrado", cobrador_id: dono };
   if (["fisico", "esim", "voip", "virtual_api"].includes(tipo)) novo.tipo = tipo;
   if (papel === "bot" || papel === "equipe") novo.papel = papel;
   if (typeof agente_nome === "string" && agente_nome.trim()) novo.agente_nome = agente_nome.trim();

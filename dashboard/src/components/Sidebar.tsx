@@ -10,25 +10,29 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import { cn } from "@/lib/utils";
 
+// Cada item declara quais papéis o veem. admin tudo; cobrador o operacional dele;
+// credor/visualizador só leitura do andamento (sem chips/campanha/mensagens/config).
+const TODOS = ["admin", "cobrador", "credor", "visualizador"];
 const nav = [
-  { href: "/", label: "Visão geral", icon: LayoutDashboard },
-  { href: "/carteiras", label: "Carteiras", icon: FolderUp },
-  { href: "/campanha", label: "Campanha", icon: Radio },
-  { href: "/chips", label: "Chips", icon: Smartphone },
-  { href: "/templates", label: "Mensagens", icon: MessageSquareText },
-  { href: "/descontos", label: "Descontos", icon: Percent },
-  { href: "/devedores", label: "Devedores", icon: Users },
-  { href: "/escalacoes", label: "Escalações", icon: Headset },
-  { href: "/pagamentos", label: "Pagamentos", icon: HandCoins },
-  { href: "/relatorios", label: "Relatórios", icon: BarChart3 },
-  { href: "/configuracoes", label: "Configurações", icon: Settings },
-  { href: "/ajuda", label: "Ajuda", icon: LifeBuoy },
+  { href: "/", label: "Visão geral", icon: LayoutDashboard, roles: TODOS },
+  { href: "/carteiras", label: "Carteiras", icon: FolderUp, roles: TODOS },
+  { href: "/campanha", label: "Campanha", icon: Radio, roles: ["admin", "cobrador"] },
+  { href: "/chips", label: "Chips", icon: Smartphone, roles: ["admin", "cobrador"] },
+  { href: "/templates", label: "Mensagens", icon: MessageSquareText, roles: ["admin", "cobrador"] },
+  { href: "/descontos", label: "Descontos", icon: Percent, roles: ["admin", "cobrador"] },
+  { href: "/devedores", label: "Devedores", icon: Users, roles: TODOS },
+  { href: "/escalacoes", label: "Escalações", icon: Headset, roles: ["admin", "cobrador"] },
+  { href: "/pagamentos", label: "Pagamentos", icon: HandCoins, roles: TODOS },
+  { href: "/relatorios", label: "Relatórios", icon: BarChart3, roles: TODOS },
+  { href: "/configuracoes", label: "Configurações", icon: Settings, roles: ["admin", "cobrador"] },
+  { href: "/ajuda", label: "Ajuda", icon: LifeBuoy, roles: TODOS },
 ];
 
 export function Sidebar({ nome, role }: { nome: string; role: string }) {
   const path = usePathname();
   const router = useRouter();
   const sb = supabaseBrowser();
+  const itens = nav.filter((n) => n.roles.includes(role));
 
   async function sair() {
     await sb.auth.signOut();
@@ -41,7 +45,7 @@ export function Sidebar({ nome, role }: { nome: string; role: string }) {
       <div className="px-2"><Logo /></div>
 
       <nav className="mt-8 flex flex-1 flex-col gap-1">
-        {nav.map(({ href, label, icon: Icon }) => {
+        {itens.map(({ href, label, icon: Icon }) => {
           const ativo = href === "/" ? path === "/" : path.startsWith(href);
           return (
             <Link

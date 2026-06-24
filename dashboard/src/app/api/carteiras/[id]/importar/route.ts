@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
-import { supabaseServer, supabaseAdmin } from "@/lib/supabase-server";
-import { parsePlanilha } from "@/lib/import/parse-planilha";
+import { supabaseAdmin } from "@/lib/supabase-server";
+import { exigirCobrador, podeEditarCarteira, erroDono } from "@/lib/auth";
+import { parsePlanilha, lerGrade, CAMPOS_OBRIGATORIOS, type Receita } from "@/lib/import/parse-planilha";
+import { validarReceita } from "@/lib/import/mapear-ia";
 
 export const runtime = "nodejs";
 
@@ -16,13 +18,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const { id } = await params;
   const carteiraId = Number(id);
 
-  const sb = await supabaseServer();
-  const { data: { user } } = await sb.auth.getUser();
-  if (!user) return NextResponse.json({ erro: "nao_autenticado" }, { status: 401 });
-  const { data: perfil } = await sb.from("usuarios_app").select("role").eq("id", user.id).maybeSingle();
-  if (!perfil || !["admin", "operador"].includes(perfil.role)) {
-    return NextResponse.json({ erro: "sem_permissao" }, { status: 403 });
-  }
+  const g = await exigirCobrador();
+  if (g.erro) return g.erro;
+  const user = g.sessao.user;
+  if (!(await podeEditarCarteira(g.sessao, carteiraId))) return erroDono();
 
   const admin = supabaseAdmin();
   const { data: carteira } = await admin.from("carteiras").select("id, nome").eq("id", carteiraId).maybeSingle();
@@ -32,6 +31,23 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const file = form.get("arquivo");
   if (!(file instanceof File)) return NextResponse.json({ erro: "arquivo_ausente" }, { status: 400 });
   const arquivoNome = file.name;
+
+  // receita opcional (planilha "fora do padrão" organizada pela IA, já revisada no front)
+  const buf = Buffer.from(await file.arrayBuffer());
+  let receita: Receita | undefined;
+  const receitaForm = form.get("receita");
+  if (typeof receitaForm === "string" && receitaForm.trim()) {
+    try {
+      const nColunas = lerGrade(buf).linhas.reduce((m, r) => Math.max(m, (r ?? []).length), 0);
+      receita = validarReceita(JSON.parse(receitaForm), nColunas);
+    } catch {
+      return NextResponse.json({ erro: "receita_invalida" }, { status: 400 });
+    }
+    const faltando = CAMPOS_OBRIGATORIOS.filter((c) => !receita!.campos[c]);
+    if (faltando.length) {
+      return NextResponse.json({ erro: `campos_obrigatorios_ausentes: ${faltando.join(", ")}` }, { status: 400 });
+    }
+  }
 
   // trava de duplicidade: registra a importação (arquivo_nome é UNIQUE global)
   const { data: imp, error: impErr } = await admin.from("importacoes")
@@ -45,8 +61,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
 
   try {
-    const buf = Buffer.from(await file.arrayBuffer());
-    const { devedores, stats, erros } = parsePlanilha(buf);
+    const { devedores, stats, erros } = parsePlanilha(buf, receita);
 
     if (devedores.length === 0) {
       await admin.from("importacoes").update({

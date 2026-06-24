@@ -5,7 +5,7 @@ import { Card, Input, Label, Button } from "@/components/ui/primitives";
 import { brl } from "@/lib/utils";
 import { Save, CheckCircle2, Calculator, Plus, Trash2 } from "lucide-react";
 
-export function DescontosEditor({ inicial }: { inicial: any }) {
+export function DescontosEditor({ inicial, conta, ehGlobal }: { inicial: any; conta: string; ehGlobal: boolean }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [faixas, setFaixas] = useState<any[]>(inicial.faixas ?? []);
@@ -31,7 +31,7 @@ export function DescontosEditor({ inicial }: { inicial: any }) {
     start(async () => {
       const r = await fetch("/api/config", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chave: "faixas_desconto", valor: { faixas, valor_minimo_pix: minPix, margem_extra_pp: margem } }),
+        body: JSON.stringify({ chave: "faixas_desconto", valor: { faixas, valor_minimo_pix: minPix, margem_extra_pp: margem }, conta }),
       });
       if (r.ok) { setOk(true); setTimeout(() => setOk(false), 2500); router.refresh(); }
     });
@@ -41,7 +41,12 @@ export function DescontosEditor({ inicial }: { inicial: any }) {
     <div className="grid gap-4 lg:grid-cols-3">
       <Card className="lg:col-span-2 flex flex-col gap-5">
         <div className="flex items-center justify-between">
-          <h3 className="font-display text-base font-600 text-chalk">Faixas por idade da dívida</h3>
+          <div>
+            <h3 className="font-display text-base font-600 text-chalk">Faixas por idade da dívida</h3>
+            <p className="mt-0.5 text-[11px] text-mist">
+              {ehGlobal ? "Padrão da plataforma (fallback de quem não personalizar)." : "Faixas desta conta."}
+            </p>
+          </div>
           <Button size="sm" onClick={salvar} disabled={pending}>
             {ok ? <><CheckCircle2 className="h-4 w-4" /> Salvo</> : <><Save className="h-4 w-4" /> Salvar</>}
           </Button>

@@ -1,24 +1,17 @@
 import { NextResponse } from "next/server";
-import { supabaseServer, supabaseAdmin } from "@/lib/supabase-server";
+import { supabaseAdmin } from "@/lib/supabase-server";
+import { exigirCobrador, podeEditarCarteira, erroDono } from "@/lib/auth";
 
 const STATUS_VALIDOS = ["importando", "ativa", "pausada", "arquivada"];
-// campos que o painel pode atualizar
-const CAMPOS = ["nome", "credor", "descricao", "status", "prompt_persona", "contexto_negocio", "guardrails", "config_override"];
+// campos que o painel pode atualizar (credor_id liga o usuário-credor dono da carteira)
+const CAMPOS = ["nome", "credor", "credor_id", "descricao", "status", "prompt_persona", "contexto_negocio", "guardrails", "config_override"];
 
-async function perfil() {
-  const sb = await supabaseServer();
-  const { data: { user } } = await sb.auth.getUser();
-  if (!user) return { user: null, role: null };
-  const { data } = await sb.from("usuarios_app").select("role").eq("id", user.id).maybeSingle();
-  return { user, role: data?.role ?? null };
-}
-
-// PATCH: atualiza status / overrides de prompt e config da carteira (admin/operador)
+// PATCH: atualiza status / overrides de prompt e config da carteira (admin ou cobrador dono)
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const { user, role } = await perfil();
-  if (!user) return NextResponse.json({ erro: "nao_autenticado" }, { status: 401 });
-  if (!["admin", "operador"].includes(role!)) return NextResponse.json({ erro: "sem_permissao" }, { status: 403 });
+  const g = await exigirCobrador();
+  if (g.erro) return g.erro;
+  if (!(await podeEditarCarteira(g.sessao, Number(id)))) return erroDono();
 
   const b = await req.json();
   const patch: Record<string, unknown> = {};
@@ -37,12 +30,12 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   return NextResponse.json({ ok: true });
 }
 
-// DELETE: apaga a carteira e tudo dela (cascade). Só admin.
+// DELETE: apaga a carteira e tudo dela (cascade). admin ou cobrador dono.
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const { user, role } = await perfil();
-  if (!user) return NextResponse.json({ erro: "nao_autenticado" }, { status: 401 });
-  if (role !== "admin") return NextResponse.json({ erro: "sem_permissao" }, { status: 403 });
+  const g = await exigirCobrador();
+  if (g.erro) return g.erro;
+  if (!(await podeEditarCarteira(g.sessao, Number(id)))) return erroDono();
 
   const admin = supabaseAdmin();
   const { error } = await admin.from("carteiras").delete().eq("id", Number(id));

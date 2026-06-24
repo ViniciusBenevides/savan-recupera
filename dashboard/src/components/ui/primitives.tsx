@@ -1,6 +1,9 @@
 import * as React from "react";
-import { Info } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+// Tooltip/HelpHint vivem num módulo client (portal) para escapar do
+// overflow-hidden dos cards. Reexportados aqui por compatibilidade de imports.
+export { Tooltip, HelpHint } from "./tooltip";
 
 export function Card({ className, glow, ...props }: React.HTMLAttributes<HTMLDivElement> & { glow?: boolean }) {
   return (
@@ -120,30 +123,6 @@ export function Select({ className, ...props }: React.SelectHTMLAttributes<HTMLS
       )}
       {...props}
     />
-  );
-}
-
-// Bolha de ajuda no hover — pura CSS (funciona em Server e Client Components).
-// Toda ação/controle deve usar Tooltip ou HelpHint para o usuário não ter dúvidas.
-export function Tooltip({ text, children, className }: { text: string; children: React.ReactNode; className?: string }) {
-  return (
-    <span className={cn("group relative inline-flex", className)}>
-      {children}
-      <span
-        role="tooltip"
-        className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 w-max max-w-[260px] -translate-x-1/2 rounded-lg border border-line bg-ink-950 px-2.5 py-1.5 text-[11px] leading-snug text-chalk opacity-0 shadow-xl transition-opacity duration-150 group-hover:opacity-100"
-      >
-        {text}
-      </span>
-    </span>
-  );
-}
-
-export function HelpHint({ text, className }: { text: string; className?: string }) {
-  return (
-    <Tooltip text={text} className={cn("align-middle", className)}>
-      <Info className="h-3.5 w-3.5 cursor-help text-mist hover:text-chalk" />
-    </Tooltip>
   );
 }
 

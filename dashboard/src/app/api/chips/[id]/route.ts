@@ -1,22 +1,15 @@
 import { NextResponse } from "next/server";
-import { supabaseServer, supabaseAdmin } from "@/lib/supabase-server";
+import { supabaseAdmin } from "@/lib/supabase-server";
+import { exigirCobrador, podeEditarChip, erroDono } from "@/lib/auth";
 import { deletarInbox } from "@/lib/chatwoot";
 
-async function exigirOperador() {
-  const sb = await supabaseServer();
-  const { data: { user } } = await sb.auth.getUser();
-  if (!user) return { erro: "nao_autenticado", status: 401 };
-  const { data: perfil } = await sb.from("usuarios_app").select("role").eq("id", user.id).maybeSingle();
-  if (!perfil || !["admin", "operador"].includes(perfil.role)) return { erro: "sem_permissao", status: 403 };
-  return { user };
-}
-
 // Devolve os dados do chip + credenciais Z-API para preencher o formulário de
-// edição (só admin/operador). Os tokens chegam ao navegador apenas aqui, sob auth.
+// edição (admin ou cobrador dono). Os tokens chegam ao navegador apenas aqui, sob auth.
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const guard = await exigirOperador();
-  if ("erro" in guard) return NextResponse.json({ erro: guard.erro }, { status: guard.status });
+  const g = await exigirCobrador();
+  if (g.erro) return g.erro;
+  if (!(await podeEditarChip(g.sessao, Number(id)))) return erroDono();
 
   const admin = supabaseAdmin();
   const [{ data: chip }, { data: cred }] = await Promise.all([
@@ -42,8 +35,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 // Edita nome e/ou credenciais Z-API do chip.
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const guard = await exigirOperador();
-  if ("erro" in guard) return NextResponse.json({ erro: guard.erro }, { status: guard.status });
+  const g = await exigirCobrador();
+  if (g.erro) return g.erro;
+  if (!(await podeEditarChip(g.sessao, Number(id)))) return erroDono();
 
   const { nome, instance_id, token, client_token, maturidade, aquecimento_perfil, limite_dia_override, papel, agente_nome, tipo } = await req.json();
   const admin = supabaseAdmin();
@@ -79,8 +73,9 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 // remove o inbox vinculado no Chatwoot (best-effort).
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const guard = await exigirOperador();
-  if ("erro" in guard) return NextResponse.json({ erro: guard.erro }, { status: guard.status });
+  const g = await exigirCobrador();
+  if (g.erro) return g.erro;
+  if (!(await podeEditarChip(g.sessao, Number(id)))) return erroDono();
 
   const admin = supabaseAdmin();
   const { data: chip } = await admin.from("chips").select("chatwoot_inbox_id").eq("id", Number(id)).maybeSingle();

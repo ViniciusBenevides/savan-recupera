@@ -16,20 +16,36 @@ const STATUS_CARTEIRA: Record<string, { tone: any; label: string; ajuda: string 
 
 export default async function CarteirasPage() {
   const sb = await supabaseServer();
+  const { data: { user } } = await sb.auth.getUser();
+  const { data: perfil } = await sb.from("usuarios_app").select("role").eq("id", user!.id).maybeSingle();
+  const role = perfil?.role ?? "visualizador";
+  const ehAdmin = role === "admin";
+  const podeEditar = role === "admin" || role === "cobrador";
+
   const { data: carteiras } = await sb.from("carteiras")
-    .select("id, nome, credor, status, num_devedores, soma_saldo, criado_em")
+    .select("id, nome, credor, status, num_devedores, soma_saldo, criado_em, cobrador_id, credor_id")
     .order("criado_em", { ascending: false });
+
+  // atribuição (só admin): mapa id->nome dos donos/credores
+  let nomes = new Map<string, string>();
+  if (ehAdmin) {
+    const ids = [...new Set((carteiras ?? []).flatMap((c) => [c.cobrador_id, c.credor_id]).filter(Boolean))] as string[];
+    if (ids.length) {
+      const { data: us } = await sb.from("usuarios_app").select("id, nome").in("id", ids);
+      nomes = new Map((us ?? []).map((u) => [u.id, u.nome ?? "—"]));
+    }
+  }
 
   return (
     <>
       <SectionTitle
         title="Carteiras"
-        sub="Cada planilha que você sobe vira uma carteira de cobrança independente."
-        action={
+        sub={podeEditar ? "Cada planilha que você sobe vira uma carteira de cobrança independente." : "Acompanhe o andamento das carteiras (somente leitura)."}
+        action={podeEditar ? (
           <Link href="/carteiras/nova">
             <Button><Plus className="h-4 w-4" /> Nova carteira</Button>
           </Link>
-        }
+        ) : undefined}
       />
 
       {(carteiras ?? []).length === 0 ? (
@@ -37,9 +53,9 @@ export default async function CarteirasPage() {
           <div className="grid h-12 w-12 place-items-center rounded-2xl bg-emerald/12 text-emerald"><FolderUp className="h-6 w-6" /></div>
           <div>
             <p className="font-display text-lg text-chalk">Nenhuma carteira ainda</p>
-            <p className="mt-1 text-sm text-mist">Crie a primeira carteira e suba uma planilha de devedores para começar.</p>
+            <p className="mt-1 text-sm text-mist">{podeEditar ? "Crie a primeira carteira e suba uma planilha de devedores para começar." : "Ainda não há carteiras para acompanhar."}</p>
           </div>
-          <Link href="/carteiras/nova"><Button><Plus className="h-4 w-4" /> Nova carteira</Button></Link>
+          {podeEditar && <Link href="/carteiras/nova"><Button><Plus className="h-4 w-4" /> Nova carteira</Button></Link>}
         </Card>
       ) : (
         <Card className="p-0">
@@ -54,7 +70,8 @@ export default async function CarteirasPage() {
                   <th className="px-5 py-3 font-medium">
                     <span className="inline-flex items-center gap-1">Status <HelpHint text="Importando: aguardando planilha. Pausada: importada, sem enviar. Ativa: enviando. Arquivada: histórico." /></span>
                   </th>
-                  <th className="px-5 py-3 text-right font-medium">Ações</th>
+                  {ehAdmin && <th className="px-5 py-3 font-medium">Responsável</th>}
+                  {podeEditar && <th className="px-5 py-3 text-right font-medium">Ações</th>}
                 </tr>
               </thead>
               <tbody>
@@ -70,7 +87,13 @@ export default async function CarteirasPage() {
                       <td className="px-5 py-3 font-mono text-chalk tabnums">{brl(c.soma_saldo)}</td>
                       <td className="px-5 py-3 text-mist">{dataBR(c.criado_em)}</td>
                       <td className="px-5 py-3"><Badge tone={s.tone}>{s.label}</Badge></td>
-                      <td className="px-5 py-3"><CarteiraAcoes id={c.id} nome={c.nome} status={c.status} /></td>
+                      {ehAdmin && (
+                        <td className="px-5 py-3 text-xs text-mist">
+                          <div>Cobrador: <span className="text-chalk">{c.cobrador_id ? (nomes.get(c.cobrador_id) ?? "—") : "—"}</span></div>
+                          {c.credor_id && <div>Credor: <span className="text-chalk">{nomes.get(c.credor_id) ?? "—"}</span></div>}
+                        </td>
+                      )}
+                      {podeEditar && <td className="px-5 py-3"><CarteiraAcoes id={c.id} nome={c.nome} status={c.status} /></td>}
                     </tr>
                   );
                 })}

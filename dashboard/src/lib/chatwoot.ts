@@ -98,6 +98,35 @@ export async function atualizarTelefoneInbox(inboxId: number, phoneNumber: strin
   }
 }
 
+// Reescreve o provider_config (instance_id/token/client_token) de um inbox JÁ existente.
+// É o que conserta a saída "Falha ao enviar": o canal precisa do Token de Segurança
+// (client_token) correto para a Z-API aceitar o envio. (vincularChatwootInbox reaproveita o
+// inbox e NÃO reescreve a config — por isso este passo separado.)
+export async function sincronizarProviderConfig(opts: {
+  inboxId: number; instanceId: string; token: string; clientToken?: string;
+}): Promise<{ ok: boolean; mensagem?: string }> {
+  const { url, token: cwTok, accountId } = cfgCw();
+  const clientToken = opts.clientToken?.trim() || process.env.ZAPI_CLIENT_TOKEN?.trim();
+  if (!url || !cwTok) return { ok: false, mensagem: "Chatwoot não configurado." };
+  if (!clientToken) return { ok: false, mensagem: "Token de Segurança da Z-API ausente — informe-o no cadastro do chip." };
+  try {
+    const r = await fetch(`${url}/api/v1/accounts/${accountId}/inboxes/${opts.inboxId}`, {
+      method: "PATCH",
+      headers: { api_access_token: cwTok, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        channel: { provider_config: { instance_id: opts.instanceId, token: opts.token, client_token: clientToken } },
+      }),
+    });
+    if (!r.ok) {
+      const b = await r.json().catch(() => null);
+      return { ok: false, mensagem: b?.message || b?.error || `Chatwoot respondeu ${r.status}.` };
+    }
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, mensagem: String(e) };
+  }
+}
+
 export async function deletarInbox(inboxId: number): Promise<boolean> {
   const { url, token, accountId } = cfgCw();
   if (!url || !token) return false;

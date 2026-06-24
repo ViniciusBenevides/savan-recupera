@@ -1,9 +1,8 @@
 "use client";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { supabaseBrowser } from "@/lib/supabase-browser";
 import { Card, Badge, Button, Switch } from "@/components/ui/primitives";
-import { Save, Plus, Trash2, Eye } from "lucide-react";
+import { Save, Plus, Trash2, Eye, Copy, MessageSquareText } from "lucide-react";
 
 const TIPOS: Record<string, string> = {
   abordagem_inicial: "Abordagem inicial",
@@ -23,9 +22,17 @@ function resolverPreview(txt: string): string {
   return t.replace(/\{\{\s*([a-z_]+)\s*\}\}/gi, (_m, k) => vars[k] ?? `{{${k}}}`);
 }
 
-export function TemplatesManager({ inicial }: { inicial: any[] }) {
+async function api(body: any) {
+  const r = await fetch("/api/templates", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  return r.ok;
+}
+
+export function TemplatesManager({ inicial, conta, ehGlobal, podeClonar }: {
+  inicial: any[]; conta: string; ehGlobal: boolean; podeClonar: boolean;
+}) {
   const router = useRouter();
-  const sb = supabaseBrowser();
   const [pending, start] = useTransition();
   const [items, setItems] = useState(inicial);
 
@@ -35,24 +42,24 @@ export function TemplatesManager({ inicial }: { inicial: any[] }) {
 
   function salvar(t: any) {
     start(async () => {
-      await sb.from("templates_mensagem").update({
-        nome: t.nome, conteudo: t.conteudo, peso: t.peso, ativo: t.ativo,
-      }).eq("id", t.id);
+      await api({ acao: "atualizar", conta, id: t.id, patch: { nome: t.nome, conteudo: t.conteudo, peso: t.peso, ativo: t.ativo } });
       router.refresh();
     });
   }
 
   function excluir(id: number) {
-    start(async () => { await sb.from("templates_mensagem").delete().eq("id", id); router.refresh(); });
+    start(async () => { await api({ acao: "excluir", conta, id }); router.refresh(); });
   }
 
   function novo() {
     start(async () => {
-      await sb.from("templates_mensagem").insert({
-        nome: "Novo modelo", tipo: "abordagem_inicial", conteudo: "{Oi|Olá} {{primeiro_nome}}!", peso: 1,
-      });
+      await api({ acao: "criar", conta, template: { nome: "Novo modelo", tipo: "abordagem_inicial", conteudo: "{Oi|Olá} {{primeiro_nome}}!", peso: 1 } });
       router.refresh();
     });
+  }
+
+  function clonarPadrao() {
+    start(async () => { await api({ acao: "clonar_padrao", conta }); router.refresh(); });
   }
 
   const grupos = items.reduce((acc: Record<string, any[]>, t) => {
@@ -61,9 +68,39 @@ export function TemplatesManager({ inicial }: { inicial: any[] }) {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex justify-end">
-        <Button size="sm" onClick={novo} disabled={pending}><Plus className="h-4 w-4" /> Novo modelo</Button>
+      {/* Conta sem modelos próprios: oferece começar a partir do padrão */}
+      {podeClonar && items.length === 0 && (
+        <Card className="flex flex-col items-start gap-3 border-emerald/25 bg-emerald/5">
+          <div className="flex items-center gap-2 font-medium text-chalk">
+            <MessageSquareText className="h-4 w-4 text-emerald" /> Esta conta ainda usa os modelos padrão
+          </div>
+          <p className="text-sm text-mist">
+            Enquanto você não criar modelos próprios, o bot usa os <b>modelos padrão</b> da plataforma. Clone-os para personalizar sem partir do zero.
+          </p>
+          <Button size="sm" onClick={clonarPadrao} disabled={pending}>
+            <Copy className="h-4 w-4" /> Começar com os modelos padrão
+          </Button>
+        </Card>
+      )}
+
+      <div className="flex items-center justify-between">
+        <p className="text-xs text-mist">
+          {ehGlobal
+            ? "Modelos padrão da plataforma — usados por quem não tem os seus."
+            : items.length === 0
+              ? "Sem modelos próprios — o bot usa o padrão da plataforma."
+              : "Modelos desta conta. O bot usa estes no lugar do padrão."}
+        </p>
+        <div className="flex gap-2">
+          {podeClonar && items.length > 0 && (
+            <Button variant="outline" size="sm" onClick={clonarPadrao} disabled={pending}>
+              <Copy className="h-4 w-4" /> Trazer faltantes do padrão
+            </Button>
+          )}
+          <Button size="sm" onClick={novo} disabled={pending}><Plus className="h-4 w-4" /> Novo modelo</Button>
+        </div>
       </div>
+
       {Object.entries(grupos).map(([tipo, lista]) => (
         <div key={tipo}>
           <h3 className="mb-3 font-display text-sm font-600 uppercase tracking-wider text-mist">{TIPOS[tipo] ?? tipo}</h3>

@@ -3,6 +3,8 @@ import { StatCard } from "@/components/StatCard";
 import { Card, SectionTitle, Badge } from "@/components/ui/primitives";
 import { RecuperacaoChart, Funil } from "@/components/charts";
 import { RealtimeFeed } from "@/components/RealtimeFeed";
+import { getSessao } from "@/lib/auth";
+import { getConfigEscopo } from "@/lib/config";
 import { brl, num, pct } from "@/lib/utils";
 import { HandCoins, Wallet, Send, MessageCircle } from "lucide-react";
 
@@ -10,28 +12,36 @@ export const dynamic = "force-dynamic";
 
 export default async function Overview() {
   const sb = await supabaseServer();
+  const sessao = await getSessao();
 
-  const [{ data: funil }, { data: metricas }, { data: pagamentos }, { data: cfg }, { data: chips }] =
+  // métricas_diarias é um agregado global (só admin); o gráfico de recuperação é derivado
+  // dos pagamentos JÁ escopados por RLS, então cada papel vê os seus próprios números.
+  // Campanha/simulação são por conta: o badge reflete o escopo do usuário (admin = global).
+  const [{ data: funil }, { data: pagosChart }, { data: pagamentos }, cfg, { data: chips }] =
     await Promise.all([
       sb.from("v_funil").select("*").maybeSingle(),
-      sb.from("metricas_diarias").select("*").order("dia", { ascending: true }).limit(30),
+      sb.from("pagamentos").select("valor, pago_em, criado_em").in("status", ["recebido", "confirmado"]).eq("simulacao", false).order("criado_em", { ascending: true }).limit(2000),
       sb.from("pagamentos").select("id, valor, status, criado_em, devedores(nome)").order("criado_em", { ascending: false }).limit(12),
-      sb.from("configuracoes").select("chave, valor").in("chave", ["campanha_ativa", "modo_simulacao"]),
+      getConfigEscopo(sessao?.tenant ?? null),
       sb.from("chip_metricas_diarias").select("novos_contatos, dia"),
     ]);
 
   const f = funil ?? {} as any;
   const hoje = new Date().toISOString().slice(0, 10);
-  const mHoje = (metricas ?? []).find((m) => m.dia === hoje);
   const enviadosHoje = (chips ?? []).filter((c) => c.dia === hoje).reduce((s, c) => s + (c.novos_contatos ?? 0), 0);
 
   const taxaResposta = f.contatados ? (f.responderam / f.contatados) * 100 : 0;
-  const ativa = (cfg ?? []).find((c) => c.chave === "campanha_ativa")?.valor === true;
-  const simulacao = (cfg ?? []).find((c) => c.chave === "modo_simulacao")?.valor === true;
+  const ativa = cfg.campanha_ativa === true;
+  const simulacao = cfg.modo_simulacao === true;
 
-  const chartData = (metricas ?? []).map((m) => ({
-    dia: new Date(m.dia + "T12:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }),
-    valor: Number(m.valor_recuperado ?? 0),
+  const porDia = new Map<string, number>();
+  for (const p of pagosChart ?? []) {
+    const dia = String(p.pago_em ?? p.criado_em).slice(0, 10);
+    porDia.set(dia, (porDia.get(dia) ?? 0) + Number(p.valor ?? 0));
+  }
+  const chartData = [...porDia.entries()].sort((a, b) => a[0].localeCompare(b[0])).slice(-30).map(([dia, valor]) => ({
+    dia: new Date(dia + "T12:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }),
+    valor,
   }));
 
   const feed = (pagamentos ?? []).map((p: any) => ({
@@ -61,7 +71,7 @@ export default async function Overview() {
         <StatCard label="Sua comissão" value={brl(f.comissao_total)} tone="violet" icon={HandCoins}
                   hint="10% do recuperado" />
         <StatCard label="Pix gerados" value={num(f.pix_gerados)} icon={Send}
-                  hint={`${num(mHoje?.pix_gerados ?? 0)} hoje`} />
+                  hint="acumulado" />
         <StatCard label="Taxa de resposta" value={pct(taxaResposta)} tone="amber" icon={MessageCircle}
                   hint={`${num(f.responderam)} responderam`} />
       </div>

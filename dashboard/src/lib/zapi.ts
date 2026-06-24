@@ -34,6 +34,32 @@ export async function definirWebhooks(base: string, clientToken: string, url: st
   return { ok: false, mensagem: "Não foi possível configurar o webhook na Z-API." };
 }
 
+// Garante que o webhook "ao receber" da instância Z-API aponta para o Chatwoot.
+// Idempotente e auto-curável: usado pelo "Enviar teste" (e por quem precisar) para
+// que a resposta do devedor volte mesmo se o finalizarConexaoChip não tiver fixado
+// o webhook na hora do QR (corrida do /device, saude.webhook_ok sobrescrito pelo
+// chips-monitor, etc.). Descobre o número real (com fallback ao numero_e164 salvo).
+export async function garantirWebhookEntrada(opts: {
+  chipId: number; instanceId: string; token: string; clientToken: string;
+}): Promise<{ ok: boolean; url?: string; mensagem?: string }> {
+  const { chipId, instanceId, token, clientToken } = opts;
+  const base = zapiBase(instanceId, token);
+  const cwUrl = process.env.CHATWOOT_URL?.trim();
+  if (!cwUrl) return { ok: false, mensagem: "CHATWOOT_URL não configurado no painel." };
+
+  let telefone = await obterTelefone(base, clientToken);
+  if (!telefone) {
+    const { data: chip } = await supabaseAdmin()
+      .from("chips").select("numero_e164").eq("id", chipId).maybeSingle();
+    telefone = chip?.numero_e164 ?? null;
+  }
+  if (!telefone) return { ok: false, mensagem: "Número do chip desconhecido (a Z-API não retornou o telefone)." };
+
+  const url = `${cwUrl.replace(/\/$/, "")}/webhooks/whatsapp/${telefone}`;
+  const wh = await definirWebhooks(base, clientToken, url);
+  return wh.ok ? { ok: true, url } : { ok: false, url, mensagem: wh.mensagem };
+}
+
 export type Finalizacao = {
   telefone: string | null;
   telefone_ok: boolean;

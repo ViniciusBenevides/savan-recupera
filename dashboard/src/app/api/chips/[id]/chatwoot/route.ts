@@ -1,18 +1,15 @@
 import { NextResponse } from "next/server";
-import { supabaseServer, supabaseAdmin } from "@/lib/supabase-server";
-import { vincularChatwootInbox } from "@/lib/chatwoot";
+import { supabaseAdmin } from "@/lib/supabase-server";
+import { exigirCobrador, podeEditarChip, erroDono } from "@/lib/auth";
+import { vincularChatwootInbox, sincronizarProviderConfig } from "@/lib/chatwoot";
 
 // (Re)vincula o inbox do Chatwoot a um chip já cadastrado. Usado quando a criação
 // automática falhou (ex.: chip antigo sem chatwoot_inbox_id) ou para reconectar.
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const sb = await supabaseServer();
-  const { data: { user } } = await sb.auth.getUser();
-  if (!user) return NextResponse.json({ erro: "nao_autenticado" }, { status: 401 });
-  const { data: perfil } = await sb.from("usuarios_app").select("role").eq("id", user.id).maybeSingle();
-  if (!perfil || !["admin", "operador"].includes(perfil.role)) {
-    return NextResponse.json({ erro: "sem_permissao" }, { status: 403 });
-  }
+  const g = await exigirCobrador();
+  if (g.erro) return g.erro;
+  if (!(await podeEditarChip(g.sessao, Number(id)))) return erroDono();
 
   const forcar = await req.json().then((b) => !!b?.forcar).catch(() => false);
 
@@ -29,5 +26,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   });
 
   if (!cw.ok) return NextResponse.json({ ok: false, motivo: cw.motivo, erro: cw.mensagem }, { status: 502 });
-  return NextResponse.json({ ok: true, inbox_id: cw.inbox_id, ja_existia: cw.ja_existia ?? false });
+
+  // Garante que o canal tenha as credenciais atuais (sobretudo o Token de Segurança/client_token):
+  // sem isso a Z-API recusa o ENVIO de saída ("Falha ao enviar") mesmo com a instância conectada.
+  const sync = await sincronizarProviderConfig({
+    inboxId: cw.inbox_id, instanceId: cred.zapi_instance_id, token: cred.zapi_token,
+    clientToken: cred.zapi_client_token ?? undefined,
+  });
+
+  return NextResponse.json({
+    ok: true, inbox_id: cw.inbox_id, ja_existia: cw.ja_existia ?? false,
+    provider_config_sincronizado: sync.ok, aviso_envio: sync.ok ? undefined : sync.mensagem,
+  });
 }

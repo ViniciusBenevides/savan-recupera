@@ -3,18 +3,10 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Card, Switch, Input, Label, Button, Badge } from "@/components/ui/primitives";
 import { num } from "@/lib/utils";
-import { Power, FlaskConical, Clock, Timer, Flame, Save, CheckCircle2 } from "lucide-react";
+import { Power, FlaskConical, Clock, Timer, Flame, Save, CheckCircle2, Bot } from "lucide-react";
 
-async function salvar(itens: { chave: string; valor: any }[]) {
-  const r = await fetch("/api/config", {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ itens }),
-  });
-  return r.ok;
-}
-
-export function CampanhaControls({ cfg, aguardando, enviados }: {
-  cfg: Record<string, any>; aguardando: number; enviados: number;
+export function CampanhaControls({ cfg, aguardando, enviados, conta, ehGlobal }: {
+  cfg: Record<string, any>; aguardando: number; enviados: number; conta: string; ehGlobal: boolean;
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -23,13 +15,21 @@ export function CampanhaControls({ cfg, aguardando, enviados }: {
   const [janela, setJanela] = useState(cfg.janela_envio ?? { inicio: "08:00", fim: "20:00" });
   const [intervalo, setIntervalo] = useState<number>(Number(cfg.intervalo_min_segundos ?? 12));
   const [aquec, setAquec] = useState<any[]>(cfg.aquecimento ?? []);
+  const [nomeBot, setNomeBot] = useState<string>(cfg.ia?.nome_bot ?? "Ana");
+  const [modelo, setModelo] = useState<string>(cfg.ia?.modelo ?? "gpt-4.1-mini");
   const [ok, setOk] = useState(false);
 
-  function toggle(chave: string, v: boolean) {
-    start(async () => {
-      await salvar([{ chave, valor: v }]);
-      router.refresh();
+  // envia ajustes para o escopo certo (cobrador edita os seus; admin pode mirar uma conta)
+  async function salvar(itens: { chave: string; valor: any }[]) {
+    const r = await fetch("/api/config", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ itens, conta }),
     });
+    return r.ok;
+  }
+
+  function toggle(chave: string, v: boolean) {
+    start(async () => { await salvar([{ chave, valor: v }]); router.refresh(); });
   }
 
   function salvarRegras() {
@@ -43,8 +43,18 @@ export function CampanhaControls({ cfg, aguardando, enviados }: {
     });
   }
 
+  function salvarBot() {
+    start(async () => {
+      const sucesso = await salvar([{ chave: "ia", valor: { ...cfg.ia, nome_bot: nomeBot, modelo } }]);
+      if (sucesso) { setOk(true); setTimeout(() => setOk(false), 2500); router.refresh(); }
+    });
+  }
+
   const totalFila = aguardando + enviados;
   const progresso = totalFila ? (enviados / totalFila) * 100 : 0;
+  const escopoNota = ehGlobal
+    ? "Estes são os valores-padrão da plataforma (fallback para quem não personalizar)."
+    : "Estes ajustes valem só para esta conta.";
 
   return (
     <div className="flex flex-col gap-4">
@@ -63,6 +73,7 @@ export function CampanhaControls({ cfg, aguardando, enviados }: {
                 ? "O sistema está enviando mensagens automaticamente dentro das regras abaixo."
                 : "Nenhuma mensagem será enviada enquanto estiver desligada."}
             </p>
+            <p className="mt-1 text-[11px] text-mist">{escopoNota}</p>
           </div>
         </div>
         <Switch size="lg" checked={ativa} onChange={(v) => { setAtiva(v); toggle("campanha_ativa", v); }} />
@@ -147,6 +158,29 @@ export function CampanhaControls({ cfg, aguardando, enviados }: {
           <p className="mt-2 text-xs text-mist">
             Limite progressivo anti-bloqueio. Cada chip respeita estes números conforme os dias desde a ativação.
           </p>
+        </div>
+      </Card>
+
+      {/* Bot (nome + modelo de IA) — por conta */}
+      <Card className="flex flex-col gap-4">
+        <div className="flex items-center justify-between">
+          <h4 className="flex items-center gap-2 font-display text-base font-600 text-chalk">
+            <Bot className="h-4 w-4 text-emerald" /> Robô
+          </h4>
+          <Button size="sm" onClick={salvarBot} disabled={pending}>
+            {ok ? <><CheckCircle2 className="h-4 w-4" /> Salvo</> : <><Save className="h-4 w-4" /> Salvar</>}
+          </Button>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <Label>Nome do bot</Label>
+            <Input value={nomeBot} onChange={(e) => setNomeBot(e.target.value)} />
+            <p className="mt-1 text-[11px] text-mist">Usado nas mensagens (variável {"{{nome_bot}}"}) e na apresentação.</p>
+          </div>
+          <div>
+            <Label>Modelo de IA</Label>
+            <Input value={modelo} onChange={(e) => setModelo(e.target.value)} className="font-mono text-xs" />
+          </div>
         </div>
       </Card>
     </div>

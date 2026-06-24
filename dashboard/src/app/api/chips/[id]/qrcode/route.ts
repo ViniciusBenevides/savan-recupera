@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { supabaseServer, supabaseAdmin } from "@/lib/supabase-server";
+import { supabaseAdmin } from "@/lib/supabase-server";
+import { exigirCobrador, podeEditarChip, erroDono } from "@/lib/auth";
 import { finalizarConexaoChip } from "@/lib/zapi";
 
 // Extrai uma mensagem legível de um corpo de resposta da Z-API.
@@ -22,9 +23,9 @@ function ehAssinatura(httpStatus: number, txt: string): boolean {
 // Proxy server-side do QR code Z-API — o token nunca chega ao navegador.
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const sb = await supabaseServer();
-  const { data: { user } } = await sb.auth.getUser();
-  if (!user) return NextResponse.json({ erro: "nao_autenticado" }, { status: 401 });
+  const g = await exigirCobrador();
+  if (g.erro) return g.erro;
+  if (!(await podeEditarChip(g.sessao, Number(id)))) return erroDono();
 
   const admin = supabaseAdmin();
   const { data: chip } = await admin

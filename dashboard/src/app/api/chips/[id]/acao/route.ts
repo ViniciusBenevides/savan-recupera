@@ -1,16 +1,13 @@
 import { NextResponse } from "next/server";
-import { supabaseServer, supabaseAdmin } from "@/lib/supabase-server";
+import { supabaseAdmin } from "@/lib/supabase-server";
+import { exigirCobrador, podeEditarChip, erroDono } from "@/lib/auth";
 
 // Ativa (inicia aquecimento), pausa ou retoma um chip.
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const sb = await supabaseServer();
-  const { data: { user } } = await sb.auth.getUser();
-  if (!user) return NextResponse.json({ erro: "nao_autenticado" }, { status: 401 });
-  const { data: perfil } = await sb.from("usuarios_app").select("role").eq("id", user.id).maybeSingle();
-  if (!perfil || !["admin", "operador"].includes(perfil.role)) {
-    return NextResponse.json({ erro: "sem_permissao" }, { status: 403 });
-  }
+  const g = await exigirCobrador();
+  if (g.erro) return g.erro;
+  if (!(await podeEditarChip(g.sessao, Number(id)))) return erroDono();
 
   const { acao } = await req.json(); // 'ativar' | 'pausar' | 'retomar'
   const admin = supabaseAdmin();

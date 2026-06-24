@@ -22,7 +22,7 @@ export default async function DashLayout({ children }: { children: React.ReactNo
       <Sidebar nome={nome} role={role} />
       <main className="relative z-10 flex-1 px-5 py-7 sm:px-8 lg:px-10">
         <div className="mx-auto max-w-[1200px] animate-fade-up">
-          {["admin", "operador"].includes(role) && <FailoverBanner />}
+          {["admin", "cobrador"].includes(role) && <FailoverBanner />}
           {children}
         </div>
       </main>

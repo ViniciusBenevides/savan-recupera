@@ -29,6 +29,15 @@ export function TesteCard({ numerosIniciais, chips }: {
   const [alvo, setAlvo] = React.useState<string>(salvosAtivos[0]?.e164 ?? "");
   const [enviando, setEnviando] = React.useState(false);
   const [resultado, setResultado] = React.useState<string>("");
+  const [aviso, setAviso] = React.useState<string>("");
+
+  // mantém o alvo válido quando a lista salva muda (ex.: editar/salvar um número).
+  // Sem isto o <select> mostra a 1ª opção, mas `alvo` fica defasado e o disparo manda o
+  // número antigo → a Edge Function recusa com "número não cadastrado".
+  React.useEffect(() => {
+    const validos = numerosIniciais.filter((n) => n.ativo && n.e164.trim()).map((n) => n.e164.trim());
+    if (validos.length && !validos.includes(alvo)) setAlvo(validos[0]);
+  }, [numerosIniciais, alvo]);
 
   const sujo = JSON.stringify(numeros) !== JSON.stringify(numerosIniciais);
 
@@ -54,7 +63,7 @@ export function TesteCard({ numerosIniciais, chips }: {
 
   async function enviarTeste() {
     if (!chipId || !alvo) return;
-    setEnviando(true); setErro(""); setResultado("");
+    setEnviando(true); setErro(""); setResultado(""); setAviso("");
     const r = await fetch("/api/chips/teste", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ chip_id: chipId, numero_e164: alvo }),
@@ -63,6 +72,7 @@ export function TesteCard({ numerosIniciais, chips }: {
     setEnviando(false);
     if (!r.ok || !d.ok) { setErro(d.erro ?? "Falha ao disparar o teste."); return; }
     setResultado(`Mensagem de teste enviada para ${d.numero_teste}. Responda no WhatsApp desse número para conversar com o bot (modo teste).`);
+    if (d.webhook_aviso) setAviso(d.webhook_aviso);
     router.refresh();
   }
 
@@ -161,6 +171,7 @@ export function TesteCard({ numerosIniciais, chips }: {
 
       {okMsg && <p className="flex items-center gap-1.5 text-xs text-emerald"><CheckCircle2 className="h-3.5 w-3.5" /> {okMsg}</p>}
       {resultado && <p className="flex items-center gap-1.5 rounded-lg border border-emerald/30 bg-emerald/10 px-3 py-2 text-xs text-emerald-soft"><CheckCircle2 className="h-3.5 w-3.5 shrink-0" /> {resultado}</p>}
+      {aviso && <p className="flex items-center gap-1.5 rounded-lg border border-amber/30 bg-amber/10 px-3 py-2 text-xs text-amber"><AlertTriangle className="h-3.5 w-3.5 shrink-0" /> {aviso}</p>}
       {erro && <p className="flex items-center gap-1.5 rounded-lg border border-rose/30 bg-rose/10 px-3 py-2 text-xs text-rose"><AlertTriangle className="h-3.5 w-3.5 shrink-0" /> {erro}</p>}
     </Card>
   );

@@ -8,6 +8,7 @@ import {
 import { brl, num, dataHoraBR } from "@/lib/utils";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import { DistribuicaoCard } from "./distribuicao";
+import { ImportadorIA, ModoSeletor } from "../importador-ia";
 import {
   Play, Pause, Archive, Trash2, Save, CheckCircle2, Loader2, Upload, Users, FileSpreadsheet, AlertTriangle,
   CreditCard, Headset,
@@ -22,23 +23,26 @@ const TABS = [
 ] as const;
 type Tab = typeof TABS[number]["k"];
 
-export function CarteiraPainel({ carteira, importacoes, padrao, tabInicial }: { carteira: any; importacoes: any[]; padrao: Record<string, any>; tabInicial?: Tab }) {
-  const [tab, setTab] = React.useState<Tab>(tabInicial ?? (carteira.status === "importando" ? "historico" : "status"));
+export function CarteiraPainel({ carteira, importacoes, padrao, tabInicial, podeEditar = true }: { carteira: any; importacoes: any[]; padrao: Record<string, any>; tabInicial?: Tab; podeEditar?: boolean }) {
+  // credor/visualizador só veem o andamento (status + importações), sem editar nem ver chaves
+  const tabs = podeEditar ? TABS : TABS.filter((t) => t.k === "status" || t.k === "historico");
+  const inicial = tabInicial && tabs.some((t) => t.k === tabInicial) ? tabInicial : (carteira.status === "importando" && podeEditar ? "historico" : "status");
+  const [tab, setTab] = React.useState<Tab>(inicial);
   return (
     <>
       <div className="mb-5 flex flex-wrap gap-1 border-b border-line">
-        {TABS.map((t) => (
+        {tabs.map((t) => (
           <button key={t.k} onClick={() => setTab(t.k)}
             className={`-mb-px border-b-2 px-3.5 py-2 text-sm transition-colors ${tab === t.k ? "border-emerald text-chalk" : "border-transparent text-mist hover:text-chalk"}`}>
             {t.t}
           </button>
         ))}
       </div>
-      {tab === "status" && <AbaStatus carteira={carteira} />}
-      {tab === "prompt" && <AbaPrompt carteira={carteira} padrao={padrao} />}
-      {tab === "descontos" && <AbaDescontos carteira={carteira} padrao={padrao} />}
-      {tab === "asaas" && <AbaAsaas carteira={carteira} padrao={padrao} />}
-      {tab === "historico" && <AbaHistorico carteira={carteira} importacoes={importacoes} />}
+      {tab === "status" && <AbaStatus carteira={carteira} podeEditar={podeEditar} />}
+      {tab === "prompt" && podeEditar && <AbaPrompt carteira={carteira} padrao={padrao} />}
+      {tab === "descontos" && podeEditar && <AbaDescontos carteira={carteira} padrao={padrao} />}
+      {tab === "asaas" && podeEditar && <AbaAsaas carteira={carteira} padrao={padrao} />}
+      {tab === "historico" && <AbaHistorico carteira={carteira} importacoes={importacoes} podeEditar={podeEditar} />}
     </>
   );
 }
@@ -60,7 +64,7 @@ function useSalvar(carteiraId: number) {
 }
 
 /* ---------- Status & envios ---------- */
-function AbaStatus({ carteira }: { carteira: any }) {
+function AbaStatus({ carteira, podeEditar = true }: { carteira: any; podeEditar?: boolean }) {
   const router = useRouter();
   const { patch, salvando, erro } = useSalvar(carteira.id);
   const status = carteira.status as string;
@@ -69,7 +73,7 @@ function AbaStatus({ carteira }: { carteira: any }) {
     if (!confirm(`Apagar a carteira "${carteira.nome}" e TODOS os seus devedores? Esta ação não pode ser desfeita.`)) return;
     const r = await fetch(`/api/carteiras/${carteira.id}`, { method: "DELETE" });
     if (r.ok) router.push("/carteiras");
-    else alert("Não foi possível apagar (apenas admin pode).");
+    else alert("Não foi possível apagar.");
   }
 
   return (
@@ -80,28 +84,32 @@ function AbaStatus({ carteira }: { carteira: any }) {
             <Label className="mb-0">Situação atual</Label>
             <StatusBadge status={status} />
           </div>
-          <div className="flex gap-2">
-            <Tooltip text="Começa a enviar mensagens para os devedores desta carteira (respeita a janela de horário e os limites dos chips).">
-              <Button variant={status === "ativa" ? "primary" : "outline"} onClick={() => patch({ status: "ativa" })} disabled={salvando || status === "ativa"}>
-                <Play className="h-4 w-4" /> Ativar
-              </Button>
-            </Tooltip>
-            <Tooltip text="Pausa os envios. Os dados continuam aqui; nada é apagado.">
-              <Button variant="outline" onClick={() => patch({ status: "pausada" })} disabled={salvando || status === "pausada"}>
-                <Pause className="h-4 w-4" /> Pausar
-              </Button>
-            </Tooltip>
-            <Tooltip text="Guarda como histórico. Some das campanhas e não dispara mais.">
-              <Button variant="ghost" onClick={() => patch({ status: "arquivada" })} disabled={salvando || status === "arquivada"}>
-                <Archive className="h-4 w-4" /> Arquivar
-              </Button>
-            </Tooltip>
-          </div>
+          {podeEditar && (
+            <div className="flex gap-2">
+              <Tooltip text="Começa a enviar mensagens para os devedores desta carteira (respeita a janela de horário e os limites dos chips).">
+                <Button variant={status === "ativa" ? "primary" : "outline"} onClick={() => patch({ status: "ativa" })} disabled={salvando || status === "ativa"}>
+                  <Play className="h-4 w-4" /> Ativar
+                </Button>
+              </Tooltip>
+              <Tooltip text="Pausa os envios. Os dados continuam aqui; nada é apagado.">
+                <Button variant="outline" onClick={() => patch({ status: "pausada" })} disabled={salvando || status === "pausada"}>
+                  <Pause className="h-4 w-4" /> Pausar
+                </Button>
+              </Tooltip>
+              <Tooltip text="Guarda como histórico. Some das campanhas e não dispara mais.">
+                <Button variant="ghost" onClick={() => patch({ status: "arquivada" })} disabled={salvando || status === "arquivada"}>
+                  <Archive className="h-4 w-4" /> Arquivar
+                </Button>
+              </Tooltip>
+            </div>
+          )}
         </div>
         {erro && <p className="text-xs text-rose">{erro}</p>}
-        <p className="text-xs text-mist">
-          Importante: o robô só envia para carteiras <b className="text-chalk">Ativas</b>, e ainda assim respeitando a chave geral em <Link href="/campanha" className="text-emerald hover:underline">Campanha</Link> (liga/desliga e modo simulação).
-        </p>
+        {podeEditar && (
+          <p className="text-xs text-mist">
+            Importante: o robô só envia para carteiras <b className="text-chalk">Ativas</b>, e ainda assim respeitando a chave geral em <Link href="/campanha" className="text-emerald hover:underline">Campanha</Link> (liga/desliga e modo simulação).
+          </p>
+        )}
       </Card>
 
       <div className="grid grid-cols-2 gap-3">
@@ -118,15 +126,17 @@ function AbaStatus({ carteira }: { carteira: any }) {
         </Card>
       </div>
 
-      <DistribuicaoCard carteira={carteira} />
+      {podeEditar && <DistribuicaoCard carteira={carteira} />}
 
-      <Card className="flex items-center justify-between border-rose/20">
-        <div>
-          <p className="text-sm font-medium text-chalk">Apagar carteira</p>
-          <p className="text-xs text-mist">Remove a carteira e todos os devedores/telefones/fila dela. Sem volta.</p>
-        </div>
-        <Button variant="danger" onClick={apagar}><Trash2 className="h-4 w-4" /> Apagar</Button>
-      </Card>
+      {podeEditar && (
+        <Card className="flex items-center justify-between border-rose/20">
+          <div>
+            <p className="text-sm font-medium text-chalk">Apagar carteira</p>
+            <p className="text-xs text-mist">Remove a carteira e todos os devedores/telefones/fila dela. Sem volta.</p>
+          </div>
+          <Button variant="danger" onClick={apagar}><Trash2 className="h-4 w-4" /> Apagar</Button>
+        </Card>
+      )}
     </div>
   );
 }
@@ -426,8 +436,9 @@ function AbaAsaas({ carteira, padrao }: { carteira: any; padrao: Record<string, 
 }
 
 /* ---------- Importações ---------- */
-function AbaHistorico({ carteira, importacoes }: { carteira: any; importacoes: any[] }) {
+function AbaHistorico({ carteira, importacoes, podeEditar = true }: { carteira: any; importacoes: any[]; podeEditar?: boolean }) {
   const router = useRouter();
+  const [modo, setModo] = React.useState<"modelo" | "ia">("modelo");
   const [arquivo, setArquivo] = React.useState<File | null>(null);
   const [carregando, setCarregando] = React.useState(false);
   const [erro, setErro] = React.useState<string | null>(null);
@@ -444,30 +455,43 @@ function AbaHistorico({ carteira, importacoes }: { carteira: any; importacoes: a
     setOkMsg(`Importadas ${d.relatorio?.importados ?? 0} linhas.`); setArquivo(null); router.refresh();
   }
 
+  function importadoPelaIA(rel: any) {
+    setOkMsg(`Importadas ${rel?.importados ?? 0} linhas.`); router.refresh();
+  }
+
   return (
     <div className="max-w-2xl space-y-4">
-      {carteira.status === "importando" && (
+      {podeEditar && carteira.status === "importando" && (
         <div className="flex items-start gap-2 rounded-xl border border-amber/30 bg-amber/10 px-4 py-3 text-sm text-amber">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           <span>Esta carteira ainda não tem planilha. Envie o arquivo abaixo para concluir a criação — ou apague a carteira na aba <b>Status &amp; envios</b>.</span>
         </div>
       )}
-      <Card className="space-y-3">
-        <Label className="flex items-center gap-1.5">Subir planilha para esta carteira <HelpHint text="Acrescenta/atualiza devedores. Mesmo CPF é atualizado (não duplica). Não aceita um arquivo com nome já usado." /></Label>
-        <div className="flex items-center gap-2">
-          <a href="/api/carteiras/modelo"><Button variant="outline">Baixar modelo</Button></a>
-          <label className="flex flex-1 cursor-pointer items-center gap-2 rounded-xl border border-dashed border-line bg-ink-900 px-3 py-2 hover:border-emerald/50">
-            <FileSpreadsheet className="h-4 w-4 text-emerald" />
-            <span className="flex-1 truncate text-sm text-chalk">{arquivo ? arquivo.name : "Escolher .xlsx"}</span>
-            <input type="file" accept=".xlsx,.xls" className="hidden" onChange={(e) => setArquivo(e.target.files?.[0] ?? null)} />
-          </label>
-          <Button onClick={enviar} disabled={carregando || !arquivo}>
-            {carregando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />} Enviar
-          </Button>
-        </div>
-        {erro && <p className="flex items-center gap-1.5 text-xs text-rose"><AlertTriangle className="h-3.5 w-3.5" /> {erro}</p>}
-        {okMsg && <p className="flex items-center gap-1.5 text-xs text-emerald"><CheckCircle2 className="h-3.5 w-3.5" /> {okMsg}</p>}
-      </Card>
+      {podeEditar && (
+        <Card className="space-y-3">
+          <Label className="flex items-center gap-1.5">Subir planilha para esta carteira <HelpHint text="Acrescenta/atualiza devedores. Mesmo CPF é atualizado (não duplica). Não aceita um arquivo com nome já usado." /></Label>
+          <ModoSeletor modo={modo} setModo={setModo} />
+          {modo === "modelo" ? (
+            <>
+              <div className="flex items-center gap-2">
+                <a href="/api/carteiras/modelo"><Button variant="outline">Baixar modelo</Button></a>
+                <label className="flex flex-1 cursor-pointer items-center gap-2 rounded-xl border border-dashed border-line bg-ink-900 px-3 py-2 hover:border-emerald/50">
+                  <FileSpreadsheet className="h-4 w-4 text-emerald" />
+                  <span className="flex-1 truncate text-sm text-chalk">{arquivo ? arquivo.name : "Escolher .xlsx"}</span>
+                  <input type="file" accept=".xlsx,.xls" className="hidden" onChange={(e) => setArquivo(e.target.files?.[0] ?? null)} />
+                </label>
+                <Button onClick={enviar} disabled={carregando || !arquivo}>
+                  {carregando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />} Enviar
+                </Button>
+              </div>
+              {erro && <p className="flex items-center gap-1.5 text-xs text-rose"><AlertTriangle className="h-3.5 w-3.5" /> {erro}</p>}
+            </>
+          ) : (
+            <ImportadorIA carteiraId={carteira.id} onImportado={importadoPelaIA} />
+          )}
+          {okMsg && <p className="flex items-center gap-1.5 text-xs text-emerald"><CheckCircle2 className="h-3.5 w-3.5" /> {okMsg}</p>}
+        </Card>
+      )}
 
       <Card className="p-0">
         <table className="w-full text-sm">
