@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { supabaseServer } from "@/lib/supabase-server";
+import { getConfigEscopo } from "@/lib/config";
 import { SectionTitle } from "@/components/ui/primitives";
 import { ConfigForm } from "./form";
 import { BotGlobal } from "./bot-global";
@@ -22,6 +23,11 @@ export default async function ConfigPage() {
   const c: Record<string, any> = {};
   for (const r of cfg ?? []) c[r.chave] = r.valor;
 
+  // modelo de IA do robô (chave `ia`) no escopo do ator: cobrador vê/edita o seu (cai no
+  // global); admin edita o padrão global. Usado pelo seletor de modelo em Configurações.
+  const cobradorId = role === "cobrador" ? user!.id : null;
+  const iaAtual = (await getConfigEscopo(cobradorId)).ia ?? {};
+
   // RLS escopa: admin vê todos; cobrador vê a si + seu tenant (credor/visualizadores).
   const { data: usuarios } = await sb.from("usuarios_app")
     .select("id, nome, email, role, cobrador_id").order("criado_em");
@@ -40,6 +46,7 @@ export default async function ConfigPage() {
       <ConfigForm
         role={role}
         asaas={c.asaas ?? {}}
+        iaAtual={iaAtual}
         usuarios={usuarios ?? []}
         carteiras={carteiras ?? []}
         cobradores={cobradores ?? []}

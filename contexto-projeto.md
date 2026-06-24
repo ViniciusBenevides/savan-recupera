@@ -1,9 +1,14 @@
 # Contexto do Projeto — SAVAN Recupera
 
 > Documento para retomar o contexto em novas sessões com Claude.
-> Última atualização: **Campanha/Mensagens/Descontos por conta (cobrador), com o admin vendo/
+> Última atualização: **Vários escaladores (cobradores humanos) por carteira, escolhidos entre os
+> chips conectados marcados como Equipe, com estratégia de roteamento (rodízio/região/fixo+reserva)
+> e número puxado do chip conectado — ver §24.**
+> (Anterior: Seletor de modelo de IA em Configurações — lista os modelos que a chave
+> OpenAI da conta acessa e sugere o melhor custo-benefício e o melhor para cobrança — ver §23.)
+> (Anterior: Campanha/Mensagens/Descontos por conta (cobrador), com o admin vendo/
 > controlando tudo separado por conta (seletor de conta) + correção da saída @lid ("Falha ao
-> enviar") — ver §22.**
+> enviar") — ver §22.)
 > (Anterior: Hierarquia de acesso em 4 níveis (admin único · cobrador · credor ·
 > visualizador) com isolamento por tenant via RLS, atribuição p/ o admin, self-service de usuários
 > e chaves por cobrador — ver §21.)
@@ -670,8 +675,8 @@ campo `{ colunas:[idx], transform }`. Transforms **implementados em código** (a
 - Embutido na aba **Importações** (`carteiras/[id]/painel.tsx` `AbaHistorico`) e na etapa de upload
   do assistente (`carteiras/nova/flow.tsx`). O caminho do modelo padrão segue intacto.
 
-**Status:** implementado no dashboard; `npm run build` + `tsc --noEmit` OK. Vai a produção no
-próximo `git push` (deploy automático Vercel). **Limites documentados:** cabeçalho na 1ª linha de
+**Status:** implementado no dashboard; `npm run build` + `tsc --noEmit` OK. ✅ **Commitado e
+pushado p/ `main`** (deploy automático Vercel). **Limites documentados:** cabeçalho na 1ª linha de
 dados, dividir/juntar células e centavos cobertos; planilha com várias tabelas na mesma aba /
 cabeçalho multi-linha complexo ficam fora do v1. A amostra (poucas linhas, com PII) vai à OpenAI —
 mesmo provedor que o `bot-turno` já usa; mascaramento fica como melhoria futura.
@@ -705,7 +710,7 @@ entrada podia nunca ficar garantido.
 Z-API com body `{"value":"<CHATWOOT_URL>/webhooks/whatsapp/+556282624555"}` (retorno `{"value":true}`).
 Pela UI o equivalente é o botão **Revincular Chatwoot** (`api/chips/[id]/chatwoot`).
 
-**Conserto permanente (código — vai a produção no próximo `git push`):** garantia auto-curável
+**Conserto permanente (código — ✅ commitado e pushado p/ `main`, deploy Vercel):** garantia auto-curável
 amarrada ao próprio "Enviar teste".
 - `lib/zapi.ts`: novo **`garantirWebhookEntrada()`** — descobre o número real do chip (fallback ao
   `numero_e164` salvo), resolve a `CHATWOOT_URL` e reaponta o webhook "ao receber" via `definirWebhooks`.
@@ -716,8 +721,8 @@ amarrada ao próprio "Enviar teste".
 - `tsc --noEmit` OK.
 
 **Como testar:** responda no WhatsApp do número de teste após o disparo → a entrada aparece no
-Chatwoot e o `bot-turno` roda (negocia em modo teste, Pix sandbox/fake). **Pendência:** `git push`
-(deploy Vercel) para a auto-cura valer em todo chip/teste; o conserto manual já cobre o chip 1.
+Chatwoot e o `bot-turno` roda (negocia em modo teste, Pix sandbox/fake). **Concluído:** commitado e
+pushado p/ `main` (deploy Vercel) → a auto-cura vale em todo chip/teste; o conserto manual já cobria o chip 1.
 
 ---
 
@@ -787,11 +792,11 @@ agora carrega **base global + overlay do cobrador**. `bot-turno` (**v7**) resolv
 idem para a **chave Asaas**. `webhook-asaas`/demais lêem só chaves globais (CHATWOOT/webhook) → sem
 mudança. **n8n inalterado.**
 
-**Pendências:**
-- `git push` na `main` (deploy Vercel) para o front ir a produção; o banco e as Edge Functions já
-  estão aplicados em produção.
+**Status:** ✅ **concluído e em produção.**
+- Front commitado e **pushado p/ `main`** (deploy Vercel); o banco e as Edge Functions já estão
+  aplicados em produção.
 - **Campanha, Mensagens e Descontos por conta** — ✅ **CONCLUÍDO no §22** (migration 021 + RLS +
-  Edge Functions deployadas). Falta só o `git push` do front.
+  Edge Functions deployadas + front no ar).
 
 ---
 
@@ -845,7 +850,7 @@ cobrador; o que o cobrador não personaliza **cai no global**.
 - **Separação visível p/ o admin**: seletor de conta nessas telas + selo **"Conta: {cobrador}"** nos
   cards de Chips + colunas de atribuição em Carteiras (§21). Leituras `configuracoes` que quebravam
   com multi-linha corrigidas (`getConfigEscopo` ou `.is("cobrador_id", null)`).
-- **`npm run build` + `tsc --noEmit` OK.** Vai a produção no próximo `git push` (Vercel).
+- **`npm run build` + `tsc --noEmit` OK.** ✅ **Commitado e pushado p/ `main` (deploy Vercel).**
 
 **Correção da SAÍDA "Falha ao enviar" (@lid) — bot-turno + Chatwoot:**
 - **Diagnóstico:** o chip está conectado e a Z-API envia por telefone OK (testado: `send-text` 200),
@@ -866,3 +871,105 @@ cobrador; o que o cobrador não personaliza **cai no global**.
 - **Pendência:** `webhook-asaas`/`campanha-followup` ainda enviam confirmação/follow-up só pelo canal
   Chatwoot (telefone); para contatos `@lid` a entrega desses também depende do canal — replicar o
   caminho "enviar via Z-API ao @lid" neles é melhoria futura (o caminho crítico do bot já está coberto).
+
+---
+
+## 23. Seletor de modelo de IA em Configurações (com sugestão de custo-benefício/cobrança)
+
+Pedido do dono: em **Configurações** poder **escolher outros modelos do GPT**, com o sistema
+**pegando todos os modelos** da conta e **sugerindo o melhor custo-benefício** e o **melhor para o
+cenário de cobrança**. O modelo é a chave `ia.modelo` (lida pelo `bot-turno`); até aqui só dava para
+trocá-lo num **input de texto livre** em Campanha (§22).
+
+**Decisão de arquitetura — por que catálogo curado, e não só a API:** o `GET /v1/models` da OpenAI
+devolve só os **IDs** que a conta acessa — **sem preço nem capacidade**. Então "melhor custo-benefício"
+e "melhor para cobrança" saem de um **catálogo curado** no código, **cruzado** com o que a conta de
+fato acessa. Sem chave (ou OpenAI fora), cai no catálogo de referência com aviso.
+
+**Front/back (`dashboard/`, sem migration nem Edge Function):**
+- `src/lib/ia/modelos-catalogo.ts` (**novo**): catálogo dos modelos de chat com **preço USD/1M
+  tokens** e notas curadas (`inteligencia`, `cobranca`). Cobre as famílias atuais (verificado em
+  **2026-06-24**, fonte `developers.openai.com/api/docs/pricing`): **5.x** (gpt-5.5, 5.4, 5.4-mini,
+  gpt-5, 5-mini, 5-nano), **4.1** (4.1, 4.1-mini, 4.1-nano), **4o** (4o, 4o-mini) e **raciocínio**
+  (o3, o4-mini — nota de cobrança menor pela latência). De fora de propósito: variantes `*-pro`
+  (~$30/$180, exagero p/ cobrança). `recomendar(idsDisponiveis)`: **custo-benefício** = maior
+  inteligência-por-dólar **entre os de qualidade ≥ 80** (equilíbrio, não o mais barato → tende a
+  **gpt-4.1-mini**); **cobrança** = maior nota no cenário (PT-BR + function calling + seguir
+  guardrails → tende ao topo de linha, **gpt-5.5**). `custoMisto` pesa entrada/saída 60/40.
+  `ehModeloChat(id)` filtra a lista bruta (tira embedding/áudio/imagem/etc.).
+  ⚠️ **Preços são de referência — a OpenAI não os expõe por API; atualizar à mão no catálogo
+  (cabeçalho do arquivo tem a fonte e a data da última verificação).**
+- `src/app/api/ia/modelos/route.ts` (**novo**, GET `[?conta=]`): `exigirEscopoConta` → lê a
+  `OPENAI_API_KEY` do escopo (`getSegredo`), chama `GET /v1/models`, marca quais catalogados a conta
+  acessa, anexa preço/notas, lista modelos de chat extras (sem preço) e devolve as recomendações.
+- `src/app/(dash)/configuracoes/modelo-ia.tsx` (**novo**, client): card **"Modelo de IA do robô"** —
+  busca automática, selos **verde "Melhor p/ cobrança"** e **âmbar "Custo-benefício"**, preço e notas
+  por modelo, botão Atualizar; salva em `ia.modelo` via `api/config` (escopo do ator, preserva `nome_bot`).
+- `configuracoes/page.tsx`: carrega o `ia` do escopo (`getConfigEscopo`; cobrador o seu/cai no global,
+  admin o global) e passa ao form. `configuracoes/form.tsx`: renderiza o `ModeloIA` logo após o card
+  de **Chaves** (mesmo lugar da `OPENAI_API_KEY`); nota antiga "ajuste o modelo em Campanha" atualizada.
+
+**Escopo:** cobrador edita o **seu** modelo (cai no global se não personalizar); admin edita o
+**padrão global**. Mesmo modelo de escopo de §22.
+
+**Mantido (não quebrar):** o input de modelo em **Campanha** (`controls.tsx`) continua válido — grava
+a mesma chave `ia.modelo`. Há, portanto, **dois editores** do mesmo campo (Configurações é o rico);
+trocar o de Campanha por um atalho ficou como decisão em aberto do dono.
+
+**Status:** `tsc --noEmit` + `npm run build` OK (rotas `/api/ia/modelos` e `/configuracoes` no
+output). Vai a produção no próximo `git push` (deploy automático Vercel).
+
+---
+
+## 24. Vários escaladores (cobradores humanos) por carteira + estratégia de roteamento
+
+Pedido do dono: o **chip do escalador continua conectado** (Z-API) — de propósito, pra ver as
+conversas dele e fiscalizar acordo por fora ("passar a perna"); e na carteira poder **selecionar
+entre os escaladores que existem no sistema** (não digitar número à mão). Decisões dele: cada
+carteira tem **1 cobrador-conta + 1 credor**, mas pode ter **vários chips de bot e vários chips de
+escalador humano**; a **estratégia de roteamento é escolhida na carteira** (entre 3 opções), com o
+número **puxado do chip conectado**.
+
+**Sem migration nem mudança de API:** a lista de escaladores vive no `config_override` (jsonb livre)
+que a carteira já tem; todos os campos usados já existem (`chips.numero_e164/regiao_uf/regiao_cidade/
+status`, `devedores.uf/cidade`, `escalacoes.equipe_chip_id/atendente_numero`). A rota
+`api/carteiras/[id]` (PATCH) já repassa o `config_override` inteiro.
+
+**Formato:** `config_override.escaladores = { estrategia, lista: [{chip_id, nome, numero}] }`
+(ordem da lista = prioridade). **Compat:** o formato antigo era um objeto único
+`config_override.equipe = {nome, numero, chip_id}` — o bot e a UI ainda leem isso (vira lista de 1,
+estratégia `fixo`); ao **salvar de novo**, a carteira migra pro `escaladores` e o `equipe` antigo é
+removido.
+
+**Edge Function `bot-turno` (v11, deployada via MCP, self-contained = repo):**
+- `lerEscaladores(carteira,cfg)` resolve `{estrategia, lista}` com compat do `equipe` antigo.
+- `escolherEscalador(...)` escolhe **1** na hora da escalação (lazy, só no `escalar_humano`): hidrata
+  cada item com o chip conectado (**número vem do `numero_e164`**, não do que ficou salvo), descarta
+  quem não tem número, e aplica:
+  - **rodizio** → escalador com **menos escalação aberta** (conta `escalacoes` em `aberta`/
+    `em_atendimento` por `equipe_chip_id`; empate = ordem da lista);
+  - **regiao** → casa `devedores.uf`/`cidade` com `chips.regiao_uf`/`regiao_cidade`; **sem match cai
+    no rodízio** geral;
+  - **fixo** → ordem da lista = prioridade (principal → reservas), **pulando quem está
+    `desconectado`/`banido`**; se todos caídos, ainda escala (não trava).
+  O resto da escalação é igual ao §17/§22: grava `escalacoes` (com `equipe_chip_id`/`atendente_numero`
+  do escolhido), avisa o escalador no WhatsApp **pelo chip do bot** (Z-API send-text), passa o número
+  ao devedor e faz nota/label/atribuição no Chatwoot. Tudo guardado por `!simulacao`.
+
+**Front (`dashboard/`, vai a produção no próximo `git push`):**
+- `carteiras/[id]/painel.tsx` `AbaAsaas`: o antigo card "Cobrador humano" (1 chip opcional + número
+  digitado) virou **"Escaladores (cobradores humanos)"** — **seletor de estratégia** (fixo+reserva /
+  rodízio / por região) + **multi-seleção** dos chips marcados como **Equipe** (checkbox por chip,
+  com o número conectado e selo **Principal/Reserva N** + botão ↑ pra ordenar a prioridade no modo
+  fixo). Mostra **aviso âmbar** se um escalador selecionado **não tem número** (chip não conectado →
+  ignorado na escalação). A query passou a buscar `numero_e164/status/regiao_uf/regiao_cidade`.
+- O número **não é mais digitado**: vem do `numero_e164` do chip conectado → garante que é um número
+  monitorável (a conversa do escalador cai no Chatwoot pra fiscalizar). **Ressalva documentada:** o
+  sistema só vê o que passa por esse número — se o escalador desviar o devedor pra outro WhatsApp
+  pessoal, some do radar; conectar o chip cobre o handoff oficial, não é blindagem 100%.
+
+**Status:** `tsc --noEmit` + `npm run build` OK (14 páginas; `/carteiras/[id]` compila). `bot-turno`
+**deployado (v11 ACTIVE)**. **Pendência:** `git push` na `main` pro front ir a produção (banco/Edge já
+estão aplicados). **Não confundir** o *cobrador-conta* da carteira (`carteiras.cobrador_id`, dono da
+operação, §21) com o *escalador humano* (chip `papel='equipe'`) — a UI/§ chamam o segundo de
+"escalador" justamente pra evitar a colisão de nome herdada do código.

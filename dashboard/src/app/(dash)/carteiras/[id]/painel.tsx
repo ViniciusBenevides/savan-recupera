@@ -338,23 +338,52 @@ function AbaAsaas({ carteira, padrao }: { carteira: any; padrao: Record<string, 
   const [wallet, setWallet] = React.useState(a0.wallet ?? a0.wallet_savan ?? "");
   const [comissao, setComissao] = React.useState<number | string>(a0.comissao_pct ?? "");
 
-  const [cobNome, setCobNome] = React.useState(e0.nome ?? "");
-  const [cobNum, setCobNum] = React.useState(e0.numero ?? "");
-  const [cobChip, setCobChip] = React.useState<number | "">(e0.chip_id ?? "");
+  // escaladores: lista (ordem = prioridade) de chips marcados como "equipe" + estratégia.
+  // Compat: o formato antigo era um objeto único em config_override.equipe.
+  const escSalvo = over.escaladores ?? null;
+  const [estrategia, setEstrategia] = React.useState<string>(escSalvo?.estrategia ?? "fixo");
+  const [selecionados, setSelecionados] = React.useState<number[]>(
+    Array.isArray(escSalvo?.lista) ? escSalvo.lista.map((e: any) => e.chip_id).filter(Boolean)
+      : (e0.chip_id ? [e0.chip_id] : [])
+  );
   const [chipsEquipe, setChipsEquipe] = React.useState<any[]>([]);
 
   React.useEffect(() => {
-    supabaseBrowser().from("chips").select("id, nome, agente_nome").eq("papel", "equipe").order("id")
+    supabaseBrowser().from("chips")
+      .select("id, nome, agente_nome, numero_e164, status, regiao_uf, regiao_cidade")
+      .eq("papel", "equipe").order("id")
       .then(({ data }) => setChipsEquipe(data ?? []));
   }, []);
+
+  // selecionados primeiro (em ordem de prioridade), depois o resto — pra o ↑ mover a linha de fato
+  const ordenados = React.useMemo(() => {
+    const sel = selecionados.map((id) => chipsEquipe.find((c) => c.id === id)).filter(Boolean) as any[];
+    return [...sel, ...chipsEquipe.filter((c) => !selecionados.includes(c.id))];
+  }, [chipsEquipe, selecionados]);
+
+  function toggle(id: number) {
+    setSelecionados((s) => s.includes(id) ? s.filter((x) => x !== id) : [...s, id]);
+  }
+  function subir(id: number) {
+    setSelecionados((s) => {
+      const i = s.indexOf(id);
+      if (i <= 0) return s;
+      const n = [...s]; [n[i - 1], n[i]] = [n[i], n[i - 1]]; return n;
+    });
+  }
 
   async function salvar() {
     const novoOver: Record<string, any> = { ...over };
     if (usarGlobal) { delete novoOver.asaas; }
     else { novoOver.asaas = { wallet: String(wallet).trim(), comissao_pct: Number(comissao || 10) }; }
-    if (String(cobNum).trim() || String(cobNome).trim() || cobChip) {
-      novoOver.equipe = { nome: String(cobNome).trim(), numero: String(cobNum).trim(), chip_id: cobChip || null };
-    } else { delete novoOver.equipe; }
+    delete novoOver.equipe; // formato antigo (objeto único) deixa de ser usado
+    if (selecionados.length) {
+      const lista = selecionados.map((id) => {
+        const c = chipsEquipe.find((x) => x.id === id);
+        return { chip_id: id, nome: c?.agente_nome || c?.nome || null, numero: c?.numero_e164 || null };
+      });
+      novoOver.escaladores = { estrategia, lista };
+    } else { delete novoOver.escaladores; }
     await patch({ config_override: Object.keys(novoOver).length ? novoOver : null });
   }
 
@@ -396,31 +425,53 @@ function AbaAsaas({ carteira, padrao }: { carteira: any; padrao: Record<string, 
 
       <Card className="space-y-4">
         <h3 className="flex items-center gap-2 font-display text-base font-600 text-chalk">
-          <Headset className="h-4 w-4 text-violet" /> Cobrador humano (escalação)
+          <Headset className="h-4 w-4 text-violet" /> Escaladores (cobradores humanos)
         </h3>
         <p className="text-xs text-mist">
-          Quando o bot escala um caso desta carteira, ele avisa o devedor e passa este contato; a escalação fica registrada para o cobrador assumir.
+          Quando o bot escala um caso desta carteira, ele escolhe um escalador, avisa o devedor e passa o WhatsApp dele. Só aparecem os chips conectados marcados como <b className="text-chalk">Equipe</b> em Chips — assim a conversa dele cai no Chatwoot pra você acompanhar.
         </p>
+
         <div>
-          <Label>Chip da equipe (opcional)</Label>
-          <select value={cobChip} onChange={(e) => {
-            const v = e.target.value ? Number(e.target.value) : "";
-            setCobChip(v);
-            const c = chipsEquipe.find((x) => x.id === v);
-            if (c?.agente_nome && !cobNome) setCobNome(c.agente_nome);
-          }} className="h-10 w-full rounded-xl border border-line bg-ink-850 px-3 text-sm text-chalk outline-none">
-            <option value="">— Nenhum (atende no mesmo número) —</option>
-            {chipsEquipe.map((c) => <option key={c.id} value={c.id}>{c.nome}{c.agente_nome ? ` (${c.agente_nome})` : ""}</option>)}
+          <Label className="flex items-center gap-1.5">Como escolher quando há vários <HelpHint text="Fixo + reserva: o 1º da lista atende sempre; os outros só entram se o chip dele estiver indisponível. Rodízio: equilibra a carga (quem tem menos caso aberto pega o próximo). Por região: casa a UF/cidade do devedor com a região do chip do escalador (Status & envios → Distribuição), caindo no rodízio quem não casar." /></Label>
+          <select value={estrategia} onChange={(e) => setEstrategia(e.target.value)}
+                  className="h-10 w-full rounded-xl border border-line bg-ink-850 px-3 text-sm text-chalk outline-none">
+            <option value="fixo">Fixo + reserva (o 1º atende; os outros são backup)</option>
+            <option value="rodizio">Rodízio (equilibra a carga)</option>
+            <option value="regiao">Por região (UF/cidade do devedor)</option>
           </select>
-          {chipsEquipe.length === 0 && <p className="mt-1 text-[11px] text-mist">Nenhum chip marcado como "equipe" ainda — cadastre o chip do cobrador em Chips e marque o papel como Equipe.</p>}
         </div>
-        <div>
-          <Label>Nome do cobrador</Label>
-          <Input value={cobNome} onChange={(e) => setCobNome(e.target.value)} placeholder="Ex.: Carlos" />
-        </div>
-        <div>
-          <Label>WhatsApp do cobrador (o bot passa este número)</Label>
-          <Input value={cobNum} onChange={(e) => setCobNum(e.target.value)} placeholder="+5511999998888" className="font-mono text-xs" />
+
+        <div className="space-y-1.5">
+          <Label className="mb-0">Escaladores desta carteira</Label>
+          {chipsEquipe.length === 0 ? (
+            <p className="text-[11px] text-mist">Nenhum chip marcado como "Equipe" ainda — cadastre o chip do cobrador em Chips e marque o papel como Equipe.</p>
+          ) : ordenados.map((c) => {
+            const sel = selecionados.includes(c.id);
+            const pos = selecionados.indexOf(c.id);
+            return (
+              <div key={c.id} className={`flex items-center gap-2 rounded-xl border px-3 py-2 ${sel ? "border-violet/40 bg-violet/5" : "border-line bg-ink-850"}`}>
+                <input type="checkbox" checked={sel} onChange={() => toggle(c.id)} className="h-4 w-4 accent-violet" />
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-1.5 text-sm text-chalk">
+                    {c.agente_nome || c.nome}
+                    {sel && estrategia === "fixo" && <Badge tone={pos === 0 ? "violet" : "neutral"}>{pos === 0 ? "Principal" : `Reserva ${pos}`}</Badge>}
+                  </div>
+                  <div className="font-mono text-[11px] tabnums">
+                    {c.numero_e164 ? <span className="text-mist">{c.numero_e164}</span> : <span className="text-amber">sem número — conecte o chip</span>}
+                  </div>
+                </div>
+                {sel && estrategia === "fixo" && pos > 0 && (
+                  <button type="button" onClick={() => subir(c.id)} title="Subir prioridade"
+                          className="rounded-lg px-2 py-1 text-mist hover:bg-ink-800 hover:text-chalk">↑</button>
+                )}
+              </div>
+            );
+          })}
+          {selecionados.some((id) => { const c = chipsEquipe.find((x) => x.id === id); return c && !c.numero_e164; }) && (
+            <p className="flex items-center gap-1.5 rounded-lg border border-amber/30 bg-amber/10 px-3 py-2 text-[11px] text-amber">
+              <AlertTriangle className="h-3.5 w-3.5 shrink-0" /> Escalador sem número conectado é ignorado na escalação. Conecte o chip em Chips (QR) pra puxar o WhatsApp.
+            </p>
+          )}
         </div>
       </Card>
 

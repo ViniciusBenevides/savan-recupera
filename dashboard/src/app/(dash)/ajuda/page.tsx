@@ -6,7 +6,7 @@ import {
   LifeBuoy, ShieldCheck, Search, ChevronDown, ArrowUp, Sparkles, X,
   Radio, Smartphone, MessageSquareText, Percent, Users, HandCoins, BarChart3,
   Settings, FolderUp, LayoutDashboard, KeyRound, Clock, Send, QrCode,
-  AlertTriangle, CheckCircle2, ArrowRight, Flame, Network,
+  AlertTriangle, CheckCircle2, ArrowRight, Flame, Network, FlaskConical,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -18,11 +18,12 @@ type Sec = { id: string; title: string; icon: any; tag?: string; keywords: strin
 
 const SECTIONS: Sec[] = [
   { id: "intro", title: "O que é a plataforma", icon: BookOpen, tag: "Comece aqui", keywords: "o que é whatsapp recuperação crédito robô pix quitação desconto fluxo" },
-  { id: "acesso", title: "Primeiro acesso", icon: KeyRound, keywords: "login senha tema claro escuro perfis admin operador visualizador usuário" },
-  { id: "conceitos", title: "Conceitos rápidos", icon: Compass, keywords: "carteira chip campanha simulação fila follow-up aquecimento glossário" },
-  { id: "golive", title: "Como colocar no ar", icon: Rocket, tag: "Passo a passo", keywords: "go-live chaves openai asaas chips qr carteira modelo planilha simulação ativar ordem" },
-  { id: "telas", title: "Tela por tela", icon: LayoutGrid, keywords: "visão geral carteiras campanha chips mensagens descontos devedores pagamentos relatórios configurações conta" },
-  { id: "maturidade", title: "Chip aquecido ou novo", icon: Flame, tag: "Importante", keywords: "chip aquecido novo maturidade aquecimento rampa bloqueio whatsapp business número frio limite diário" },
+  { id: "acesso", title: "Primeiro acesso", icon: KeyRound, keywords: "login senha tema claro escuro perfis papéis admin cobrador credor visualizador operador usuário conta seletor de conta padrão global" },
+  { id: "conceitos", title: "Conceitos rápidos", icon: Compass, keywords: "carteira chip campanha simulação fila follow-up aquecimento glossário conta cobrador" },
+  { id: "golive", title: "Como colocar no ar", icon: Rocket, tag: "Passo a passo", keywords: "go-live chaves openai asaas chips qr carteira modelo planilha simulação ativar ordem importar ia modelo de ia" },
+  { id: "teste", title: "Testar antes de disparar", icon: FlaskConical, tag: "Importante", keywords: "teste enviar teste número de teste simulação responder whatsapp validar antes do envio real sandbox pix fake ponta a ponta" },
+  { id: "telas", title: "Tela por tela", icon: LayoutGrid, keywords: "visão geral carteiras campanha chips mensagens descontos devedores pagamentos relatórios configurações conta importador ia modelo de ia por conta" },
+  { id: "maturidade", title: "Chip: maturidade e tipo", icon: Flame, tag: "Importante", keywords: "chip aquecido novo maturidade aquecimento rampa bloqueio whatsapp número frio limite diário tipo físico esim voip virtual api qr" },
   { id: "distribuicao", title: "Distribuição e queda de chip", icon: Network, keywords: "distribuição uf cidade estado igualitário sugestão chip caiu failover reatribuir banido escalação transparência" },
   { id: "humano", title: "Atendimento humano", icon: Headphones, keywords: "escalar humano chatwoot atendente contestação advogado label nota escalações ledger acordo transparência" },
   { id: "regras", title: "Regras jurídicas", icon: Scale, tag: "Importante", keywords: "jurídico prescrição serasa lgpd identidade janela horário contrato dpa nunca ameaça" },
@@ -41,25 +42,25 @@ const CONCEITOS = [
 ];
 
 const GOLIVE = [
-  { icon: KeyRound, t: "Chaves", d: "Configurações → Chaves: preencha a OPENAI_API_KEY (sem ela o robô não responde) e, no go‑live real, a chave de produção do Asaas." },
+  { icon: KeyRound, t: "Chaves", d: "Configurações → Chaves: preencha a OPENAI_API_KEY (sem ela o robô não responde) e, no go‑live real, a chave de produção do Asaas. Ali ao lado dá para escolher o modelo de IA do robô (o sistema sugere o melhor)." },
   { icon: QrCode, t: "Chips", d: "Chips → Novo chip: leia o QR Code com o WhatsApp do número. Ao conectar, ele entra como “aquecendo” e vira “ativo” sozinho." },
-  { icon: FolderUp, t: "Carteira", d: "Carteiras → Nova: baixe o modelo de planilha, preencha, suba e veja o relatório. A carteira nasce Pausada." },
-  { icon: MessageSquareText, t: "Mensagens e Descontos", d: "Ajuste os textos das mensagens e as faixas de desconto (pode ser por carteira)." },
-  { icon: Sparkles, t: "Simulação", d: "Campanha → ligue com o Modo simulação LIGADO e confira o fluxo rodando sem enviar nada." },
+  { icon: FolderUp, t: "Carteira", d: "Carteiras → Nova: baixe o modelo de planilha, preencha e suba — ou suba a sua planilha fora do padrão e deixe a IA organizar. Confira o relatório. A carteira nasce Pausada." },
+  { icon: MessageSquareText, t: "Mensagens e Descontos", d: "Ajuste os textos das mensagens e as faixas de desconto (por conta, e ainda dá para sobrescrever por carteira)." },
+  { icon: Sparkles, t: "Simulação", d: "Campanha → ligue com o Modo simulação LIGADO e confira o fluxo sem enviar nada. Para validar no seu próprio WhatsApp, use o “Enviar teste” em Chips (veja “Testar antes de disparar”)." },
   { icon: Send, t: "Ativar de verdade", d: "Ative a carteira e, quando estiver tudo certo, desligue o Modo simulação. A partir daí é envio real (8h–20h)." },
 ];
 
 const TELAS = [
   { icon: LayoutDashboard, n: "Visão geral", d: "Página inicial: cartões com os números do dia, o funil (enviados → respostas → acordos → pagos) e um feed ao vivo dos pagamentos. É o seu raio‑x diário." },
-  { icon: FolderUp, n: "Carteiras", d: "Suas carteiras com status (Importando / Ativa / Pausada / Arquivada), nº de devedores e saldo. Ao abrir, há abas: Status & envios, Prompt do robô, Descontos e Importações. Só carteiras Ativas disparam." },
-  { icon: Radio, n: "Campanha", d: "A chave gigante liga/desliga toda a operação. Aqui ficam também o Modo simulação, a janela de envio (8h–20h), o intervalo mínimo entre mensagens (12s) e o aquecimento." },
-  { icon: Smartphone, n: "Chips", d: "Cartões dos números. Novo chip → leia o QR. Se o QR não aparecer, a tela explica o motivo (ex.: assinatura Z‑API vencida). O menu ⋮ permite editar (tokens) e excluir o chip." },
-  { icon: MessageSquareText, n: "Mensagens", d: "Modelos de mensagem (abertura, follow‑ups) com pré‑visualização. Use as variáveis do modelo — nunca escreva o valor da dívida fixo no texto; o robô calcula." },
-  { icon: Percent, n: "Descontos", d: "Editor das faixas por idade da dívida (15+ anos→60%, 10+→50%, 5+→40%, abaixo→30%) + a margem extra única (+10pp) e um simulador. Pode ser sobrescrito por carteira." },
+  { icon: FolderUp, n: "Carteiras", d: "Suas carteiras com status (Importando / Ativa / Pausada / Arquivada), nº de devedores e saldo. Ao abrir, há abas: Status & envios, Prompt do robô, Descontos e Importações. Na importação, se a planilha não seguir o modelo, escolha “a IA organiza” e revise o de‑para antes de gravar. Só carteiras Ativas disparam." },
+  { icon: Radio, n: "Campanha", d: "A chave gigante liga/desliga a operação da conta. Aqui ficam o Modo simulação, a janela de envio (8h–20h), o intervalo mínimo entre mensagens (12s), o aquecimento e o card Robô (nome do bot + modelo de IA). Cada cobrador tem a sua; o admin escolhe a conta no seletor do topo." },
+  { icon: Smartphone, n: "Chips", d: "Cartões dos números. Novo chip → leia o QR. Se o QR não aparecer, a tela explica o motivo (ex.: assinatura Z‑API vencida). No cadastro você define a maturidade e o tipo do chip e vê o selo de papel (Bot ou Cobrador). Há ainda o card Número de teste e o botão Enviar teste. O menu ⋮ permite editar (tokens) e excluir." },
+  { icon: MessageSquareText, n: "Mensagens", d: "Modelos de mensagem (abertura, follow‑ups) com pré‑visualização, por conta. Use “Começar com os modelos padrão” para clonar o global e ajustar. Use as variáveis do modelo — nunca escreva o valor da dívida fixo no texto; o robô calcula." },
+  { icon: Percent, n: "Descontos", d: "Editor das faixas por idade da dívida (15+ anos→60%, 10+→50%, 5+→40%, abaixo→30%) + a margem extra única (+10pp) e um simulador. É por conta (cada cobrador a sua) e pode ainda ser sobrescrito por carteira." },
   { icon: Users, n: "Devedores", d: "Busca e lista de devedores, com filtro por carteira e coluna de resposta. Ao abrir um devedor, você vê a linha do tempo (mensagens, proposta, Pix, pagamento)." },
-  { icon: HandCoins, n: "Pagamentos", d: "Lista dos Pix gerados e seu status (gerado / pago). Atualiza ao vivo quando alguém paga." },
+  { icon: HandCoins, n: "Pagamentos", d: "Lista dos Pix gerados e seu status (gerado / pago). Atualiza ao vivo quando alguém paga. Os totais reais não contam os disparos de teste (marcados com “Teste”)." },
   { icon: BarChart3, n: "Relatórios", d: "Gráficos de recuperação e desempenho ao longo do tempo." },
-  { icon: Settings, n: "Configurações", d: "Asaas (sandbox/produção), Chaves/segredos (OpenAI, Asaas) e Usuários (criar usuário, trocar papel). Só Admin vê tudo aqui." },
+  { icon: Settings, n: "Configurações", d: "Asaas (sandbox/produção), Chaves/segredos (OpenAI, Asaas), o Modelo de IA do robô (com sugestão de custo‑benefício e de melhor para cobrança) e Usuários (criar usuário, definir papel). O admin gere o padrão global; o cobrador, a sua conta." },
 ];
 
 const PROBLEMAS = [
@@ -67,14 +68,16 @@ const PROBLEMAS = [
   { s: "Nada é enviado", c: "Campanha desligada, carteira não‑Ativa, Modo simulação ligado, fora da janela 8h–20h, ou chip sem limite (aquecimento)." },
   { s: "O QR Code não aparece", c: "A tela do chip mostra o motivo (ex.: assinatura Z‑API vencida). Resolva e clique em “tentar de novo”." },
   { s: "“Chatwoot não vinculado” no chip", c: "Use a opção de revincular o número no cartão do chip." },
+  { s: "Respondi o teste e o robô não continuou", c: "Use “Revincular Chatwoot” no cartão do chip — garante o caminho de volta da mensagem (webhook de entrada da Z‑API)." },
   { s: "Mensagens recebidas não chegam ao robô", c: "O webhook do Chatwoot precisa apontar para o n8n (/webhook/savan-bot)." },
   { s: "Pagamento não confirma", c: "O webhook do Asaas precisa apontar para a função webhook‑asaas." },
 ];
 
 const PERFIS = [
-  { nome: "Admin", tone: "green" as const, d: "Faz tudo, inclusive criar usuários e mexer em chaves/segredos." },
-  { nome: "Operador", tone: "blue" as const, d: "Opera campanha, chips, mensagens e descontos." },
-  { nome: "Visualizador", tone: "neutral" as const, d: "Só lê (relatórios, devedores); não altera nada." },
+  { nome: "Admin", tone: "green" as const, d: "Dono da plataforma (único). Vê tudo de todas as contas, com atribuição, e cuida da infraestrutura. Ninguém mais pode virar admin." },
+  { nome: "Cobrador", tone: "blue" as const, d: "O operador. Vê e edita só o que é dele (suas carteiras, chips, mensagens, descontos e chaves). Cria os próprios credores e visualizadores." },
+  { nome: "Credor", tone: "violet" as const, d: "Dono da carteira. Só leitura do andamento das suas carteiras. Nunca vê chaves, wallet ou chips." },
+  { nome: "Visualizador", tone: "neutral" as const, d: "Só leitura (relatórios, devedores), no escopo de um cobrador. Não altera nada." },
 ];
 
 /* ------------------------------------------------------------------ */
@@ -316,19 +319,26 @@ export default function AjudaPage() {
                 <li className="flex gap-3"><Dot /> Clique no seu <strong className="text-chalk">nome</strong> (canto inferior esquerdo) → <strong className="text-chalk">Minha conta</strong> → troque a senha.</li>
                 <li className="flex gap-3"><Dot /> No rodapé da barra lateral há o <strong className="text-chalk">botão de tema</strong> ☀️/🌙 — escolha o que preferir; fica salvo.</li>
               </ol>
-              <div className="mt-5 grid gap-3 sm:grid-cols-3">
+              <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 {PERFIS.map((p) => (
                   <div key={p.nome} className="rounded-2xl border border-line bg-ink-850 p-4">
                     <span className={cn(
                       "inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-semibold",
                       p.tone === "green" && "border-emerald/25 bg-emerald/12 text-emerald-soft",
                       p.tone === "blue" && "border-blue/25 bg-blue/12 text-blue",
+                      p.tone === "violet" && "border-violet/25 bg-violet/12 text-violet",
                       p.tone === "neutral" && "border-line bg-ink-700 text-mist",
                     )}>{p.nome}</span>
                     <p className="mt-2 text-xs leading-snug text-mist">{p.d}</p>
                   </div>
                 ))}
               </div>
+              <p className="mt-4 text-sm leading-relaxed text-chalk/90">
+                Cada <strong className="text-chalk">cobrador</strong> tem a <strong className="text-chalk">sua própria</strong> Campanha,
+                Mensagens, Descontos e chaves — edita só as dele. O <strong className="text-chalk">admin</strong> vê e controla tudo,
+                mas <strong className="text-chalk">separado por conta</strong>: nessas telas aparece um <strong className="text-chalk">seletor
+                de conta</strong> (“Padrão global da plataforma” ou a conta de um cobrador), deixando claro de quem é o que está na tela.
+              </p>
             </Section>
           )}
 
@@ -377,6 +387,35 @@ export default function AjudaPage() {
             </Section>
           )}
 
+          {/* teste */}
+          {visible.some((s) => s.id === "teste") && (
+            <Section id="teste" title="Testar antes de disparar" icon={FlaskConical} tag="Importante" index={4}>
+              <p className="text-sm leading-relaxed text-chalk/90">
+                Você tem <strong className="text-chalk">duas camadas</strong> de teste, e elas se somam:
+              </p>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <div className="rounded-2xl border border-line bg-ink-850 p-4">
+                  <div className="flex items-center gap-2 font-display text-sm font-700 text-chalk"><Sparkles className="h-4 w-4 text-emerald" /> Modo simulação</div>
+                  <p className="mt-1.5 text-xs leading-relaxed text-mist">Roda todo o fluxo (seleção, proposta, Pix) <strong className="text-chalk">sem enviar nada</strong> a ninguém. Liga em Campanha. Bom para ver os números se mexendo sem risco.</p>
+                </div>
+                <div className="rounded-2xl border border-emerald/25 bg-emerald/8 p-4">
+                  <div className="flex items-center gap-2 font-display text-sm font-700 text-chalk"><FlaskConical className="h-4 w-4 text-emerald" /> Enviar teste (no seu WhatsApp)</div>
+                  <p className="mt-1.5 text-xs leading-relaxed text-mist">Manda a 1ª mensagem para um <strong className="text-chalk">número de teste seu</strong> e abre uma conversa marcada como teste. Você responde no seu zap e <strong className="text-chalk">conversa de verdade com o robô</strong> — ele negocia e gera um Pix de teste (sandbox/fake). Nada real sai e nada conta nos números.</p>
+                </div>
+              </div>
+              <ol className="mt-5 space-y-2.5 text-sm text-chalk/90">
+                <li className="flex gap-3"><Dot /> Em <strong className="text-chalk">Chips</strong>, no card <strong className="text-chalk">Número de teste</strong>, cadastre um ou mais números seus (com um apelido) e salve.</li>
+                <li className="flex gap-3"><Dot /> Clique em <strong className="text-chalk">Enviar teste</strong>, escolha o <strong className="text-chalk">número alvo</strong> e o <strong className="text-chalk">chip</strong> que dispara.</li>
+                <li className="flex gap-3"><Dot /> <strong className="text-chalk">Responda no seu WhatsApp</strong> — o robô continua a conversa normalmente, em modo teste.</li>
+              </ol>
+              <div className="mt-5">
+                <Callout tone="amber" title="Se você responder e o robô não continuar">
+                  Use <strong>Revincular Chatwoot</strong> no cartão do chip (garante o caminho de volta da mensagem). O próprio “Enviar teste” já tenta consertar isso sozinho.
+                </Callout>
+              </div>
+            </Section>
+          )}
+
           {/* telas */}
           {visible.some((s) => s.id === "telas") && (
             <Section id="telas" title="Tela por tela" icon={LayoutGrid} index={4}>
@@ -410,7 +449,7 @@ export default function AjudaPage() {
 
           {/* maturidade do chip */}
           {visible.some((s) => s.id === "maturidade") && (
-            <Section id="maturidade" title="Chip aquecido ou novo?" icon={Flame} tag="Importante" index={5}>
+            <Section id="maturidade" title="Chip: maturidade e tipo" icon={Flame} tag="Importante" index={5}>
               <p className="text-sm leading-relaxed text-chalk/90">
                 Um <strong className="text-chalk">chip aquecido</strong> é um número de WhatsApp que já vinha
                 sendo usado normalmente (com conversas e contatos reais) há algum tempo. Um <strong className="text-chalk">chip
@@ -437,6 +476,26 @@ export default function AjudaPage() {
                   Marcar um número frio como “já aquecido” faz ele disparar muito mais rápido — e aumenta o risco de
                   bloqueio. Só use “aquecido” se o número realmente já vinha sendo usado.
                 </Callout>
+              </div>
+              <div className="mt-6 border-t border-line pt-5">
+                <div className="mb-3 flex items-center gap-2 font-display text-sm font-700 text-chalk">
+                  <Smartphone className="h-4 w-4 text-emerald" /> Tipo do chip (e o que conecta por QR)
+                </div>
+                <p className="text-sm leading-relaxed text-chalk/90">
+                  Ao cadastrar o chip você também marca o <strong className="text-chalk">tipo</strong> do número. É informativo,
+                  mas muda o risco e o que dá para conectar:
+                </p>
+                <div className="mt-3 grid gap-2.5 sm:grid-cols-2">
+                  <div className="rounded-xl border border-emerald/25 bg-emerald/8 p-3 text-xs leading-relaxed text-mist">
+                    <strong className="text-chalk">Físico</strong> (SIM) e <strong className="text-chalk">eSIM</strong> — conectam normal pelo QR, <span className="text-emerald-soft">menor risco</span> de bloqueio.
+                  </div>
+                  <div className="rounded-xl border border-amber/25 bg-amber/8 p-3 text-xs leading-relaxed text-mist">
+                    <strong className="text-chalk">VoIP</strong> — conecta por QR, mas com <span className="text-amber">risco maior de bloqueio</span>; prefira maturidade “novo” / aquecimento.
+                  </div>
+                  <div className="rounded-xl border border-rose/25 bg-rose/8 p-3 text-xs leading-relaxed text-mist sm:col-span-2">
+                    <strong className="text-chalk">Virtual (API)</strong> — número que não recebe ligação/SMS. <span className="text-rose">Não conecta por QR</span> (só funcionaria na API oficial do WhatsApp, que não é o conector usado aqui). Evite para o robô.
+                  </div>
+                </div>
               </div>
             </Section>
           )}

@@ -2,9 +2,11 @@
 // Prompt (persona/contexto/guardrails) vem do banco: padrão global em `configuracoes`
 // e, opcionalmente, override por carteira. Configurável pelo painel.
 // Modo teste: herda conversas.simulacao -> não suja métricas reais, passa flag ao gerar-pix.
-// Escalação: lê o cobrador da carteira (config_override.equipe), grava resumo/numero,
-// instrui o bot a passar o contato, AVISA o cobrador no WhatsApp (Z-API) e torna visível
-// no Chatwoot (nota + label + atribuição ao time).
+// Escalação: a carteira tem uma LISTA de escaladores (config_override.escaladores = {estrategia,
+// lista:[{chip_id,...}]}) com estratégia (rodizio|regiao|fixo). O bot escolhe UM, puxa o número
+// do chip conectado (numero_e164), grava resumo/numero, instrui o bot a passar o contato, AVISA o
+// escalador no WhatsApp (Z-API) e torna visível no Chatwoot (nota + label + atribuição ao time).
+// Compat: formato antigo era um objeto único em config_override.equipe.
 import { createClient, SupabaseClient } from "jsr:@supabase/supabase-js@2";
 
 const OPENAI = "https://api.openai.com/v1/chat/completions";
@@ -47,6 +49,76 @@ async function getCarteira(sb: SupabaseClient, id: number | null) {
     .select("id, nome, credor, status, cobrador_id, prompt_persona, contexto_negocio, guardrails, config_override")
     .eq("id", id).maybeSingle();
   return data;
+}
+
+// Escaladores da carteira: lista de cobradores humanos + estratégia de roteamento.
+// Compat: o formato antigo era um objeto único em config_override.equipe (ou cfg.equipe_padrao).
+function lerEscaladores(carteira: any, cfg: any): { estrategia: string; lista: any[] } {
+  const esc = carteira?.config_override?.escaladores;
+  if (esc && Array.isArray(esc.lista) && esc.lista.length) {
+    return { estrategia: esc.estrategia ?? "fixo", lista: esc.lista };
+  }
+  const antigo = carteira?.config_override?.equipe || cfg.equipe_padrao || null;
+  if (antigo && (antigo.chip_id || antigo.numero)) return { estrategia: "fixo", lista: [antigo] };
+  return { estrategia: "fixo", lista: [] };
+}
+
+// Escolhe UM escalador conforme a estratégia. O número vem do chip conectado (numero_e164), não
+// do que ficou salvo no config. Retorna null se nenhum candidato tiver número.
+//  - rodizio: o escalador com menos escalação aberta (empate -> ordem da lista).
+//  - regiao:  casa UF/cidade do devedor com a região do chip; sem match -> rodízio geral.
+//  - fixo:    ordem da lista = prioridade (principal -> reservas), pulando quem está indisponível.
+async function escolherEscalador(sb: SupabaseClient, carteira: any, cfg: any, devedorId: number) {
+  const { estrategia, lista } = lerEscaladores(carteira, cfg);
+  if (!lista.length) return null;
+  const chipIds = lista.map((e: any) => e.chip_id).filter(Boolean);
+  const porId: Record<number, any> = {};
+  if (chipIds.length) {
+    const { data: chips } = await sb.from("chips")
+      .select("id, nome, agente_nome, numero_e164, status, regiao_uf, regiao_cidade").in("id", chipIds);
+    for (const c of chips ?? []) porId[c.id] = c;
+  }
+  const cand = lista.map((e: any) => {
+    const c = e.chip_id ? porId[e.chip_id] : null;
+    return {
+      chip_id: e.chip_id ?? null,
+      nome: e.nome || c?.agente_nome || c?.nome || null,
+      numero: c?.numero_e164 || e.numero || null,
+      status: c?.status ?? null,
+      regiao_uf: (c?.regiao_uf ?? []) as string[],
+      regiao_cidade: (c?.regiao_cidade ?? []) as string[],
+    };
+  }).filter((e) => e.numero);
+  if (!cand.length) return null;
+  const pick = (e: any) => ({ chip_id: e.chip_id, nome: e.nome, numero: e.numero });
+  const disponivel = (e: any) => !["desconectado", "banido"].includes(String(e.status));
+  const livres = cand.filter(disponivel);
+  const pool = livres.length ? livres : cand; // se todos caídos, ainda escala (não trava o caso)
+
+  const rodizio = async (grupo: any[]) => {
+    const ids = grupo.map((e) => e.chip_id).filter(Boolean);
+    const carga: Record<number, number> = {};
+    if (ids.length) {
+      const { data } = await sb.from("escalacoes").select("equipe_chip_id")
+        .in("equipe_chip_id", ids).in("status", ["aberta", "em_atendimento"]);
+      for (const r of data ?? []) if (r.equipe_chip_id) carga[r.equipe_chip_id] = (carga[r.equipe_chip_id] ?? 0) + 1;
+    }
+    let melhor = grupo[0]; let min = Infinity;
+    for (const e of grupo) { const n = e.chip_id ? (carga[e.chip_id] ?? 0) : 0; if (n < min) { min = n; melhor = e; } }
+    return pick(melhor);
+  };
+
+  if (estrategia === "regiao") {
+    const { data: dev } = await sb.from("devedores").select("uf, cidade").eq("id", devedorId).maybeSingle();
+    const uf = String(dev?.uf ?? "").toUpperCase();
+    const cidade = String(dev?.cidade ?? "").toLowerCase();
+    const naRegiao = pool.filter((e) =>
+      (uf && e.regiao_uf.map((x) => String(x).toUpperCase()).includes(uf)) ||
+      (cidade && e.regiao_cidade.map((x) => String(x).toLowerCase()).includes(cidade)));
+    return await rodizio(naRegiao.length ? naRegiao : pool);
+  }
+  if (estrategia === "fixo") return pick(pool[0]);
+  return await rodizio(pool);
 }
 
 // Auto-cura: a resposta do devedor pode cair numa conversa/contato DIFERENTE do que o disparo
@@ -218,7 +290,8 @@ Deno.serve(async (req) => {
   const cobradorId = carteira?.cobrador_id ?? null;
   cfg = await getConfig(sb, cobradorId);
   seg = await carregarSegredos(sb, cobradorId);
-  const equipe = carteira?.config_override?.equipe || cfg.equipe_padrao || null;
+  // escalador escolhido (1) — resolvido sob demanda só quando o bot escalar (ver escalar_humano)
+  let equipe: { chip_id: number | null; nome: string | null; numero: string | null } | null = null;
 
   const { data: convsDev } = await sb.from("conversas").select("id").eq("devedor_id", conv.devedor_id);
   const convIds = (convsDev ?? []).map((c) => c.id);
@@ -277,6 +350,7 @@ Deno.serve(async (req) => {
         resultado = pix.ok ? { ok: true, pix_copia_cola: pix.pix_copia_cola, valor_final: pix.valor_final, valido_ate: pix.valido_ate } : { ok: false, erro: "falha_gerar_pix" };
       } else if (nome === "escalar_humano") {
         acao = "escalar"; escalarMotivo = args.motivo ?? "nao_especificado"; encerrar = true;
+        equipe = await escolherEscalador(sb, carteira, cfg, conv.devedor_id);
         await sb.from("devedores").update({ status_cobranca: "contestado" }).eq("id", conv.devedor_id).neq("status_cobranca", "pago");
         await sb.from("conversas").update({ estado: "humano" }).eq("id", conv.id);
         await sb.from("eventos_campanha").insert({ tipo: "contestacao", devedor_id: conv.devedor_id, carteira_id: carteiraId, payload: { motivo: escalarMotivo, simulacao } });

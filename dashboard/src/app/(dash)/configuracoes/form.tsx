@@ -3,6 +3,7 @@ import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Card, Input, Label, Button, Badge, Switch } from "@/components/ui/primitives";
 import { Save, CheckCircle2, KeyRound, Users, CreditCard, Bot, UserPlus, Eye, EyeOff } from "lucide-react";
+import { ModeloIA } from "./modelo-ia";
 
 type Segredo = { chave: string; descricao?: string; preenchido: boolean; valor: string };
 type Usuario = { id: string; nome: string; email: string; role: string; cobrador_id: string | null };
@@ -49,8 +50,9 @@ function CampoSegredo({ s, onSalvar, pending }: {
   );
 }
 
-export function ConfigForm({ role, asaas, usuarios, carteiras, cobradores, meuId }: {
-  role: string; asaas: any; usuarios: Usuario[]; carteiras: Carteira[]; cobradores: Cobrador[]; meuId: string;
+export function ConfigForm({ role, asaas, iaAtual, usuarios, carteiras, cobradores, meuId }: {
+  role: string; asaas: any; iaAtual: { nome_bot?: string; modelo?: string };
+  usuarios: Usuario[]; carteiras: Carteira[]; cobradores: Cobrador[]; meuId: string;
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -165,7 +167,7 @@ export function ConfigForm({ role, asaas, usuarios, carteiras, cobradores, meuId
             </div>
           </div>
           <p className="text-[11px] text-mist">
-            O nome do bot e o modelo de IA agora são <b>por conta</b> — cada cobrador ajusta os seus em <b>Campanha</b>.
+            O nome do bot é <b>por conta</b> (ajustado em <b>Campanha</b>). O modelo de IA pode ser escolhido logo abaixo, em <b>Modelo de IA do robô</b>.
           </p>
           <Button size="sm" className="self-start" onClick={salvarAsaas} disabled={pending}>
             <Save className="h-4 w-4" /> Salvar
@@ -188,6 +190,9 @@ export function ConfigForm({ role, asaas, usuarios, carteiras, cobradores, meuId
           <CampoSegredo key={s.chave} s={s} onSalvar={salvarSegredo} pending={pending} />
         ))}
       </Card>
+
+      {/* Modelo de IA do robô — usa a OPENAI_API_KEY acima para listar/sugerir modelos */}
+      <ModeloIA iaAtual={iaAtual} />
 
       {/* Usuários: admin gere todos; cobrador gere o próprio tenant (credores/visualizadores) */}
       <Card className="flex flex-col gap-4">
