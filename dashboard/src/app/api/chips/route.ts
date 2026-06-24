@@ -2,17 +2,34 @@ import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-server";
 import { exigirCobrador } from "@/lib/auth";
 import { vincularChatwootInbox } from "@/lib/chatwoot";
+import { normalizarTelefone } from "@/lib/import/normalizar";
 
 // Cria chip + credenciais Z-API + (best-effort) inbox no Chatwoot.
+// Caso especial — escalador humano "só registrado": papel=equipe SEM credenciais
+// Z-API. Aí não há QR nem inbox no Chatwoot; guardamos só o nome do cobrador e o
+// número (numero_e164) para o bot avisá-lo na escalação e a carteira poder escolhê-lo.
 export async function POST(req: Request) {
   const g = await exigirCobrador();
   if (g.erro) return g.erro;
   const { sessao } = g;
 
-  const { nome, instance_id, token, client_token, maturidade, aquecimento_perfil, limite_dia_override, papel, agente_nome, tipo, cobrador_id } = await req.json();
-  if (!nome || !instance_id || !token || !client_token) {
+  const { nome, instance_id, token, client_token, maturidade, aquecimento_perfil, limite_dia_override, papel, agente_nome, tipo, cobrador_id, numero_e164 } = await req.json();
+  if (!nome) return NextResponse.json({ erro: "campos_obrigatorios" }, { status: 400 });
+
+  const temCreds = !!(instance_id && token && client_token);
+  const escaladorManual = papel === "equipe" && !temCreds;
+  // chip de bot (ou escalador via Z-API) precisa das credenciais
+  if (!escaladorManual && !temCreds) {
     return NextResponse.json({ erro: "campos_obrigatorios" }, { status: 400 });
   }
+
+  let numeroNorm: string | null = null;
+  if (escaladorManual) {
+    const n = normalizarTelefone(numero_e164, "movel");
+    if (!n) return NextResponse.json({ erro: "Informe um número de WhatsApp válido, com DDD." }, { status: 400 });
+    numeroNorm = n.e164;
+  }
+
   const admin = supabaseAdmin();
 
   // dono do chip: cobrador => ele mesmo; admin => o cobrador alvo informado, senão ele mesmo
@@ -20,12 +37,18 @@ export async function POST(req: Request) {
     ? sessao.user.id
     : (typeof cobrador_id === "string" && cobrador_id ? cobrador_id : sessao.user.id);
   const novo: Record<string, unknown> = { nome, status: "cadastrado", cobrador_id: dono };
-  if (["fisico", "esim", "voip", "virtual_api"].includes(tipo)) novo.tipo = tipo;
   if (papel === "bot" || papel === "equipe") novo.papel = papel;
   if (typeof agente_nome === "string" && agente_nome.trim()) novo.agente_nome = agente_nome.trim();
-  if (maturidade === "aquecido" || maturidade === "novo") novo.maturidade = maturidade;
-  if (typeof aquecimento_perfil === "string" && aquecimento_perfil.trim()) novo.aquecimento_perfil = aquecimento_perfil.trim();
-  if (limite_dia_override != null && limite_dia_override !== "") novo.limite_dia_override = Number(limite_dia_override);
+
+  if (escaladorManual) {
+    // sem Z-API: só nome + número. Tipo/maturidade não se aplicam a um humano que só recebe.
+    novo.numero_e164 = numeroNorm;
+  } else {
+    if (["fisico", "esim", "voip", "virtual_api"].includes(tipo)) novo.tipo = tipo;
+    if (maturidade === "aquecido" || maturidade === "novo") novo.maturidade = maturidade;
+    if (typeof aquecimento_perfil === "string" && aquecimento_perfil.trim()) novo.aquecimento_perfil = aquecimento_perfil.trim();
+    if (limite_dia_override != null && limite_dia_override !== "") novo.limite_dia_override = Number(limite_dia_override);
+  }
 
   const { data: chip, error } = await admin
     .from("chips")
@@ -33,6 +56,11 @@ export async function POST(req: Request) {
     .select("id")
     .single();
   if (error) return NextResponse.json({ erro: error.message }, { status: 400 });
+
+  // escalador só registrado: nada de credenciais nem Chatwoot
+  if (escaladorManual) {
+    return NextResponse.json({ ok: true, chip_id: chip.id, sem_zapi: true, chatwoot: null });
+  }
 
   await admin.from("chips_credenciais").insert({
     chip_id: chip.id, zapi_instance_id: instance_id, zapi_token: token, zapi_client_token: client_token,

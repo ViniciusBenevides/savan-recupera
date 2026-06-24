@@ -24,6 +24,9 @@ export function NovoChipFlow() {
   const [clientToken, setClientToken] = useState("");
   const [maturidade, setMaturidade] = useState<MaturidadeValor>({ maturidade: "novo", limite_dia_override: null });
   const [tipo, setTipo] = useState<TipoChip>("fisico");
+  const [papel, setPapel] = useState<"bot" | "equipe">("bot");
+  const [agente, setAgente] = useState("");
+  const [numeroEquipe, setNumeroEquipe] = useState("");
   const [erro, setErro] = useState("");
   const [salvando, setSalvando] = useState(false);
 
@@ -44,16 +47,22 @@ export function NovoChipFlow() {
   async function criar(e: React.FormEvent) {
     e.preventDefault();
     setErro(""); setSalvando(true);
+    const equipe = papel === "equipe";
+    const body = equipe
+      ? { nome, papel: "equipe", agente_nome: agente, numero_e164: numeroEquipe }
+      : {
+          nome, instance_id: instance, token, client_token: clientToken, tipo, papel: "bot",
+          maturidade: maturidade.maturidade, limite_dia_override: maturidade.limite_dia_override,
+        };
     const r = await fetch("/api/chips", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        nome, instance_id: instance, token, client_token: clientToken, tipo,
-        maturidade: maturidade.maturidade, limite_dia_override: maturidade.limite_dia_override,
-      }),
+      body: JSON.stringify(body),
     });
     setSalvando(false);
     const d = await r.json();
     if (!r.ok) { setErro(d.erro ?? "Falha ao cadastrar."); return; }
+    // escalador humano só registrado: não tem QR nem Chatwoot — volta para a lista
+    if (equipe) { router.push("/chips"); router.refresh(); return; }
     setChipId(String(d.chip_id));
     setChatwootVinculado(d.chatwoot?.ok === true);
     if (d.chatwoot && d.chatwoot.ok === false) setChatwootMsg({ ok: false, mensagem: d.chatwoot.mensagem });
@@ -110,30 +119,68 @@ export function NovoChipFlow() {
             <Input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Chip 01" required />
           </div>
           <div>
-            <Label>Instance ID (Z-API)</Label>
-            <Input value={instance} onChange={(e) => setInstance(e.target.value)}
-                   placeholder="3F258A682CEAA17C040FFAB71E115C52" required className="font-mono text-xs" />
-          </div>
-          <div>
-            <Label>Token da instância (Z-API)</Label>
-            <Input value={token} onChange={(e) => setToken(e.target.value)}
-                   placeholder="B777F7686FC2C33DB62C18FE" required className="font-mono text-xs" />
-          </div>
-          <div>
-            <Label>Token de Segurança (Z-API)</Label>
-            <Input value={clientToken} onChange={(e) => setClientToken(e.target.value)}
-                   placeholder="F73f… (token de segurança da conta)" required className="font-mono text-xs" />
+            <Label>Papel do chip</Label>
+            <select value={papel} onChange={(e) => setPapel(e.target.value as "bot" | "equipe")}
+                    className="h-10 w-full rounded-xl border border-line bg-ink-850 px-3 text-sm text-chalk outline-none">
+              <option value="bot">Bot (dispara e negocia automaticamente)</option>
+              <option value="equipe">Equipe (cobrador humano — só recebe escalações)</option>
+            </select>
             <p className="mt-1.5 text-xs text-mist">
-              Os três vêm do painel da Z-API: <b className="text-chalk">Instance ID</b> e <b className="text-chalk">Token</b> na sua
-              instância; o <b className="text-chalk">Token de Segurança</b> na aba <b className="text-chalk">Segurança</b> da conta.
-              Cada conta Z-API tem o seu — por isso ele é informado aqui por chip.
+              Marque <b className="text-chalk">Equipe</b> se este é o chip de um <b className="text-chalk">escalador humano</b>:
+              ele só recebe as transferências no WhatsApp, <b className="text-chalk">não dispara nada e não precisa de Z-API</b>.
+              Você informa só o número dele.
             </p>
           </div>
-          <TipoChipField value={tipo} onChange={setTipo} />
-          <MaturidadeField value={maturidade} onChange={setMaturidade} />
+
+          {papel === "bot" ? (
+            <>
+              <div>
+                <Label>Instance ID (Z-API)</Label>
+                <Input value={instance} onChange={(e) => setInstance(e.target.value)}
+                       placeholder="3F258A682CEAA17C040FFAB71E115C52" required className="font-mono text-xs" />
+              </div>
+              <div>
+                <Label>Token da instância (Z-API)</Label>
+                <Input value={token} onChange={(e) => setToken(e.target.value)}
+                       placeholder="B777F7686FC2C33DB62C18FE" required className="font-mono text-xs" />
+              </div>
+              <div>
+                <Label>Token de Segurança (Z-API)</Label>
+                <Input value={clientToken} onChange={(e) => setClientToken(e.target.value)}
+                       placeholder="F73f… (token de segurança da conta)" required className="font-mono text-xs" />
+                <p className="mt-1.5 text-xs text-mist">
+                  Os três vêm do painel da Z-API: <b className="text-chalk">Instance ID</b> e <b className="text-chalk">Token</b> na sua
+                  instância; o <b className="text-chalk">Token de Segurança</b> na aba <b className="text-chalk">Segurança</b> da conta.
+                  Cada conta Z-API tem o seu — por isso ele é informado aqui por chip.
+                </p>
+              </div>
+              <TipoChipField value={tipo} onChange={setTipo} />
+              <MaturidadeField value={maturidade} onChange={setMaturidade} />
+            </>
+          ) : (
+            <>
+              <div>
+                <Label>Nome do cobrador (dono deste chip)</Label>
+                <Input value={agente} onChange={(e) => setAgente(e.target.value)} placeholder="Ex.: Carlos" required />
+              </div>
+              <div>
+                <Label>Número de WhatsApp do cobrador</Label>
+                <Input value={numeroEquipe} onChange={(e) => setNumeroEquipe(e.target.value)}
+                       placeholder="(11) 99999-9999" required inputMode="tel" />
+                <p className="mt-1.5 text-xs text-mist">
+                  Com DDD. É para este número que o bot avisa quando transferir um devedor — e é ele que o
+                  devedor recebe para falar com o cobrador. O chip dele <b className="text-chalk">não conecta no Chatwoot</b>:
+                  fica só registrado para ser escolhido como escalador na carteira.
+                </p>
+              </div>
+            </>
+          )}
           {erro && <p className="rounded-lg border border-rose/30 bg-rose/10 px-3 py-2 text-xs text-rose">{erro}</p>}
           <Button type="submit" disabled={salvando}>
-            {salvando ? "Cadastrando…" : <>Cadastrar e gerar QR <ArrowRight className="h-4 w-4" /></>}
+            {salvando ? "Cadastrando…"
+              : papel === "equipe"
+                ? <>Cadastrar escalador <ArrowRight className="h-4 w-4" /></>
+                : <>Cadastrar e gerar QR <ArrowRight className="h-4 w-4" /></>}
           </Button>
         </Card>
       </form>

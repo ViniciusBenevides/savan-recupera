@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-server";
 import { exigirCobrador, podeEditarChip, erroDono } from "@/lib/auth";
 import { deletarInbox } from "@/lib/chatwoot";
+import { normalizarTelefone } from "@/lib/import/normalizar";
 
 // Devolve os dados do chip + credenciais Z-API para preencher o formulário de
 // edição (admin ou cobrador dono). Os tokens chegam ao navegador apenas aqui, sob auth.
@@ -13,7 +14,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
   const admin = supabaseAdmin();
   const [{ data: chip }, { data: cred }] = await Promise.all([
-    admin.from("chips").select("nome, maturidade, aquecimento_perfil, limite_dia_override, papel, agente_nome, tipo").eq("id", Number(id)).maybeSingle(),
+    admin.from("chips").select("nome, maturidade, aquecimento_perfil, limite_dia_override, papel, agente_nome, tipo, numero_e164, chatwoot_inbox_id").eq("id", Number(id)).maybeSingle(),
     admin.from("chips_credenciais").select("zapi_instance_id, zapi_token, zapi_client_token").eq("chip_id", Number(id)).maybeSingle(),
   ]);
   if (!chip) return NextResponse.json({ erro: "chip_nao_encontrado" }, { status: 404 });
@@ -26,6 +27,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     papel: chip.papel ?? "bot",
     agente_nome: chip.agente_nome ?? "",
     tipo: chip.tipo ?? "fisico",
+    numero_e164: chip.numero_e164 ?? "",
+    // escalador "só registrado": papel=equipe, sem credenciais e sem inbox no Chatwoot
+    sem_zapi: (chip.papel ?? "bot") === "equipe" && !cred && !chip.chatwoot_inbox_id,
     instance_id: cred?.zapi_instance_id ?? "",
     token: cred?.zapi_token ?? "",
     client_token: cred?.zapi_client_token ?? "",
@@ -39,7 +43,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (g.erro) return g.erro;
   if (!(await podeEditarChip(g.sessao, Number(id)))) return erroDono();
 
-  const { nome, instance_id, token, client_token, maturidade, aquecimento_perfil, limite_dia_override, papel, agente_nome, tipo } = await req.json();
+  const { nome, instance_id, token, client_token, maturidade, aquecimento_perfil, limite_dia_override, papel, agente_nome, tipo, numero_e164 } = await req.json();
   const admin = supabaseAdmin();
 
   const chipPatch: Record<string, unknown> = {};
@@ -47,6 +51,12 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (["fisico", "esim", "voip", "virtual_api"].includes(tipo)) chipPatch.tipo = tipo;
   if (papel === "bot" || papel === "equipe") chipPatch.papel = papel;
   if (agente_nome !== undefined) chipPatch.agente_nome = (typeof agente_nome === "string" && agente_nome.trim()) ? agente_nome.trim() : null;
+  // número do escalador "só registrado" (sem Z-API): editável à mão. Normaliza p/ E.164.
+  if (typeof numero_e164 === "string" && numero_e164.trim()) {
+    const n = normalizarTelefone(numero_e164, "movel");
+    if (!n) return NextResponse.json({ erro: "Informe um número de WhatsApp válido, com DDD." }, { status: 400 });
+    chipPatch.numero_e164 = n.e164;
+  }
   if (maturidade === "aquecido" || maturidade === "novo") chipPatch.maturidade = maturidade;
   if (aquecimento_perfil !== undefined) chipPatch.aquecimento_perfil = aquecimento_perfil || null;
   if (limite_dia_override !== undefined) {
