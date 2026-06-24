@@ -1,10 +1,15 @@
 # Contexto do Projeto — SAVAN Recupera
 
 > Documento para retomar o contexto em novas sessões com Claude.
-> Última atualização: **Segmentação de tipo de chip (físico/eSIM/VoIP/virtual só-API, informativo
-> com alertas) + múltiplos números de teste com escolha do alvo no disparo — ver §18.**
-> (Anteriores: modo teste de verdade + papel de chip §17, distribuição/maturidade/failover §16,
-> Central de Ajuda §15, conexão de chips ponta a ponta Z-API ↔ Chatwoot §9.12, tema claro/escuro §8,
+> Última atualização: **Campanha/Mensagens/Descontos por conta (cobrador), com o admin vendo/
+> controlando tudo separado por conta (seletor de conta) + correção da saída @lid ("Falha ao
+> enviar") — ver §22.**
+> (Anterior: Hierarquia de acesso em 4 níveis (admin único · cobrador · credor ·
+> visualizador) com isolamento por tenant via RLS, atribuição p/ o admin, self-service de usuários
+> e chaves por cobrador — ver §21.)
+> (Anteriores: correção do teste ponta a ponta §20, importar planilha fora do padrão com a IA organizando §19, tipo de chip + múltiplos
+> números de teste §18, modo teste + papel de chip §17, distribuição/maturidade/failover §16, Central
+> de Ajuda §15, conexão de chips ponta a ponta Z-API ↔ Chatwoot §9.12, tema claro/escuro §8,
 > white-label `NEXT_PUBLIC_APP_NAME`, GitHub público + deploy Vercel §13.)
 
 ---
@@ -165,9 +170,10 @@ metricas_diarias, eventos_campanha.
 
 **Segredos** (tabela `segredos`, lida só pelo service_role):
 `CHATWOOT_TOKEN`, `ASAAS_API_KEY_SANDBOX` (preenchida), `ASAAS_API_KEY_PROD` (vazia),
-`ASAAS_WEBHOOK_TOKEN`, `OPENAI_API_KEY` (**vazia** — bot não responde sem ela),
+`ASAAS_WEBHOOK_TOKEN`, `OPENAI_API_KEY` (**preenchida** — usada pelo bot e pelo import com IA §19),
 `ZAPI_CLIENT_TOKEN`. ⚠️ Runtime do Supabase **bloqueia `Deno.env.set`** → cada Edge
-Function lê os segredos via função que **RETORNA um mapa** (não seta env).
+Function lê os segredos via função que **RETORNA um mapa** (não seta env). O dashboard lê a
+`OPENAI_API_KEY` direto da tabela `segredos` (via `supabaseAdmin`) para o mapeamento de planilha (§19).
 
 ---
 
@@ -243,7 +249,9 @@ faixas + simulador) · Devedores (busca + detalhe/timeline) · Pagamentos · Rel
 Configurações (Asaas, segredos, **criar/gerir usuários**) · Minha conta (nome, e-mail, senha) ·
 **Ajuda** (manual de uso interativo no painel, `/ajuda` — ver §15).
 
-**Papéis:** admin (tudo) · operador (campanha/chips/templates) · visualizador (leitura).
+**Papéis (4 níveis — ver §21):** admin (plataforma, único, vê tudo com atribuição) · cobrador
+(operador, só o que é dele) · credor (dono da carteira, leitura do andamento) · visualizador
+(leitura, escopo de um cobrador). Isolamento por tenant via RLS; escrita só admin/cobrador.
 
 ---
 
@@ -318,8 +326,8 @@ Configurações (Asaas, segredos, **criar/gerir usuários**) · Minha conta (nom
 ## 10. Pendências / Go-Live (detalhe no README.md)
 
 Tudo pré-pronto. Faltam itens que dependem de compra/assinatura:
-1. **Chaves** no painel (Configurações → Chaves): `OPENAI_API_KEY` (bot não responde sem),
-   `ASAAS_API_KEY_PROD`.
+1. **Chaves** no painel (Configurações → Chaves): `OPENAI_API_KEY` ✅ **já preenchida** (bot + import
+   com IA); falta só `ASAAS_API_KEY_PROD` no go-live real.
 2. **Asaas produção:** walletId da SAVAN + ligar ambiente produção + apontar webhook para
    `…/functions/v1/webhook-asaas` (header `asaas-access-token`).
 3. **Chips:** comprar 5 Salvy + 5 instâncias Z-API → cadastrar no painel (QR) → ativar.
@@ -618,3 +626,243 @@ suporta os dois formatos do config; valida que o `numero_e164` pedido está cada
 **Aplicado em produção (projeto `wmggqsmqvklxlqwsksjs`):** migration 018 (MCP `apply_migration`, sucesso;
 `chips.tipo` default `fisico`, `numero_teste` = `{"numeros":[]}`) + deploy de `disparar-teste` (v2). Build
 do front OK (14 páginas).
+
+---
+
+## 19. Importar planilha "fora do padrão" com a IA organizando
+
+Pedido do dono: poder subir uma planilha **formatada diferente** (colunas com outros nomes/ordem,
+extras, cabeçalho fora da 1ª linha, valor em centavos, CPF junto do nome) e a **IA organiza para o
+padrão aceito**, com **revisão antes de importar**. Sem migration nem Edge Function — tudo no
+dashboard (Node runtime), reusando o OpenAI já do projeto (`ia.modelo`, padrão `gpt-4.1-mini`;
+`OPENAI_API_KEY` na tabela `segredos`, lida pelo `supabaseAdmin`).
+
+**Arquitetura (a IA decide ESTRUTURA, o código aplica):** a IA vê só uma **amostra** (≈15 linhas) e
+devolve uma **"receita"** num schema fechado (de qual coluna vem cada campo, linha do cabeçalho,
+qual transform). O código aplica a receita a **todas** as linhas de forma determinística e reusa os
+normalizadores atuais (CPF, telefone E.164 + 9º dígito, datas, moeda, e-mails). A IA **nunca**
+reescreve linha a linha — não escala e arrisca alucinar PII/valores.
+
+**Receita (enum fechado, sem regex vindo do LLM):** `linha_cabecalho`, `linha_dados_inicio`, e por
+campo `{ colunas:[idx], transform }`. Transforms **implementados em código** (a IA só escolhe qual):
+`nenhum | centavos | extrair_documento | extrair_telefones | juntar | so_digitos`. Obrigatórios:
+`cpf, nome, saldo, telefone` — sem eles a revisão bloqueia o import.
+
+**Backend (`dashboard/`):**
+- `src/lib/import/parse-planilha.ts` **refatorado**: separa *extração* de *normalização*. Núcleo único
+  `montarDevedores()` (normaliza + dedup por `(carteira,cpf)` + fila) alimentado por dois caminhos:
+  `extrairPadrao` (modelo, intacto) e `extrairReceita` (IA). `parsePlanilha(buf, receita?)` orquestra;
+  exporta `lerGrade`, `previewReceita`, `CAMPOS_OBRIGATORIOS`.
+- `src/lib/import/mapear-ia.ts` (**novo**): monta o prompt da amostra, chama OpenAI
+  (`response_format: json_object`, `temperature: 0`) e `validarReceita()` blinda a saída ao schema.
+- `api/carteiras/[id]/mapear/route.ts` (**novo**, POST multipart): auth admin/operador, lê a chave
+  dos `segredos` (erro `openai_key_ausente` amigável se vazia), devolve **receita + de-para + prévia
+  normalizada de 3 linhas — SEM gravar** (não toca `importacoes`). Reenviar uma `receita` editada
+  pula a IA e só re-previsualiza (edição manual barata).
+- `api/carteiras/[id]/importar/route.ts`: passou a aceitar `receita` opcional no form (revalidada no
+  servidor, bloqueia se faltar obrigatório); resto do pipeline de upsert/fila **inalterado**.
+
+**Front (Next.js):**
+- `(dash)/carteiras/importador-ia.tsx` (**novo**, compartilhado): seletor `ModoSeletor` ("Minha
+  planilha segue o modelo" | "Outra formatação — a IA organiza") + fluxo escolher → **Analisar com
+  IA** → painel de revisão (de-para editável por `select` de coluna **e** transform, avisos de
+  obrigatório faltando, prévia já normalizada) → **Importar assim**.
+- Embutido na aba **Importações** (`carteiras/[id]/painel.tsx` `AbaHistorico`) e na etapa de upload
+  do assistente (`carteiras/nova/flow.tsx`). O caminho do modelo padrão segue intacto.
+
+**Status:** implementado no dashboard; `npm run build` + `tsc --noEmit` OK. Vai a produção no
+próximo `git push` (deploy automático Vercel). **Limites documentados:** cabeçalho na 1ª linha de
+dados, dividir/juntar células e centavos cobertos; planilha com várias tabelas na mesma aba /
+cabeçalho multi-linha complexo ficam fora do v1. A amostra (poucas linhas, com PII) vai à OpenAI —
+mesmo provedor que o `bot-turno` já usa; mascaramento fica como melhoria futura.
+
+---
+
+## 20. Correção do teste ponta a ponta — a resposta do "devedor" não voltava
+
+Sintoma do dono: no **Enviar teste** (tela de Chips → `disparar-teste`), a **1ª mensagem do bot
+chegava** no WhatsApp, mas ao **responder não acontecia nada** — o bot não continuava a conversa.
+
+**Diagnóstico (projeto `wmggqsmqvklxlqwsksjs`; chip 1 = `+556282624555`, inbox Chatwoot 4, conversa
+de teste #324 `simulacao=true`):**
+- A 1ª msg sai normal (Chatwoot → Z-API → WhatsApp).
+- A resposta de entrada **não aparecia na conversa do Chatwoot** e a Edge Function `bot-turno`
+  **nunca era invocada** (zero registros nos logs edge-function) → a mensagem morria **antes** do
+  cérebro do bot.
+- **Tudo a jusante estava saudável:** Chatwoot dispara `message_created` → n8n `/webhook/savan-bot`;
+  **W02 ativo**; `OPENAI_API_KEY` **preenchida** (o §4/§10 antigos diziam "vazia" — desatualizado).
+- **Único elo quebrado:** o webhook **"ao receber"** da instância Z-API do chip **não apontava pro
+  Chatwoot** — por isso nada do que o chip recebia entrava no sistema.
+
+**Causa-raiz (fragilidade do fluxo de conexão):** `finalizarConexaoChip` (`dashboard/src/lib/zapi.ts`)
+só roda **na tela do QR** (`api/chips/[id]/qrcode`), e o passo do webhook é frágil: corrida do
+`/device` (a Z-API reporta `connected` antes de devolver o telefone → `obterTelefone` volta null e o
+bloco do webhook é pulado) e a trava `jaFinalizado` depende de `saude.webhook_ok === true`, que o
+**`chips-monitor` sobrescreve a cada ciclo** com o status cru da Z-API. Resultado: o webhook de
+entrada podia nunca ficar garantido.
+
+**Conserto manual (já em produção, p/ o chip 1):** `PUT …/update-webhook-received` na instância
+Z-API com body `{"value":"<CHATWOOT_URL>/webhooks/whatsapp/+556282624555"}` (retorno `{"value":true}`).
+Pela UI o equivalente é o botão **Revincular Chatwoot** (`api/chips/[id]/chatwoot`).
+
+**Conserto permanente (código — vai a produção no próximo `git push`):** garantia auto-curável
+amarrada ao próprio "Enviar teste".
+- `lib/zapi.ts`: novo **`garantirWebhookEntrada()`** — descobre o número real do chip (fallback ao
+  `numero_e164` salvo), resolve a `CHATWOOT_URL` e reaponta o webhook "ao receber" via `definirWebhooks`.
+  Idempotente.
+- `api/chips/teste/route.ts`: chama `garantirWebhookEntrada` **antes** de disparar; best-effort
+  (não trava o envio) e devolve `webhook_aviso` se não conseguir wirar o caminho de volta.
+- `(dash)/chips/teste-card.tsx`: exibe esse `webhook_aviso` em amber.
+- `tsc --noEmit` OK.
+
+**Como testar:** responda no WhatsApp do número de teste após o disparo → a entrada aparece no
+Chatwoot e o `bot-turno` roda (negocia em modo teste, Pix sandbox/fake). **Pendência:** `git push`
+(deploy Vercel) para a auto-cura valer em todo chip/teste; o conserto manual já cobre o chip 1.
+
+---
+
+## 21. Hierarquia de acesso em 4 níveis + isolamento por tenant (RLS)
+
+Pedido do dono: o painel era "bagunçado" — vários **admins** viam o que os outros faziam sem saber
+**quem criou o quê**. Reestruturado em **4 papéis com isolamento real por tenant**:
+- **`admin`** (plataforma, **único** = `vsbenevides1@gmail.com`): vê **tudo de todos, com atribuição**;
+  gere a infra global. Ninguém mais pode virar admin.
+- **`cobrador`** (era `operador`): o operador. Vê/edita **só o que é dele** (suas carteiras, chips,
+  chaves). Cria e liga o próprio credor/visualizadores.
+- **`credor`** (dono da carteira): **só leitura** do andamento das **suas** carteiras (ligadas por
+  `carteiras.credor_id`). **Nunca** vê chaves de API, wallet id, chips ou config profunda.
+- **`visualizador`**: só leitura, escopo de **um cobrador** (tenant via `usuarios_app.cobrador_id`).
+
+**Banco — migrations `019_hierarquia_papeis.sql` + `020_escopo_rls.sql` (aplicadas via MCP no
+`wmggqsmqvklxlqwsksjs`):**
+- Enum `papel_usuario`: `operador` **renomeado** → `cobrador`; **+ `credor`** (`{admin,cobrador,credor,visualizador}`).
+- Colunas de dono: `usuarios_app.cobrador_id`/`criado_por`; `carteiras.cobrador_id`/`credor_id`
+  (o texto `carteiras.credor` segue como **rótulo** exibido ao devedor); `chips.cobrador_id`;
+  `segredos.cobrador_id` (NULL = global/infra; PK `(chave)` virou 2 índices únicos parciais:
+  `uq_segredos_global` + `uq_segredos_cobrador`).
+- Backfill: demais admins → cobrador (Maurélio caiu p/ cobrador); carteiras/chips → dono = `criado_por`
+  ou o admin.
+- Funções de escopo `security definer` (revoke anon, grant authenticated): `fn_carteiras_visiveis()`,
+  `fn_chips_visiveis()`, `fn_devedores_visiveis()`, `fn_conversas_visiveis()`, `fn_meu_cobrador()`.
+- **RLS reescrita** (antes tudo `select using(true)`): cada SELECT vira `fn_role()='admin' or
+  <escopo>`. Carteira-scoped via `carteira_id`; tabelas sem ela via join (`telefones/negociacoes/
+  pagamentos` → devedor; `mensagens` → conversa; `failover` → chip). `metricas_diarias` (agregado
+  global) = **só admin**. Escrita só `admin`/`cobrador` (no escopo). **`v_funil` já é
+  `security_invoker`** → auto-escopa pelos SELECTs.
+  - **Decisão do dono — IMPLEMENTADA no §22:** **Campanha, Mensagens e Descontos são por conta
+    (por cobrador)**, o cobrador edita os seus e o admin vê/edita os de todos (separado). **Verificado
+    por papel** (admin vê 4 carteiras; cobrador 0; credor/visualizador só a sua) com impersonação
+    `set role authenticated` + `request.jwt.claims`.
+
+**Decisão central de arquitetura:** todas as páginas `(dash)` leem pelo **cliente anônimo (RLS)**
+→ escopar as policies SELECT já isola os dados sem reescrever as queries. As **escritas** passam por
+API com **service role** (ignora RLS) → a autorização real é nos **guards** (app layer).
+
+**Front (`dashboard/`):**
+- `lib/auth.ts` (**novo**): `getSessao()` (`{user, role, cobrador_id, tenant}`), `exigirAdmin`/
+  `exigirCobrador`, `podeEditarCarteira(id)`/`podeEditarChip(id)` (admin OU dono). Substituiu os
+  guards `exigirOperador`/`exigirPapel` duplicados em **todos** os `api/**/route.ts`, agora com
+  **checagem de dono** nas rotas `[id]` (carteiras/chips/escalações/failover/distribuir/importar/mapear).
+- `lib/segredos.ts` (**novo**): `getSegredo(chave, cobradorId)` (chave do cobrador → fallback global);
+  `SEGREDOS_POR_COBRADOR = [OPENAI_API_KEY, ASAAS_API_KEY_SANDBOX, ASAAS_API_KEY_PROD]` (Z-API é por
+  chip; webhook token é infra). `api/segredos` passou a escopar por cobrador (admin = globais).
+- `api/config` está **admin-only** hoje (defaults globais) — **a rever** pela decisão acima
+  (Campanha/Descontos/Mensagens por cobrador). `api/usuarios` + `usuarios/criar` viraram
+  **self-service**: cobrador cria/liga credor/visualizador no próprio tenant, admin cria cobradores
+  e designa tenant; **ninguém vira admin**; credor é ligado a carteiras (`carteira_ids`).
+- `components/Sidebar.tsx`: nav **filtrada por papel** (credor/visualizador veem só Visão geral,
+  Carteiras, Devedores, Pagamentos, Relatórios, Ajuda). `layout.tsx`: FailoverBanner só admin/cobrador.
+  Hoje Campanha/Mensagens/Descontos aparecem **só p/ admin** — pela decisão acima passarão a aparecer
+  **também p/ o cobrador** (escopados por conta).
+- `configuracoes/{page,form}.tsx` reescritos: Asaas/Bot global só admin; seção de chaves por escopo;
+  gestão de usuários p/ admin+cobrador. `carteiras/page.tsx`: colunas de **atribuição** (cobrador/
+  credor) p/ admin + ações escondidas p/ leitura. `carteiras/[id]/{page,painel}.tsx`: credor/
+  visualizador veem **read-only** e o servidor **remove `config_override`** (sem wallet/keys). Visão
+  geral (`(dash)/page.tsx`): gráfico de recuperação derivado de `pagamentos` (escopado), não de
+  `metricas_diarias`. **`npm run build` OK (14 páginas).**
+
+**Edge Functions (chaves por cobrador, deployadas via MCP):** `carregarSegredos(sb, cobradorId)`
+agora carrega **base global + overlay do cobrador**. `bot-turno` (**v7**) resolve o cobrador via
+`carteira.cobrador_id` → usa o **OPENAI_API_KEY do cobrador** (fallback global). `gerar-pix` (**v5**)
+idem para a **chave Asaas**. `webhook-asaas`/demais lêem só chaves globais (CHATWOOT/webhook) → sem
+mudança. **n8n inalterado.**
+
+**Pendências:**
+- `git push` na `main` (deploy Vercel) para o front ir a produção; o banco e as Edge Functions já
+  estão aplicados em produção.
+- **Campanha, Mensagens e Descontos por conta** — ✅ **CONCLUÍDO no §22** (migration 021 + RLS +
+  Edge Functions deployadas). Falta só o `git push` do front.
+
+---
+
+## 22. Campanha/Mensagens/Descontos por conta + admin vê tudo separado + saída @lid
+
+Conclui a pendência do §21 (decisão do dono): **cada cobrador tem a SUA Campanha, Mensagens e
+Descontos** (edita os seus); o **admin vê e controla tudo, mas separado por conta** (seletor de
+conta + padrão global). Mesmo padrão de `segredos`: linha global (`cobrador_id NULL`) + 1 linha por
+cobrador; o que o cobrador não personaliza **cai no global**.
+
+**Banco — migration `021_config_templates_por_cobrador.sql` (aplicada via MCP no `wmggqsmqvklxlqwsksjs`):**
+- `configuracoes` e `templates_mensagem` ganharam **`cobrador_id`**. Em `configuracoes` a PK `(chave)`
+  virou 2 índices únicos parciais (`uq_config_global` + `uq_config_cobrador`), igual a `segredos`.
+- **RLS por escopo:** `configuracoes` SELECT = global (todos) + os do próprio cobrador + admin tudo;
+  `templates_mensagem` SELECT = admin tudo + os do próprio cobrador (o global é o fallback que o admin
+  gere). Escrita só admin (global) ou cobrador (os seus). As escritas do painel passam por API
+  service role; as policies blindam o acesso anônimo.
+- **`fn_proposta`** (faixas/validade) e **`fn_limite_chip`** (curva de aquecimento) resolvem na
+  precedência **carteira override → cobrador → global** (subqueries com índice único = sem
+  ambiguidade). **Verificado (SQL):** override de cobrador (faixa 95%) aplica no `fn_proposta`; ao
+  remover, volta ao global (60%); precedência da carteira preservada.
+- **Chaves por conta** (`lib/config.ts` `CONFIG_POR_COBRADOR`): `campanha_ativa`, `modo_simulacao`,
+  `janela_envio`, `intervalo_min_segundos`, `aquecimento`, `faixas_desconto`, `ia` (nome_bot/modelo).
+  Infra segue global (asaas global, bot_persona/contexto/guardrails, chatwoot, numero_teste,
+  aquecimento_rapido, validade_proposta_dias, followup).
+
+**Edge Functions (deployadas via MCP, self-contained):**
+- `campanha-lote` (v3): **gate POR COBRADOR** — agrupa por `chips.cobrador_id`, resolve a config do
+  dono do chip e só dispara se a campanha **dele** estiver ligada/na janela; template `abordagem_inicial`
+  do cobrador (cai no global).
+- `campanha-followup` (v3): idem (gate + template de follow-up por cobrador da carteira).
+- `webhook-asaas` (v3): confirmação/quitação usam os **templates do cobrador** dono da carteira;
+  pagamento `simulacao` não dispara mensagem real.
+- `bot-turno` (v10): resolve o cobrador via `carteira.cobrador_id` → usa o **OPENAI_API_KEY e o `ia`
+  (nome/modelo) do cobrador** (fallback global). **Merge com o fix de saída @lid (abaixo).**
+- `metricas-sync` (v3): curva de aquecimento por cobrador (mapa `chave|cobrador`, fallback global).
+- `_shared/lib.ts` + arquivos no repo atualizados (as deployadas seguem como fonte da verdade).
+
+**Front (`dashboard/`):**
+- `lib/config.ts` (**novo**): `getConfigEscopo(cobradorId)` (global + overlay), `setConfig`,
+  `CONFIG_POR_COBRADOR`. `lib/auth.ts`: `resolverEscopoConta`/`exigirEscopoConta`/`listarCobradores`.
+- `components/SeletorConta.tsx` (**novo**): só p/ admin — escolhe **"Padrão global da plataforma"**
+  ou a **conta de um cobrador** (via `?conta=<id>`), deixando explícito "de quem é" o que está na
+  tela (separação + controle total).
+- **Campanha** (`controls.tsx`): grava no escopo certo; ganhou card **Robô** (nome do bot + modelo
+  de IA, antes em Configurações). **Descontos** e **Mensagens**: idem por conta. **Mensagens** ganhou
+  "Começar com os modelos padrão" (clona o global → conta) via `api/templates` (CRUD por escopo).
+- `api/config` escopa por conta (admin pode mirar um cobrador; cobrador só os seus; chave global só admin).
+  `api/templates` (**novo**): criar/atualizar/excluir/clonar_padrao por escopo.
+- **Sidebar**: Campanha/Mensagens/Descontos agora aparecem p/ **admin e cobrador**.
+- **Separação visível p/ o admin**: seletor de conta nessas telas + selo **"Conta: {cobrador}"** nos
+  cards de Chips + colunas de atribuição em Carteiras (§21). Leituras `configuracoes` que quebravam
+  com multi-linha corrigidas (`getConfigEscopo` ou `.is("cobrador_id", null)`).
+- **`npm run build` + `tsc --noEmit` OK.** Vai a produção no próximo `git push` (Vercel).
+
+**Correção da SAÍDA "Falha ao enviar" (@lid) — bot-turno + Chatwoot:**
+- **Diagnóstico:** o chip está conectado e a Z-API envia por telefone OK (testado: `send-text` 200),
+  mas o WhatsApp do contato é endereçado por **`@lid`** (privacidade) — o canal Z-API do Chatwoot
+  tenta enviar pelo telefone e a Z-API responde **"Phone number does not exist"** → mensagem do bot
+  fica vermelha ("Falha ao enviar"). É o oposto do §20 (que era a entrada).
+- **Fix (no `bot-turno`, já no repo + deployado):** quando o remetente é `@lid`, o **próprio
+  bot-turno envia a resposta via Z-API `send-text` (que aceita `@lid`)**, grava nota privada
+  "🤖 (enviado via WhatsApp/lid)" e **retorna `mensagens:[]`** para o n8n W02 **não** repostar no
+  Chatwoot (evita o "Falha ao enviar" duplicado). Aprende o `@lid` em `telefones_devedor.chat_lid`
+  (coluna nova — migration **`021_chat_lid.sql`**, aplicada via MCP; convive com a
+  `021_config_templates_por_cobrador.sql`, mesmo número/escopos diferentes) p/ as próximas respostas
+  casarem direto. Contato normal (telefone) segue pelo fluxo Chatwoot→Z-API.
+- `lib/chatwoot.ts` `sincronizarProviderConfig` (**novo**) + `api/chips/[id]/chatwoot`: "Revincular
+  Chatwoot" agora **reescreve o `provider_config`** (instance_id/token/**client_token**) de um inbox
+  já existente — antes só criava (reaproveitava o inbox sem atualizar a credencial). Garante o Token
+  de Segurança no canal (necessário p/ a Z-API aceitar envios).
+- **Pendência:** `webhook-asaas`/`campanha-followup` ainda enviam confirmação/follow-up só pelo canal
+  Chatwoot (telefone); para contatos `@lid` a entrega desses também depende do canal — replicar o
+  caminho "enviar via Z-API ao @lid" neles é melhoria futura (o caminho crítico do bot já está coberto).
