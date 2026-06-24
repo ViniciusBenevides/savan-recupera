@@ -1,9 +1,13 @@
 # Contexto do Projeto — SAVAN Recupera
 
 > Documento para retomar o contexto em novas sessões com Claude.
-> Última atualização: **Vários escaladores (cobradores humanos) por carteira, escolhidos entre os
-> chips conectados marcados como Equipe, com estratégia de roteamento (rodízio/região/fixo+reserva)
-> e número puxado do chip conectado — ver §24.**
+> Última atualização: **Escalador humano "só registrado" — chip papel=Equipe pode ser cadastrado só
+> com nome + número de WhatsApp, sem Z-API/QR/Chatwoot (o dono não quer pagar Z-API pra quem só recebe
+> a finalização); trade-off consciente: não aparece no Chatwoot. Mais: editar nome/credor da carteira e
+> importador aceita até 6 telefones — ver §25–§26.**
+> (Anterior: Vários escaladores (cobradores humanos) por carteira, escolhidos entre os chips
+> conectados marcados como Equipe, com estratégia de roteamento (rodízio/região/fixo+reserva) e número
+> puxado do chip conectado — ver §24.)
 > (Anterior: Seletor de modelo de IA em Configurações — lista os modelos que a chave
 > OpenAI da conta acessa e sugere o melhor custo-benefício e o melhor para cobrança — ver §23.)
 > (Anterior: Campanha/Mensagens/Descontos por conta (cobrador), com o admin vendo/
@@ -973,3 +977,54 @@ removido.
 estão aplicados). **Não confundir** o *cobrador-conta* da carteira (`carteiras.cobrador_id`, dono da
 operação, §21) com o *escalador humano* (chip `papel='equipe'`) — a UI/§ chamam o segundo de
 "escalador" justamente pra evitar a colisão de nome herdada do código.
+
+---
+
+## 25. Escalador humano "só registrado" (sem Z-API) — adicionado nesta sessão
+
+Pedido do dono (refinando o §24): o escalador humano **não é bot, não cobra ninguém, só recebe a
+finalização** — e ele **não quer pagar uma instância Z-API** só pra isso. Esclarecido o mal-entendido
+de que existiria um "QR do Chatwoot" separado: neste produto **o QR vem da Z-API** e o inbox do
+Chatwoot é criado **por cima** do canal Z-API (`provider: "zapi"`, ver §9.12) — não há conexão de
+WhatsApp no Chatwoot sem Z-API. Decisão do dono: aceitar **registrar o escalador só com nome + número**,
+abrindo mão da fiscalização no Chatwoot (o §24 puxava o número do chip conectado **justamente** pra ser
+monitorável; aqui é o trade-off oposto, consciente).
+
+**Sem migration nem Edge Function** (o `bot-turno` v11 do §24 já avisa o escalador lendo `chips.numero_e164`):
+- **Cadastro (`chips/novo/flow.tsx`):** o seletor **Papel do chip** subiu pro topo. Em **Equipe**, o
+  form esconde Z-API/Tipo/Maturidade e pede só **nome do cobrador + número de WhatsApp**; o botão vira
+  "Cadastrar escalador" e **não há etapa de QR** (volta direto pra lista).
+- **`api/chips` (POST):** se `papel=equipe` **sem** credenciais, valida o número (`normalizarTelefone`
+  → E.164), grava em `chips.numero_e164`, **não** cria `chips_credenciais` nem inbox no Chatwoot. Chip de
+  bot (ou escalador **com** Z-API) segue exigindo as três credenciais.
+- **`api/chips/[id]` (GET/PATCH):** GET devolve `numero_e164` + flag `sem_zapi`; PATCH deixa **editar o
+  número** à mão (revalidado p/ E.164).
+- **Card (`chips/chip-card.tsx`):** detecta o escalador "só registrado" (`papel=equipe` + `numero_e164`
+  + sem `chatwoot_inbox_id`) e **esconde** QR/Ativar/Pausar, "Enviados hoje", badge de tipo/status e o
+  aviso "Chatwoot não vinculado"; mostra a linha *"Escalador humano — recebe as transferências no
+  WhatsApp. Não dispara campanha nem aparece no Chatwoot."* A edição usa a mesma regra (número editável,
+  sem Z-API).
+
+**Caminho antigo preservado:** quem quiser **fiscalizar** um escalador ainda cadastra ele **com** Z-API
+(papel Equipe + credenciais → conecta, número vem do `/device`, inbox no Chatwoot) — é só não usar o
+atalho "só número". Na carteira (§24, `AbaAsaas`), os escaladores **só registrados** aparecem
+normalmente na multi-seleção (têm `numero_e164`), sem o aviso âmbar de "sem número".
+
+**Ressalva (a mesma do §24, agora mais forte):** sem o chip no Chatwoot, o sistema **não vê** a conversa
+do escalador com o devedor — ele atende no zap pessoal, fora do radar. É o preço de não pagar Z-API.
+
+**Status:** `tsc --noEmit` + `npm run build` OK (14 páginas; `/chips` e `/chips/novo`).
+
+---
+
+## 26. Ajustes menores — editar carteira + importador até 6 telefones
+
+Dois retoques de usabilidade no dashboard (sem migration/Edge Function), que estavam no working tree e
+foram commitados junto:
+- **Editar nome/credor da carteira:** `carteiras/[id]/painel.tsx` (`AbaStatus`) ganhou um card
+  **"Informações da carteira"** (editar `nome` + `credor`, salva via `api/carteiras/[id]` PATCH); a lista
+  (`carteiras/acoes.tsx`) ganhou um **botão de editar** (lápis) que leva ao painel.
+- **Importador aceita até 6 telefones:** `telefone3..telefone6` adicionados em `lib/import/modelo.ts`
+  (modelo + rótulos), `lib/import/parse-planilha.ts` (tipos `CampoReceita`/`CAMPOS_RECEITA` + extração
+  padrão e por receita, agora via `campo.startsWith("telefone")`), `lib/import/mapear-ia.ts` (prompt da
+  IA) e `carteiras/importador-ia.tsx` (rótulos do de-para). Antes só `telefone`/`telefone2`.
