@@ -38,13 +38,15 @@ Deno.serve(async (req) => {
   // Chip 'novo' termina ao fim da curva global (~31d); 'aquecido' ao fim da curva curta;
   // limite fixo (override) já está no teto, então promove no próximo ciclo.
   const { data: chips } = await sb.from("chips")
-    .select("id, status, data_ativacao, maturidade, aquecimento_perfil, limite_dia_override")
+    .select("id, status, data_ativacao, maturidade, aquecimento_perfil, limite_dia_override, cobrador_id")
     .eq("status", "aquecendo");
 
-  const { data: curvas } = await sb.from("configuracoes").select("chave, valor").like("chave", "aquecimento%");
-  const curvaMap = new Map((curvas ?? []).map((c: { chave: string; valor: unknown }) => [c.chave, c.valor]));
-  const plateauDia = (chave: string): number => {
-    const curva = curvaMap.get(chave) as Array<{ de: number; ate: number }> | undefined;
+  // curvas de aquecimento POR COBRADOR (mesmo escopo do fn_limite_chip): chave|cobrador, com
+  // fallback no global. Mapa keyado por `${chave}|${cobrador||'g'}` p/ não misturar contas.
+  const { data: curvas } = await sb.from("configuracoes").select("chave, valor, cobrador_id").like("chave", "aquecimento%");
+  const curvaMap = new Map((curvas ?? []).map((c: any) => [`${c.chave}|${c.cobrador_id ?? "g"}`, c.valor]));
+  const plateauDia = (chave: string, cobradorId: string | null): number => {
+    const curva = (curvaMap.get(`${chave}|${cobradorId ?? "g"}`) ?? curvaMap.get(`${chave}|g`)) as Array<{ de: number; ate: number }> | undefined;
     if (!Array.isArray(curva) || curva.length === 0) return 31;
     const aberta = curva.reduce((acc, f) => (Number(f.ate) >= Number(acc.ate) ? f : acc), curva[0]);
     return Number(aberta.de) || 31;
@@ -61,7 +63,7 @@ Deno.serve(async (req) => {
       const chave = c.maturidade === "aquecido"
         ? (c.aquecimento_perfil || "aquecimento_rapido")
         : (c.aquecimento_perfil || "aquecimento");
-      limiar = plateauDia(chave);
+      limiar = plateauDia(chave, c.cobrador_id ?? null);
     }
     if (dias >= limiar) { await sb.from("chips").update({ status: "ativo" }).eq("id", c.id); promovidos++; }
   }
