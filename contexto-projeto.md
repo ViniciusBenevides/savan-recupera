@@ -1071,5 +1071,10 @@ Edge Functions): mês navegável que pinta os dias em que a campanha roda (verde
 persiste dentro de `janela_envio` no mesmo "Salvar". Docs atualizados: manual
 (`docs/manual-do-usuario.md`) e a Central de Ajuda (`/ajuda`).
 
-**Pendente de aplicar (outward-facing):** aplicar a migration 022 e **redeployar** `campanha-lote` e
-`campanha-followup` (MCP Supabase); o front sai no próximo `git push` da `main`.
+**Aplicado em produção (projeto `wmggqsmqvklxlqwsksjs`):** migration 022 aplicada (MCP, verificada por
+SQL: `janela_envio` global = `dias:[1,2,3,4,5]` + `pular_feriados:true`, horário/tz preservados);
+`campanha-lote` e `campanha-followup` **redeployadas → v4** (ACTIVE). Como o W01 (1 min) e o W07 (5 min)
+chamam essas funções, o gate de dias úteis + feriado **já vale** no envio real. Front (seletor de dias,
+switch e calendário) entregue à Vercel via `git push` na `main`. Verificação: `npm run build` OK
+(`/campanha` 8.77 kB). **Sincronia a manter:** `lib/feriados.ts` (front) espelha o
+`feriadosNacionais` das Edge Functions — alterar feriado em um, alterar no outro.
