@@ -3,7 +3,8 @@
 > Documento para retomar o contexto em novas sessões com Claude.
 > Última atualização: **Janela de envio só em dias úteis (seg–sex) e pulando feriados nacionais —
 > `dias` vira padrão seg–sex e nova flag `pular_feriados` (feriados fixos + móveis via Páscoa, base
-> bancária/ANBIMA), com seletor de dias + switch na tela de Campanha; gate nas Edge Functions
+> bancária/ANBIMA), com seletor de dias + switch + **calendário visual** (dias que rodam, feriados
+> nacionais e folgas clicáveis) na tela de Campanha; gate nas Edge Functions
 > `campanha-lote`/`campanha-followup` + migration 022 — ver §27.**
 > (Anterior: Escalador humano "só registrado" — chip papel=Equipe pode ser cadastrado só
 > com nome + número de WhatsApp, sem Z-API/QR/Chatwoot (o dono não quer pagar Z-API pra quem só recebe
@@ -1062,9 +1063,13 @@ Pedido do dono: além do horário (8h–20h), a campanha só deve disparar **de 
   Idempotente (só toca linhas que ainda não têm `pular_feriados`).
 
 **Front (`campanha/controls.tsx`):** card **Regras de envio** ganhou o **seletor de Dias de envio**
-(botões Seg…Dom, padrão seg–sex marcado) e o switch **"Pular feriados nacionais"**; ambos persistem
-dentro de `janela_envio` no mesmo "Salvar". Docs atualizados: manual (`docs/manual-do-usuario.md`) e a
-Central de Ajuda (`/ajuda`).
+(botões Seg…Dom, padrão seg–sex marcado), o switch **"Pular feriados nacionais"** e um **Calendário de
+envio** (`components/CalendarioEnvio.tsx` + `lib/feriados.ts`, que **espelha** a lógica de feriados das
+Edge Functions): mês navegável que pinta os dias em que a campanha roda (verde), feriados nacionais
+(âmbar, com nome) e folgas adicionadas (violeta); **clicar num dia útil marca folga** (entra em
+`feriados_extra`), há campo de data p/ adicionar e a **lista dos feriados nacionais do ano**. Tudo
+persiste dentro de `janela_envio` no mesmo "Salvar". Docs atualizados: manual
+(`docs/manual-do-usuario.md`) e a Central de Ajuda (`/ajuda`).
 
 **Pendente de aplicar (outward-facing):** aplicar a migration 022 e **redeployar** `campanha-lote` e
 `campanha-followup` (MCP Supabase); o front sai no próximo `git push` da `main`.

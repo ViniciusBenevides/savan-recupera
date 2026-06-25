@@ -2,8 +2,9 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Card, Switch, Input, Label, Button, Badge } from "@/components/ui/primitives";
+import { CalendarioEnvio } from "@/components/CalendarioEnvio";
 import { num } from "@/lib/utils";
-import { Power, FlaskConical, Clock, Timer, Flame, Save, CheckCircle2, Bot, CalendarDays, CalendarOff } from "lucide-react";
+import { Power, FlaskConical, Clock, Timer, Flame, Save, CheckCircle2, Bot, CalendarDays, CalendarOff, CalendarRange, ChevronDown } from "lucide-react";
 
 // Dias da semana (0=dom..6=sáb), ordenados começando na segunda p/ destacar os dias úteis.
 const DIAS_SEMANA = [
@@ -24,6 +25,7 @@ export function CampanhaControls({ cfg, aguardando, enviados, conta, ehGlobal }:
   }));
   const [intervalo, setIntervalo] = useState<number>(Number(cfg.intervalo_min_segundos ?? 12));
   const [aquec, setAquec] = useState<any[]>(cfg.aquecimento ?? []);
+  const [mostrarCal, setMostrarCal] = useState(true);
   const [nomeBot, setNomeBot] = useState<string>(cfg.ia?.nome_bot ?? "Ana");
   const [modelo, setModelo] = useState<string>(cfg.ia?.modelo ?? "gpt-4.1-mini");
   const [ok, setOk] = useState(false);
@@ -186,6 +188,29 @@ export function CampanhaControls({ cfg, aguardando, enviados, conta, ehGlobal }:
             </div>
           </div>
           <Switch checked={janela.pular_feriados !== false} onChange={(v) => setJanela((j: any) => ({ ...j, pular_feriados: v }))} />
+        </div>
+
+        {/* Calendário visual: mostra os dias em que a campanha roda + feriados nacionais */}
+        <div>
+          <button
+            type="button"
+            onClick={() => setMostrarCal((v) => !v)}
+            className="flex w-full items-center justify-between rounded-xl border border-line bg-ink-850 px-4 py-3 text-left transition hover:border-line/80"
+          >
+            <span className="flex items-center gap-2 text-sm font-medium text-chalk">
+              <CalendarRange className="h-4 w-4 text-emerald" /> Calendário de envio
+              <span className="text-xs font-normal text-mist">— veja os dias e feriados</span>
+            </span>
+            <ChevronDown className={`h-4 w-4 text-mist transition-transform ${mostrarCal ? "rotate-180" : ""}`} />
+          </button>
+          {mostrarCal && (
+            <div className="mt-3">
+              <CalendarioEnvio
+                janela={janela}
+                onChangeFeriadosExtra={(lista) => setJanela((j: any) => ({ ...j, feriados_extra: lista }))}
+              />
+            </div>
+          )}
         </div>
 
         <div>

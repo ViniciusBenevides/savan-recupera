@@ -101,10 +101,11 @@ e só então importa. Ao abrir uma carteira, há abas: **Status & envios**, **Pr
 
 ### Campanha
 A **chave gigante** liga/desliga a operação **da conta**. Aqui também ficam: **Modo simulação**,
-**janela de envio** (horário 8h–20h + **dias de envio**, padrão seg–sex, e a opção **pular
-feriados nacionais**), **intervalo mínimo** entre mensagens (12s), o **aquecimento** e o
-card **Robô** (nome do bot + **modelo de IA**). Cada cobrador tem a **sua** Campanha; o admin
-escolhe a conta no **seletor** do topo.
+**janela de envio** (horário 8h–20h + **dias de envio**, padrão seg–sex, a opção **pular
+feriados nacionais** e um **Calendário de envio** que mostra os dias em que a campanha roda,
+lista os feriados nacionais e deixa você **clicar num dia para marcar folga**), **intervalo
+mínimo** entre mensagens (12s), o **aquecimento** e o card **Robô** (nome do bot + **modelo de
+IA**). Cada cobrador tem a **sua** Campanha; o admin escolhe a conta no **seletor** do topo.
 
 ### Chips
 Cartões dos números. **Novo chip** → leia o QR. Se o QR não aparecer, a tela explica o motivo
