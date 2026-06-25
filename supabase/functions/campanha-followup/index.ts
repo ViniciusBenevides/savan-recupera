@@ -36,12 +36,34 @@ async function templateFollowup(sb: SupabaseClient, tipo: string, cob: string | 
   }
   return (cob ? await buscar(cob) : null) ?? await buscar(null);
 }
+// Feriados nacionais (base bancária/ANBIMA: fixos + móveis via Páscoa) p/ "pular feriado".
+function feriadosNacionais(ano: number): Set<string> {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const iso = (y: number, mo: number, d: number) => `${y}-${pad(mo)}-${pad(d)}`;
+  const s = new Set<string>([iso(ano,1,1), iso(ano,4,21), iso(ano,5,1), iso(ano,9,7), iso(ano,10,12), iso(ano,11,2), iso(ano,11,15), iso(ano,11,20), iso(ano,12,25)]);
+  const a = ano % 19, b = Math.floor(ano / 100), c = ano % 100;
+  const d = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3);
+  const h = (19 * a + b - d - g + 15) % 30, i = Math.floor(c / 4), k = c % 4;
+  const l = (32 + 2 * e + 2 * i - h - k) % 7, mm = Math.floor((a + 11 * h + 22 * l) / 451);
+  const mes = Math.floor((h + l - 7 * mm + 114) / 31), dia = ((h + l - 7 * mm + 114) % 31) + 1;
+  const pas = Date.UTC(ano, mes - 1, dia);
+  const off = (o: number) => { const dt = new Date(pas + o * 86400000); return iso(dt.getUTCFullYear(), dt.getUTCMonth() + 1, dt.getUTCDate()); };
+  s.add(off(-48)); s.add(off(-47)); s.add(off(-2)); s.add(off(60)); // Carnaval seg/ter, Sexta-feira Santa, Corpus Christi
+  return s;
+}
+function ehFeriadoHoje(j: any, tz: string): boolean {
+  if (j?.pular_feriados === false) return false;
+  const hoje = new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+  const extras: string[] = Array.isArray(j?.feriados_extra) ? j.feriados_extra : [];
+  return feriadosNacionais(Number(hoje.slice(0, 4))).has(hoje) || extras.includes(hoje);
+}
 function dentroJanela(j: any): boolean {
   const tz = j?.tz ?? "America/Sao_Paulo";
   const pp = new Intl.DateTimeFormat("pt-BR", { timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(new Date());
   const h = Number(pp.find((p) => p.type === "hour")?.value ?? "0"); const m = Number(pp.find((p) => p.type === "minute")?.value ?? "0");
   const min = h * 60 + m; const dow = new Date(new Date().toLocaleString("en-US", { timeZone: tz })).getDay();
-  if (!(j?.dias ?? [1,2,3,4,5,6]).includes(dow)) return false;
+  if (!(j?.dias ?? [1,2,3,4,5]).includes(dow)) return false; // padrão: dias úteis (seg–sex)
+  if (ehFeriadoHoje(j, tz)) return false;
   const [hi, mi] = String(j?.inicio ?? "08:00").split(":").map(Number); const [hf, mf] = String(j?.fim ?? "20:00").split(":").map(Number);
   return min >= hi*60+mi && min < hf*60+mf;
 }

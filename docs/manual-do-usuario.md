@@ -76,7 +76,8 @@ Faça **nesta ordem**. Cada item é uma tela da barra lateral.
    **Relatórios/Devedores** que o fluxo roda sem enviar nada. Para testar de ponta a ponta no seu
    próprio WhatsApp, use o **Enviar teste** em Chips (veja §5 → "Testar antes de disparar").
 6. **Ative a carteira** (na tela da carteira) e, quando tudo estiver certo, **desligue o Modo
-   simulação** em Campanha. A partir daí, é envio real (sempre dentro da janela 8h–20h).
+   simulação** em Campanha. A partir daí, é envio real (sempre dentro da janela 8h–20h, só em
+   **dias úteis** — seg a sex — e **pulando feriados nacionais**).
 
 > ⚠️ **Antes do envio real:** o robô só funciona com a campanha **ligada** _e_ a carteira
 > **Ativa** _e_ o Modo simulação **desligado**. Qualquer um desses desligado = nada é enviado.
@@ -100,7 +101,8 @@ e só então importa. Ao abrir uma carteira, há abas: **Status & envios**, **Pr
 
 ### Campanha
 A **chave gigante** liga/desliga a operação **da conta**. Aqui também ficam: **Modo simulação**,
-**janela de envio** (8h–20h), **intervalo mínimo** entre mensagens (12s), o **aquecimento** e o
+**janela de envio** (horário 8h–20h + **dias de envio**, padrão seg–sex, e a opção **pular
+feriados nacionais**), **intervalo mínimo** entre mensagens (12s), o **aquecimento** e o
 card **Robô** (nome do bot + **modelo de IA**). Cada cobrador tem a **sua** Campanha; o admin
 escolhe a conta no **seletor** do topo.
 
@@ -226,7 +228,8 @@ Estas regras são inegociáveis e já estão embutidas — bom você conhecê-la
 - Se perguntarem sobre **prescrição**, responde **honestamente** (dívida antiga, pode estar
   prescrita, pagamento é voluntário).
 - **Confirma a identidade** antes de revelar CPF/valor (número antigo pode ter trocado de dono).
-- Envia só **das 8h às 20h** (horário de São Paulo), com intervalo mínimo entre mensagens.
+- Envia só **das 8h às 20h** (horário de São Paulo), em **dias úteis** (seg–sex), **pulando
+  feriados nacionais**, com intervalo mínimo entre mensagens.
 
 > **Bloqueante legal:** só dispare de verdade depois do **contrato de cobrança** + **DPA (LGPD)**
 > assinados com o credor.
@@ -238,7 +241,7 @@ Estas regras são inegociáveis e já estão embutidas — bom você conhecê-la
 | Sintoma | Provável causa / o que fazer |
 |---|---|
 | **O robô não responde** as mensagens | Falta a `OPENAI_API_KEY` em Configurações → Chaves. |
-| **Nada é enviado** | Campanha desligada, carteira não‑Ativa, Modo simulação ligado, fora da janela 8h–20h, ou chip sem limite (aquecimento). |
+| **Nada é enviado** | Campanha desligada, carteira não‑Ativa, Modo simulação ligado, fora da janela (horário 8h–20h, fim de semana ou feriado nacional), ou chip sem limite (aquecimento). |
 | **QR Code não aparece** | A tela do chip mostra o motivo (ex.: assinatura Z‑API vencida). Resolva e clique "tentar de novo". |
 | **"Chatwoot não vinculado"** no chip | Use a opção de revincular o número (no cartão do chip). |
 | **Mensagens recebidas não chegam ao robô** | O webhook do Chatwoot precisa apontar para o n8n (`/webhook/savan-bot`). |

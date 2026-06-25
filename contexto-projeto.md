@@ -1,10 +1,14 @@
 # Contexto do Projeto — SAVAN Recupera
 
 > Documento para retomar o contexto em novas sessões com Claude.
-> Última atualização: **Escalador humano "só registrado" — chip papel=Equipe pode ser cadastrado só
+> Última atualização: **Janela de envio só em dias úteis (seg–sex) e pulando feriados nacionais —
+> `dias` vira padrão seg–sex e nova flag `pular_feriados` (feriados fixos + móveis via Páscoa, base
+> bancária/ANBIMA), com seletor de dias + switch na tela de Campanha; gate nas Edge Functions
+> `campanha-lote`/`campanha-followup` + migration 022 — ver §27.**
+> (Anterior: Escalador humano "só registrado" — chip papel=Equipe pode ser cadastrado só
 > com nome + número de WhatsApp, sem Z-API/QR/Chatwoot (o dono não quer pagar Z-API pra quem só recebe
 > a finalização); trade-off consciente: não aparece no Chatwoot. Mais: editar nome/credor da carteira e
-> importador aceita até 6 telefones — ver §25–§26.**
+> importador aceita até 6 telefones — ver §25–§26.)
 > (Anterior: Vários escaladores (cobradores humanos) por carteira, escolhidos entre os chips
 > conectados marcados como Equipe, com estratégia de roteamento (rodízio/região/fixo+reserva) e número
 > puxado do chip conectado — ver §24.)
@@ -41,8 +45,8 @@ Dívidas com média de **15,8 anos → ~99,8% prescritas** e **fora do Serasa** 
   prescrita, pagamento voluntário).
 - **Confirmação de identidade obrigatória** antes de revelar CPF/valor (telefone de 15 anos
   = alto risco de número reciclado → maior risco LGPD).
-- Envio **8h–20h** America/Sao_Paulo, intervalo mín. **12s**, aquecimento
-  **30→100→250→400→500** novos contatos/chip/dia em 30 dias.
+- Envio **8h–20h** America/Sao_Paulo, **só em dias úteis (seg–sex), pulando feriados nacionais**
+  (ver §27), intervalo mín. **12s**, aquecimento **30→100→250→400→500** novos contatos/chip/dia em 30 dias.
 - Descontos por idade: 15+ anos→60%, 10+→50%, 5+→40%, <5→30%. Margem extra única: +10pp.
 - Comissão **10%** via split Asaas. **Bloqueante legal:** contrato de cobrança + DPA (LGPD)
   assinados com o credor antes de qualquer disparo real.
@@ -1028,3 +1032,39 @@ foram commitados junto:
   (modelo + rótulos), `lib/import/parse-planilha.ts` (tipos `CampoReceita`/`CAMPOS_RECEITA` + extração
   padrão e por receita, agora via `campo.startsWith("telefone")`), `lib/import/mapear-ia.ts` (prompt da
   IA) e `carteiras/importador-ia.tsx` (rótulos do de-para). Antes só `telefone`/`telefone2`.
+
+---
+
+## 27. Janela de envio só em dias úteis + pular feriados nacionais
+
+Pedido do dono: além do horário (8h–20h), a campanha só deve disparar **de segunda a sexta** e
+**sem contar feriado**. Antes a janela aceitava `dias` (já existia no JSON `janela_envio`), mas o
+**padrão era seg–sáb** `[1,2,3,4,5,6]` e **não havia** noção de feriado.
+
+**Decisões:**
+- **Dias úteis (seg–sex)** viram o padrão (`dias = [1,2,3,4,5]`), mas o usuário pode **ajustar** quais
+  dias na tela de Campanha (inclusive reativar sábado/domingo).
+- **Feriado nacional** computado **em código** (sem dependência externa / sem API): fixos + móveis via
+  **Páscoa** (algoritmo de Meeus/Jones/Butcher). Base **bancária/ANBIMA** — inclui Carnaval (seg/ter),
+  **Sexta-feira Santa** e **Corpus Christi**, além de Consciência Negra (20/11, nacional desde 2024).
+  Flag `janela_envio.pular_feriados` (padrão **true**). Feriados regionais/pontuais opcionais em
+  `janela_envio.feriados_extra = ["YYYY-MM-DD", ...]`.
+
+**Onde mudou (o gate da janela é avaliado em 2 Edge Functions + 1 lib de referência):**
+- `supabase/functions/campanha-lote/index.ts` e `campanha-followup/index.ts` (self-contained = deployadas):
+  `dentroDaJanela`/`dentroJanela` agora têm `feriadosNacionais(ano)` + `ehFeriadoHoje(janela, tz)` e o
+  default de `dias` virou `[1,2,3,4,5]`. (O `bot-turno` **não** é gateado por janela — responder a um
+  devedor que escreveu vale a qualquer hora; intocado.)
+- `supabase/functions/_shared/lib.ts`: mesma lógica na versão de referência (exporta `feriadosNacionais`
+  e `ehFeriadoHoje`).
+- **Migration `022_janela_dias_uteis_feriados.sql`:** atualiza **todas** as linhas de `janela_envio`
+  (global + por cobrador) para `dias=[1,2,3,4,5]` + `pular_feriados=true`, preservando `inicio/fim/tz`.
+  Idempotente (só toca linhas que ainda não têm `pular_feriados`).
+
+**Front (`campanha/controls.tsx`):** card **Regras de envio** ganhou o **seletor de Dias de envio**
+(botões Seg…Dom, padrão seg–sex marcado) e o switch **"Pular feriados nacionais"**; ambos persistem
+dentro de `janela_envio` no mesmo "Salvar". Docs atualizados: manual (`docs/manual-do-usuario.md`) e a
+Central de Ajuda (`/ajuda`).
+
+**Pendente de aplicar (outward-facing):** aplicar a migration 022 e **redeployar** `campanha-lote` e
+`campanha-followup` (MCP Supabase); o front sai no próximo `git push` da `main`.

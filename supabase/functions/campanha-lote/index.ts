@@ -69,6 +69,40 @@ async function escolherTemplate(sb: SupabaseClient, tipo: string, cobradorId: st
   return { id: data[0].id, conteudo: data[0].conteudo };
 }
 
+// Feriados nacionais (base bancária/ANBIMA: fixos + móveis via Páscoa). Usado para "pular feriado".
+function feriadosNacionais(ano: number): Set<string> {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const iso = (y: number, mo: number, d: number) => `${y}-${pad(mo)}-${pad(d)}`;
+  const s = new Set<string>([
+    iso(ano, 1, 1),   // Confraternização
+    iso(ano, 4, 21),  // Tiradentes
+    iso(ano, 5, 1),   // Dia do Trabalho
+    iso(ano, 9, 7),   // Independência
+    iso(ano, 10, 12), // N. Sra. Aparecida
+    iso(ano, 11, 2),  // Finados
+    iso(ano, 11, 15), // Proclamação da República
+    iso(ano, 11, 20), // Consciência Negra (nacional desde 2024)
+    iso(ano, 12, 25), // Natal
+  ]);
+  // Páscoa (Meeus/Jones/Butcher) → feriados móveis.
+  const a = ano % 19, b = Math.floor(ano / 100), c = ano % 100;
+  const d = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3);
+  const h = (19 * a + b - d - g + 15) % 30, i = Math.floor(c / 4), k = c % 4;
+  const l = (32 + 2 * e + 2 * i - h - k) % 7, mm = Math.floor((a + 11 * h + 22 * l) / 451);
+  const mes = Math.floor((h + l - 7 * mm + 114) / 31), dia = ((h + l - 7 * mm + 114) % 31) + 1;
+  const pascoa = Date.UTC(ano, mes - 1, dia);
+  const off = (o: number) => { const dt = new Date(pascoa + o * 86400000); return iso(dt.getUTCFullYear(), dt.getUTCMonth() + 1, dt.getUTCDate()); };
+  s.add(off(-48)); s.add(off(-47)); // Carnaval (segunda/terça)
+  s.add(off(-2));                   // Sexta-feira Santa
+  s.add(off(60));                   // Corpus Christi
+  return s;
+}
+function ehFeriadoHoje(janela: any, tz: string): boolean {
+  if (janela?.pular_feriados === false) return false; // só pula quando habilitado (padrão: pula)
+  const hoje = new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+  const extras: string[] = Array.isArray(janela?.feriados_extra) ? janela.feriados_extra : [];
+  return feriadosNacionais(Number(hoje.slice(0, 4))).has(hoje) || extras.includes(hoje);
+}
 function dentroDaJanela(janela: any): boolean {
   const tz = janela?.tz ?? "America/Sao_Paulo";
   const agora = new Date();
@@ -77,8 +111,9 @@ function dentroDaJanela(janela: any): boolean {
   const m = Number(partes.find((p) => p.type === "minute")?.value ?? "0");
   const minutosAgora = h * 60 + m;
   const diaTz = new Date(agora.toLocaleString("en-US", { timeZone: tz }));
-  const dias: number[] = janela?.dias ?? [1, 2, 3, 4, 5, 6];
+  const dias: number[] = janela?.dias ?? [1, 2, 3, 4, 5]; // padrão: dias úteis (seg–sex)
   if (!dias.includes(diaTz.getDay())) return false;
+  if (ehFeriadoHoje(janela, tz)) return false;
   const [hi, mi] = String(janela?.inicio ?? "08:00").split(":").map(Number);
   const [hf, mf] = String(janela?.fim ?? "20:00").split(":").map(Number);
   return minutosAgora >= hi * 60 + mi && minutosAgora < hf * 60 + mf;

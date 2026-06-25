@@ -47,13 +47,13 @@ const GOLIVE = [
   { icon: FolderUp, t: "Carteira", d: "Carteiras → Nova: baixe o modelo de planilha, preencha e suba — ou suba a sua planilha fora do padrão e deixe a IA organizar. Confira o relatório. A carteira nasce Pausada." },
   { icon: MessageSquareText, t: "Mensagens e Descontos", d: "Ajuste os textos das mensagens e as faixas de desconto (por conta, e ainda dá para sobrescrever por carteira)." },
   { icon: Sparkles, t: "Simulação", d: "Campanha → ligue com o Modo simulação LIGADO e confira o fluxo sem enviar nada. Para validar no seu próprio WhatsApp, use o “Enviar teste” em Chips (veja “Testar antes de disparar”)." },
-  { icon: Send, t: "Ativar de verdade", d: "Ative a carteira e, quando estiver tudo certo, desligue o Modo simulação. A partir daí é envio real (8h–20h)." },
+  { icon: Send, t: "Ativar de verdade", d: "Ative a carteira e, quando estiver tudo certo, desligue o Modo simulação. A partir daí é envio real (8h–20h, só em dias úteis e pulando feriados nacionais)." },
 ];
 
 const TELAS = [
   { icon: LayoutDashboard, n: "Visão geral", d: "Página inicial: cartões com os números do dia, o funil (enviados → respostas → acordos → pagos) e um feed ao vivo dos pagamentos. É o seu raio‑x diário." },
   { icon: FolderUp, n: "Carteiras", d: "Suas carteiras com status (Importando / Ativa / Pausada / Arquivada), nº de devedores e saldo. Ao abrir, há abas: Status & envios, Prompt do robô, Descontos e Importações. Na importação, se a planilha não seguir o modelo, escolha “a IA organiza” e revise o de‑para antes de gravar. Só carteiras Ativas disparam." },
-  { icon: Radio, n: "Campanha", d: "A chave gigante liga/desliga a operação da conta. Aqui ficam o Modo simulação, a janela de envio (8h–20h), o intervalo mínimo entre mensagens (12s), o aquecimento e o card Robô (nome do bot + modelo de IA). Cada cobrador tem a sua; o admin escolhe a conta no seletor do topo." },
+  { icon: Radio, n: "Campanha", d: "A chave gigante liga/desliga a operação da conta. Aqui ficam o Modo simulação, a janela de envio (horário 8h–20h + dias de envio, padrão seg–sex, e a opção pular feriados nacionais), o intervalo mínimo entre mensagens (12s), o aquecimento e o card Robô (nome do bot + modelo de IA). Cada cobrador tem a sua; o admin escolhe a conta no seletor do topo." },
   { icon: Smartphone, n: "Chips", d: "Cartões dos números. Novo chip → leia o QR. Se o QR não aparecer, a tela explica o motivo (ex.: assinatura Z‑API vencida). No cadastro você define a maturidade e o tipo do chip e vê o selo de papel (Bot ou Cobrador). Há ainda o card Número de teste e o botão Enviar teste. O menu ⋮ permite editar (tokens) e excluir." },
   { icon: MessageSquareText, n: "Mensagens", d: "Modelos de mensagem (abertura, follow‑ups) com pré‑visualização, por conta. Use “Começar com os modelos padrão” para clonar o global e ajustar. Use as variáveis do modelo — nunca escreva o valor da dívida fixo no texto; o robô calcula." },
   { icon: Percent, n: "Descontos", d: "Editor das faixas por idade da dívida (15+ anos→60%, 10+→50%, 5+→40%, abaixo→30%) + a margem extra única (+10pp) e um simulador. É por conta (cada cobrador a sua) e pode ainda ser sobrescrito por carteira." },
@@ -65,7 +65,7 @@ const TELAS = [
 
 const PROBLEMAS = [
   { s: "O robô não responde as mensagens", c: "Falta a OPENAI_API_KEY em Configurações → Chaves." },
-  { s: "Nada é enviado", c: "Campanha desligada, carteira não‑Ativa, Modo simulação ligado, fora da janela 8h–20h, ou chip sem limite (aquecimento)." },
+  { s: "Nada é enviado", c: "Campanha desligada, carteira não‑Ativa, Modo simulação ligado, fora da janela (horário 8h–20h, fim de semana ou feriado nacional), ou chip sem limite (aquecimento)." },
   { s: "O QR Code não aparece", c: "A tela do chip mostra o motivo (ex.: assinatura Z‑API vencida). Resolva e clique em “tentar de novo”." },
   { s: "“Chatwoot não vinculado” no chip", c: "Use a opção de revincular o número no cartão do chip." },
   { s: "Respondi o teste e o robô não continuou", c: "Use “Revincular Chatwoot” no cartão do chip — garante o caminho de volta da mensagem (webhook de entrada da Z‑API)." },
@@ -381,7 +381,7 @@ export default function AjudaPage() {
               <div className="mt-5">
                 <Callout tone="emerald" title="A regra de ouro do envio">
                   Só sai mensagem real com a campanha <strong>ligada</strong>, a carteira <strong>Ativa</strong> e
-                  o Modo simulação <strong>desligado</strong> — tudo dentro da janela 8h–20h. Qualquer um desligado = nada é enviado.
+                  o Modo simulação <strong>desligado</strong> — tudo dentro da janela (8h–20h, em dias úteis e fora de feriado). Qualquer um desligado = nada é enviado.
                 </Callout>
               </div>
             </Section>
@@ -570,7 +570,7 @@ export default function AjudaPage() {
                 <li className="flex gap-3"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald" /> Enquadra sempre como quitação voluntária / encerramento com termo.</li>
                 <li className="flex gap-3"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald" /> Se perguntarem sobre prescrição, responde com honestidade (dívida antiga, pode estar prescrita, pagamento é voluntário).</li>
                 <li className="flex gap-3"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald" /> Confirma a identidade antes de revelar CPF/valor.</li>
-                <li className="flex gap-3"><Clock className="mt-0.5 h-4 w-4 shrink-0 text-emerald" /> Envia só das 8h às 20h (horário de São Paulo), com intervalo mínimo entre mensagens.</li>
+                <li className="flex gap-3"><Clock className="mt-0.5 h-4 w-4 shrink-0 text-emerald" /> Envia só das 8h às 20h (horário de São Paulo), em dias úteis (seg–sex), pulando feriados nacionais, com intervalo mínimo entre mensagens.</li>
               </ul>
               <div className="mt-5">
                 <Callout tone="rose" title="Bloqueante legal">

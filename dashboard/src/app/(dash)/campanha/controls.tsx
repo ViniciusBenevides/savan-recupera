@@ -3,7 +3,13 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Card, Switch, Input, Label, Button, Badge } from "@/components/ui/primitives";
 import { num } from "@/lib/utils";
-import { Power, FlaskConical, Clock, Timer, Flame, Save, CheckCircle2, Bot } from "lucide-react";
+import { Power, FlaskConical, Clock, Timer, Flame, Save, CheckCircle2, Bot, CalendarDays, CalendarOff } from "lucide-react";
+
+// Dias da semana (0=dom..6=sáb), ordenados começando na segunda p/ destacar os dias úteis.
+const DIAS_SEMANA = [
+  { n: 1, label: "Seg" }, { n: 2, label: "Ter" }, { n: 3, label: "Qua" }, { n: 4, label: "Qui" },
+  { n: 5, label: "Sex" }, { n: 6, label: "Sáb" }, { n: 0, label: "Dom" },
+];
 
 export function CampanhaControls({ cfg, aguardando, enviados, conta, ehGlobal }: {
   cfg: Record<string, any>; aguardando: number; enviados: number; conta: string; ehGlobal: boolean;
@@ -12,7 +18,10 @@ export function CampanhaControls({ cfg, aguardando, enviados, conta, ehGlobal }:
   const [pending, start] = useTransition();
   const [ativa, setAtiva] = useState<boolean>(cfg.campanha_ativa === true);
   const [sim, setSim] = useState<boolean>(cfg.modo_simulacao === true);
-  const [janela, setJanela] = useState(cfg.janela_envio ?? { inicio: "08:00", fim: "20:00" });
+  const [janela, setJanela] = useState<any>(() => ({
+    inicio: "08:00", fim: "20:00", dias: [1, 2, 3, 4, 5], pular_feriados: true,
+    ...(cfg.janela_envio ?? {}),
+  }));
   const [intervalo, setIntervalo] = useState<number>(Number(cfg.intervalo_min_segundos ?? 12));
   const [aquec, setAquec] = useState<any[]>(cfg.aquecimento ?? []);
   const [nomeBot, setNomeBot] = useState<string>(cfg.ia?.nome_bot ?? "Ana");
@@ -136,6 +145,47 @@ export function CampanhaControls({ cfg, aguardando, enviados, conta, ehGlobal }:
             <Label><Timer className="mr-1 inline h-3.5 w-3.5" /> Intervalo (segundos)</Label>
             <Input type="number" min={8} value={intervalo} onChange={(e) => setIntervalo(Number(e.target.value))} />
           </div>
+        </div>
+
+        <div>
+          <Label><CalendarDays className="mr-1 inline h-3.5 w-3.5" /> Dias de envio</Label>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {DIAS_SEMANA.map((d) => {
+              const on = (janela.dias ?? []).includes(d.n);
+              return (
+                <button
+                  key={d.n}
+                  type="button"
+                  onClick={() => setJanela((j: any) => {
+                    const atual: number[] = j.dias ?? [];
+                    const novo = on ? atual.filter((x) => x !== d.n) : [...atual, d.n].sort((a, b) => a - b);
+                    return { ...j, dias: novo };
+                  })}
+                  className={`h-9 w-14 rounded-xl border text-sm font-medium transition ${
+                    on ? "border-emerald bg-emerald/15 text-emerald" : "border-line bg-ink-850 text-mist hover:text-chalk"
+                  }`}
+                >
+                  {d.label}
+                </button>
+              );
+            })}
+          </div>
+          <p className="mt-2 text-xs text-mist">Padrão: dias úteis (seg–sex). Sábado e domingo ficam desmarcados.</p>
+        </div>
+
+        <div className="flex items-center justify-between rounded-xl border border-line bg-ink-850 p-4">
+          <div className="flex items-start gap-3">
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-emerald/12 text-emerald">
+              <CalendarOff className="h-4 w-4" />
+            </span>
+            <div>
+              <div className="font-medium text-chalk">Pular feriados nacionais</div>
+              <p className="mt-0.5 text-xs text-mist">
+                Não envia em feriado nacional (inclui Carnaval, Sexta-feira Santa e Corpus Christi).
+              </p>
+            </div>
+          </div>
+          <Switch checked={janela.pular_feriados !== false} onChange={(v) => setJanela((j: any) => ({ ...j, pular_feriados: v }))} />
         </div>
 
         <div>
