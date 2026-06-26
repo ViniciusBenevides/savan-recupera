@@ -1130,11 +1130,10 @@ personalizados de cada cobrador ficam intactos).
 - **n8n W01 reaplicado e verificado** (`criar_workflows.py`): trigger **5 min**, nó **"Aguardar
   intervalo"** com `amount = {{ $('Loop').item.json.delay_proximo }}`, workflow **ativo** (demais
   SAVAN intactos).
+- **`campanha-lote` redeployado → versão 5, ACTIVE** (confirmado via `list_edge_functions`; o erro de
+  socket no retorno do MCP foi só a resposta perdida, o deploy entrou). É a função que sorteia
+  `delay_proximo`/`delay_typing` e devolve nos itens.
 - **Front:** `git push` na `main` (commit `03cfea3`) → deploy Vercel automático.
-- ⚠️ **`campanha-lote` — REDEPLOY A CONFIRMAR:** o deploy foi disparado mas a conexão do MCP Supabase
-  caiu na resposta (socket), sem confirmação. **Re-verificar a versão da função e, se preciso,
-  redeployar** o `supabase/functions/campanha-lote/index.ts` (já no repo, é a fonte da verdade).
-  Sem esse deploy, o `delay_proximo`/intervalo aleatório não sai (o front/banco já estão prontos).
 
 **Nota de numeração:** existe em paralelo um `supabase/migrations/023_hardening_seguranca.sql`
 (auditoria de segurança 2026-06-26, **não** desta mudança e não commitado aqui) usando o mesmo nº 023 —
