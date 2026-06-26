@@ -103,9 +103,10 @@ e só então importa. Ao abrir uma carteira, há abas: **Status & envios**, **Pr
 A **chave gigante** liga/desliga a operação **da conta**. Aqui também ficam: **Modo simulação**,
 **janela de envio** (horário 8h–20h + **dias de envio**, padrão seg–sex, a opção **pular
 feriados nacionais** e um **Calendário de envio** que mostra os dias em que a campanha roda,
-lista os feriados nacionais e deixa você **clicar num dia para marcar folga**), **intervalo
-mínimo** entre mensagens (12s), o **aquecimento** e o card **Robô** (nome do bot + **modelo de
-IA**). Cada cobrador tem a **sua** Campanha; o admin escolhe a conta no **seletor** do topo.
+lista os feriados nacionais e deixa você **clicar num dia para marcar folga**), o **intervalo
+entre mensagens** (campos **mínimo** e **máximo** — o tempo de cada envio é **sorteado** entre os
+dois, recomendado 30s a 90s, para deixar o ritmo humano e proteger o chip) e o **aquecimento**.
+Cada cobrador tem a **sua** Campanha; o admin escolhe a conta no **seletor** do topo.
 
 ### Chips
 Cartões dos números. **Novo chip** → leia o QR. Se o QR não aparecer, a tela explica o motivo
@@ -230,7 +231,8 @@ Estas regras são inegociáveis e já estão embutidas — bom você conhecê-la
   prescrita, pagamento é voluntário).
 - **Confirma a identidade** antes de revelar CPF/valor (número antigo pode ter trocado de dono).
 - Envia só **das 8h às 20h** (horário de São Paulo), em **dias úteis** (seg–sex), **pulando
-  feriados nacionais**, com intervalo mínimo entre mensagens.
+  feriados nacionais**, com **intervalo aleatório** (30–90s) e **tamanho de mensagem variável**
+  entre os envios — para parecer humano e reduzir o risco de bloqueio do chip.
 
 > **Bloqueante legal:** só dispare de verdade depois do **contrato de cobrança** + **DPA (LGPD)**
 > assinados com o credor.

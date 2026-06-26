@@ -18,7 +18,7 @@ function admin(): SupabaseClient {
 
 // Chaves de config que existem "por cobrador" (o resto é só global/infra).
 const CHAVES_POR_COBRADOR = new Set([
-  "campanha_ativa", "modo_simulacao", "janela_envio", "intervalo_min_segundos", "aquecimento", "faixas_desconto", "ia",
+  "campanha_ativa", "modo_simulacao", "janela_envio", "intervalo_min_segundos", "intervalo_max_segundos", "aquecimento", "faixas_desconto", "ia",
 ]);
 
 // Carrega TODA a tabela e devolve um resolvedor: resolve(cobradorId) = global + overlay do cobrador.
@@ -155,7 +155,11 @@ Deno.serve(async (req) => {
     if (!(cfg.campanha_ativa === true || cfg.campanha_ativa === "true")) { pulados.campanha_inativa = (pulados.campanha_inativa ?? 0) + 1; continue; }
     if (!dentroDaJanela(cfg.janela_envio)) { pulados.fora_da_janela = (pulados.fora_da_janela ?? 0) + 1; continue; }
 
-    const intervalo = Number(cfg.intervalo_min_segundos ?? 12);
+    // Intervalo ALEATÓRIO entre mensagens (anti-ban): cada envio aguarda um tempo sorteado em
+    // [intervalo_min_segundos, intervalo_max_segundos]. Compatível com config antiga (só o mín).
+    const intMin = Math.max(5, Number(cfg.intervalo_min_segundos ?? 30));
+    let intMax = Number(cfg.intervalo_max_segundos ?? 90);
+    if (!Number.isFinite(intMax) || intMax < intMin) intMax = intMin;
     const simulacao = cfg.modo_simulacao === true || cfg.modo_simulacao === "true";
     const restanteJanela = minutosRestantesJanela(cfg.janela_envio);
     const nomeBot = cfg.ia?.nome_bot ?? "Ana";
@@ -165,8 +169,13 @@ Deno.serve(async (req) => {
     const usados = mDia?.novos_contatos ?? 0;
     const restante = Math.max(0, (limite ?? 0) - usados);
     if (restante <= 0) continue;
-    const porMinuto = Math.floor(60 / intervalo);
-    const lote = Math.min(porMinuto, Math.ceil((restante / restanteJanela) * 1.2));
+    // O W01 roda a cada 5 min; o lote cobre esse horizonte e é espaçado item a item pela espera
+    // aleatória do n8n (campo delay_proximo). Dimensiono pelo intervalo MÁX p/ o ciclo não estourar
+    // os 5 min (no pior caso, lote × intMax ≈ horizonte).
+    const HORIZONTE_MIN = 5;
+    const porHorizonte = Math.max(1, Math.floor((HORIZONTE_MIN * 60) / intMax));
+    const demanda = Math.ceil((restante / restanteJanela) * HORIZONTE_MIN * 1.2);
+    const lote = Math.min(porHorizonte, Math.max(1, demanda));
     if (lote <= 0) continue;
 
     const { data: selec } = await sb.rpc("fn_selecionar_lote", { p_chip_id: chip.id, p_n: lote });
@@ -186,11 +195,15 @@ Deno.serve(async (req) => {
 
       await sb.from("fila_envios").update({ template_id: tpl?.id ?? null, mensagem_renderizada: conteudo }).eq("id", item.id);
 
+      // "digitando" curto e proporcional ao texto (parece humano); espera até o próximo envio = sorteio anti-ban
+      const delayTyping = Math.min(8, 3 + Math.floor(conteudo.length / 60) + Math.floor(Math.random() * 3));
+      const delayProximo = intMin + Math.floor(Math.random() * (intMax - intMin + 1));
+
       itens.push({
         fila_id: item.id, carteira_id: item.carteira_id, chip_id: chip.id, inbox_id: chip.chatwoot_inbox_id,
         devedor_id: dev?.id, devedor_nome: dev?.nome, processo: dev?.processo, valor_divida: dev?.saldo,
         telefone_id: tel.id, telefone_e164: tel.telefone_e164, contato_existente: dev?.chatwoot_contact_id ?? null,
-        mensagem: conteudo, delay_typing: intervalo, simulacao,
+        mensagem: conteudo, delay_typing: delayTyping, delay_proximo: delayProximo, simulacao,
       });
     }
   }

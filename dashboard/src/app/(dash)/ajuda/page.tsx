@@ -570,7 +570,7 @@ export default function AjudaPage() {
                 <li className="flex gap-3"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald" /> Enquadra sempre como quitação voluntária / encerramento com termo.</li>
                 <li className="flex gap-3"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald" /> Se perguntarem sobre prescrição, responde com honestidade (dívida antiga, pode estar prescrita, pagamento é voluntário).</li>
                 <li className="flex gap-3"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald" /> Confirma a identidade antes de revelar CPF/valor.</li>
-                <li className="flex gap-3"><Clock className="mt-0.5 h-4 w-4 shrink-0 text-emerald" /> Envia só das 8h às 20h (horário de São Paulo), em dias úteis (seg–sex), pulando feriados nacionais, com intervalo mínimo entre mensagens.</li>
+                <li className="flex gap-3"><Clock className="mt-0.5 h-4 w-4 shrink-0 text-emerald" /> Envia só das 8h às 20h (horário de São Paulo), em dias úteis (seg–sex), pulando feriados nacionais, com intervalo aleatório (30–90s) e tamanho de mensagem variável entre os envios — anti-bloqueio do chip.</li>
               </ul>
               <div className="mt-5">
                 <Callout tone="rose" title="Bloqueante legal">

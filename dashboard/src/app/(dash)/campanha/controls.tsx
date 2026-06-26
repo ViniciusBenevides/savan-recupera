@@ -23,7 +23,8 @@ export function CampanhaControls({ cfg, aguardando, enviados, conta, ehGlobal }:
     inicio: "08:00", fim: "20:00", dias: [1, 2, 3, 4, 5], pular_feriados: true,
     ...(cfg.janela_envio ?? {}),
   }));
-  const [intervalo, setIntervalo] = useState<number>(Number(cfg.intervalo_min_segundos ?? 12));
+  const [intMin, setIntMin] = useState<number>(Number(cfg.intervalo_min_segundos ?? 30));
+  const [intMax, setIntMax] = useState<number>(Number(cfg.intervalo_max_segundos ?? 90));
   const [aquec, setAquec] = useState<any[]>(cfg.aquecimento ?? []);
   const [mostrarCal, setMostrarCal] = useState(true);
   const [ok, setOk] = useState(false);
@@ -43,9 +44,12 @@ export function CampanhaControls({ cfg, aguardando, enviados, conta, ehGlobal }:
 
   function salvarRegras() {
     start(async () => {
+      const minSeg = Math.max(5, intMin);
+      const maxSeg = Math.max(minSeg, intMax); // o máximo nunca fica abaixo do mínimo
       const sucesso = await salvar([
         { chave: "janela_envio", valor: { ...cfg.janela_envio, ...janela } },
-        { chave: "intervalo_min_segundos", valor: intervalo },
+        { chave: "intervalo_min_segundos", valor: minSeg },
+        { chave: "intervalo_max_segundos", valor: maxSeg },
         { chave: "aquecimento", valor: aquec },
       ]);
       if (sucesso) { setOk(true); setTimeout(() => setOk(false), 2500); router.refresh(); }
@@ -125,7 +129,7 @@ export function CampanhaControls({ cfg, aguardando, enviados, conta, ehGlobal }:
           </Button>
         </div>
 
-        <div className="grid gap-5 sm:grid-cols-3">
+        <div className="grid gap-5 sm:grid-cols-2">
           <div>
             <Label><Clock className="mr-1 inline h-3.5 w-3.5" /> Início do envio</Label>
             <Input type="time" value={janela.inicio} onChange={(e) => setJanela({ ...janela, inicio: e.target.value })} />
@@ -134,10 +138,24 @@ export function CampanhaControls({ cfg, aguardando, enviados, conta, ehGlobal }:
             <Label><Clock className="mr-1 inline h-3.5 w-3.5" /> Fim do envio</Label>
             <Input type="time" value={janela.fim} onChange={(e) => setJanela({ ...janela, fim: e.target.value })} />
           </div>
-          <div>
-            <Label><Timer className="mr-1 inline h-3.5 w-3.5" /> Intervalo (segundos)</Label>
-            <Input type="number" min={8} value={intervalo} onChange={(e) => setIntervalo(Number(e.target.value))} />
+        </div>
+
+        <div>
+          <Label><Timer className="mr-1 inline h-3.5 w-3.5" /> Intervalo entre mensagens (segundos)</Label>
+          <div className="mt-1 grid gap-3 sm:grid-cols-2">
+            <div>
+              <span className="mb-1 block text-[11px] text-mist">Mínimo</span>
+              <Input type="number" min={5} value={intMin} onChange={(e) => setIntMin(Number(e.target.value))} />
+            </div>
+            <div>
+              <span className="mb-1 block text-[11px] text-mist">Máximo</span>
+              <Input type="number" min={5} value={intMax} onChange={(e) => setIntMax(Number(e.target.value))} />
+            </div>
           </div>
+          <p className="mt-2 text-xs text-mist">
+            Cada mensagem espera um tempo <b>aleatório</b> entre o mínimo e o máximo (recomendado 30s a 90s). Variar o
+            intervalo — junto com o tamanho das mensagens — deixa o envio mais humano e reduz o risco de bloqueio do chip.
+          </p>
         </div>
 
         <div>

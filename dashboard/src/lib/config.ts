@@ -3,7 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase-server";
 // Chaves de `configuracoes` que cada cobrador pode ter as SUAS (caem no global se vazias).
 // Mesmo padrão de `segredos`: linha global (cobrador_id NULL) + 1 linha por cobrador.
 // Decisão do dono (§21): Campanha, Descontos e os ajustes de bot (nome/modelo) são por conta.
-//  - campanha: campanha_ativa, modo_simulacao, janela_envio, intervalo_min_segundos, aquecimento
+//  - campanha: campanha_ativa, modo_simulacao, janela_envio, intervalo_min/max_segundos, aquecimento
 //  - descontos: faixas_desconto
 //  - bot: ia (nome_bot, modelo)
 // As chaves de INFRA (asaas global, bot_persona/contexto/guardrails, chatwoot, numero_teste,
@@ -13,6 +13,7 @@ export const CONFIG_POR_COBRADOR = [
   "modo_simulacao",
   "janela_envio",
   "intervalo_min_segundos",
+  "intervalo_max_segundos",
   "aquecimento",
   "faixas_desconto",
   "ia",

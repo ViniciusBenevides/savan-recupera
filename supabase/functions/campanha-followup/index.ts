@@ -10,7 +10,7 @@ async function carregarSegredos(sb: SupabaseClient): Promise<Record<string, stri
   const { data } = await sb.from("segredos").select("chave, valor").is("cobrador_id", null);
   const m: Record<string, string> = {}; for (const r of data ?? []) if (r.valor) m[r.chave] = r.valor; return m;
 }
-const CHAVES_POR_COBRADOR = new Set(["campanha_ativa", "modo_simulacao", "janela_envio", "intervalo_min_segundos", "aquecimento", "faixas_desconto", "ia"]);
+const CHAVES_POR_COBRADOR = new Set(["campanha_ativa", "modo_simulacao", "janela_envio", "intervalo_min_segundos", "intervalo_max_segundos", "aquecimento", "faixas_desconto", "ia"]);
 async function carregarConfigResolver(sb: SupabaseClient) {
   const { data } = await sb.from("configuracoes").select("chave, valor, cobrador_id");
   const global: Record<string, any> = {}; const porCobrador = new Map<string, Record<string, any>>();

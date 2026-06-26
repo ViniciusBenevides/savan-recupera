@@ -136,8 +136,10 @@ def upsert(nome, nodes, connections, ativo=False, settings=None):
 
 # ============================ W01 — DISPARADOR ============================
 def w01():
-    trig = node("Cada 1 min", "n8n-nodes-base.scheduleTrigger", 1.2, [240, 300],
-                {"rule": {"interval": [{"field": "minutes", "minutesInterval": 1}]}})
+    # 5 min: o lote do campanha-lote cobre esse horizonte e é espaçado item a item pela espera
+    # ALEATÓRIA abaixo (30–90s, via delay_proximo). Cadência > intervalo p/ o sorteio surtir efeito.
+    trig = node("Cada 5 min", "n8n-nodes-base.scheduleTrigger", 1.2, [240, 300],
+                {"rule": {"interval": [{"field": "minutes", "minutesInterval": 5}]}})
     lote = http_edge("Buscar lote", "campanha-lote", [460, 300], "={}")
     split = node("Itens", "n8n-nodes-base.splitOut", 1, [680, 300],
                  {"fieldToSplitOut": "itens", "options": {}})
@@ -173,8 +175,10 @@ def w01():
     reg_sem = http_edge("Registrar sem WA", "campanha-registrar", [1560, 480],
         '={ "fila_id": {{ $(\'Loop\').item.json.fila_id }}, "devedor_id": {{ $(\'Loop\').item.json.devedor_id }}, '
         '"telefone_id": {{ $(\'Loop\').item.json.telefone_id }}, "status": "sem_whatsapp" }')
-    espera = node("Aguardar 12s", "n8n-nodes-base.wait", 1.1, [2220, 300],
-                  {"amount": 12, "unit": "seconds"}, {"webhookId": "savan-w01-wait"})
+    # espera ALEATÓRIA até o próximo envio (anti-ban): lê delay_proximo (30–90s) sorteado no campanha-lote
+    espera = node("Aguardar intervalo", "n8n-nodes-base.wait", 1.1, [2220, 300],
+                  {"amount": "={{ $('Loop').item.json.delay_proximo }}", "unit": "seconds"},
+                  {"webhookId": "savan-w01-wait"})
 
     nodes = [trig, lote, split, loop, contato, cond, sim, envia, reg_ok, reg_sem, espera]
     connections = {}
@@ -183,7 +187,7 @@ def w01():
         while len(connections[src]["main"]) <= idx:
             connections[src]["main"].append([])
         connections[src]["main"][idx].append({"node": dst, "type": "main", "index": 0})
-    add("Cada 1 min", "Buscar lote")
+    add("Cada 5 min", "Buscar lote")
     add("Buscar lote", "Itens")
     add("Itens", "Loop")
     add("Loop", "Criar contato", 1)      # saída 1 = "loop" (cada item)
@@ -193,8 +197,8 @@ def w01():
     add("É simulação?", "Registrar enviado", 0)  # true -> não envia, só registra
     add("É simulação?", "Enviar msg", 1)         # false -> envia
     add("Enviar msg", "Registrar enviado")
-    add("Registrar enviado", "Aguardar 12s")
-    add("Aguardar 12s", "Loop")
+    add("Registrar enviado", "Aguardar intervalo")
+    add("Aguardar intervalo", "Loop")
     add("Registrar sem WA", "Loop")
     upsert("SAVAN W01 - Disparador", nodes, connections)
 

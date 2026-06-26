@@ -20,7 +20,7 @@ const json = (b: unknown, s = 200) =>
 function admin(): SupabaseClient {
   return createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
 }
-const CHAVES_POR_COBRADOR = new Set(["campanha_ativa", "modo_simulacao", "janela_envio", "intervalo_min_segundos", "aquecimento", "faixas_desconto", "ia"]);
+const CHAVES_POR_COBRADOR = new Set(["campanha_ativa", "modo_simulacao", "janela_envio", "intervalo_min_segundos", "intervalo_max_segundos", "aquecimento", "faixas_desconto", "ia"]);
 // segredos: base global (cobrador_id NULL) + overlay do cobrador (sobrescreve quando preenchido)
 async function carregarSegredos(sb: SupabaseClient, cobradorId: string | null = null): Promise<Record<string, string>> {
   const { data: glob } = await sb.from("segredos").select("chave, valor").is("cobrador_id", null);

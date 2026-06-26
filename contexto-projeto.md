@@ -1,11 +1,17 @@
 # Contexto do Projeto — SAVAN Recupera
 
 > Documento para retomar o contexto em novas sessões com Claude.
-> Última atualização: **Janela de envio só em dias úteis (seg–sex) e pulando feriados nacionais —
+> Última atualização: **Anti-ban — intervalo de envio ALEATÓRIO (sorteado em [min, max], padrão 30–90s)
+> + variação de TAMANHO das mensagens. `intervalo_min_segundos` ganha par `intervalo_max_segundos`;
+> `campanha-lote` sorteia `delay_proximo` por mensagem e o n8n W01 espera esse tempo (nó "Aguardar
+> intervalo" dinâmico) com cadência de 5 min p/ o sorteio surtir efeito; templates de abordagem ganham
+> spintax opcional (`{|texto}`) p/ variar o comprimento; UI da Campanha com campos mín/máx +
+> migration 023 — ver §28.**
+> (Anterior: Janela de envio só em dias úteis (seg–sex) e pulando feriados nacionais —
 > `dias` vira padrão seg–sex e nova flag `pular_feriados` (feriados fixos + móveis via Páscoa, base
 > bancária/ANBIMA), com seletor de dias + switch + **calendário visual** (dias que rodam, feriados
 > nacionais e folgas clicáveis) na tela de Campanha; gate nas Edge Functions
-> `campanha-lote`/`campanha-followup` + migration 022 — ver §27.**
+> `campanha-lote`/`campanha-followup` + migration 022 — ver §27.)
 > (Anterior: Escalador humano "só registrado" — chip papel=Equipe pode ser cadastrado só
 > com nome + número de WhatsApp, sem Z-API/QR/Chatwoot (o dono não quer pagar Z-API pra quem só recebe
 > a finalização); trade-off consciente: não aparece no Chatwoot. Mais: editar nome/credor da carteira e
@@ -47,7 +53,8 @@ Dívidas com média de **15,8 anos → ~99,8% prescritas** e **fora do Serasa** 
 - **Confirmação de identidade obrigatória** antes de revelar CPF/valor (telefone de 15 anos
   = alto risco de número reciclado → maior risco LGPD).
 - Envio **8h–20h** America/Sao_Paulo, **só em dias úteis (seg–sex), pulando feriados nacionais**
-  (ver §27), intervalo mín. **12s**, aquecimento **30→100→250→400→500** novos contatos/chip/dia em 30 dias.
+  (ver §27), **intervalo aleatório 30–90s** entre mensagens (anti-ban, ver §28), aquecimento
+  **30→100→250→400→500** novos contatos/chip/dia em 30 dias.
 - Descontos por idade: 15+ anos→60%, 10+→50%, 5+→40%, <5→30%. Margem extra única: +10pp.
 - Comissão **10%** via split Asaas. **Bloqueante legal:** contrato de cobrança + DPA (LGPD)
   assinados com o credor antes de qualquer disparo real.
@@ -1078,3 +1085,44 @@ chamam essas funções, o gate de dias úteis + feriado **já vale** no envio re
 switch e calendário) entregue à Vercel via `git push` na `main`. Verificação: `npm run build` OK
 (`/campanha` 8.77 kB). **Sincronia a manter:** `lib/feriados.ts` (front) espelha o
 `feriadosNacionais` das Edge Functions — alterar feriado em um, alterar no outro.
+
+---
+
+## 28. Anti-ban — intervalo de envio ALEATÓRIO + tamanho variável das mensagens
+
+Pedido do dono: chip não pode ser banido. Padrões previsíveis (mesmo intervalo, mesmo texto) entregam
+um robô; a defesa é **imprevisibilidade**. Duas frentes, ligadas:
+
+**1) Intervalo aleatório (30–90s):** o `intervalo_min_segundos` (fixo, antes 12s) virou **piso de um
+sorteio** e ganhou par **`intervalo_max_segundos`** (padrão 90). Cada mensagem espera um tempo sorteado
+em `[min, max]`.
+- **`campanha-lote` (Edge):** lê min/max (com fallback 30/90; corrige `max < min`), sorteia
+  **`delay_proximo`** (a espera até o próximo envio) e um **`delay_typing`** curto e proporcional ao texto
+  (≤8s, "digitando" natural — não é mais o intervalo inteiro). Devolve os dois por item. O **pacing** deixou
+  de ser por minuto: agora dimensiona o lote por um **horizonte de 5 min** usando o intervalo **máx**
+  (`porHorizonte = floor(300/max)`), garantindo que, no pior caso, `lote × max ≤ 5 min` (sem estourar o
+  ciclo / sem execuções paralelas no n8n).
+- **n8n W01:** o trigger passou de **1 → 5 min** (cadência > intervalo p/ o sorteio realmente espaçar) e o
+  nó fixo **"Aguardar 12s"** virou **"Aguardar intervalo"** com `amount = {{ $('Loop').item.json.delay_proximo }}`.
+  `delayTyping` do Chatwoot/Z-API continua lendo `delay_typing`. Reaplicar com `python n8n/criar_workflows.py`.
+
+**2) Tamanho variável das mensagens:** os 3 templates globais de `abordagem_inicial` ganharam **spintax
+opcional** `{|texto}` (sorteia incluir/omitir trechos → comprimento muda a cada envio), além das variações
+de saudação/fecho que já existiam (escolha ponderada entre os 3 + spintax). **Restrição do resolvedor**
+(`resolverSpintax`, regex `\{([^{}]*\|[^{}]*)\}`): alternativas **não podem conter `{` ou `}`** → as
+variáveis `{{primeiro_nome}}`/`{{nome_bot}}` ficam **fora** dos blocos opcionais.
+
+**Front (`campanha/controls.tsx`):** o campo único "Intervalo (segundos)" virou **dois campos
+Mínimo/Máximo** (em "Regras de envio") com nota explicando o sorteio + a variação de tamanho; o "Salvar"
+persiste `intervalo_min_segundos` e `intervalo_max_segundos` (clamp `max ≥ min ≥ 5`). `lib/config.ts` e os
+`CHAVES_POR_COBRADOR` das Edge Functions (`campanha-lote`/`bot-turno`/`campanha-followup`) incluem a nova
+chave (por cobrador, fallback global).
+
+**Migration `023_intervalo_aleatorio_tamanho.sql`:** insere `intervalo_max_segundos=90` global (idempotente),
+sobe o piso global de **12→30** (só se ainda estiver em 12, não clobra ajuste manual) e atualiza os 3
+templates globais de abordagem com o spintax de tamanho variável (só `cobrador_id IS NULL`; os modelos
+personalizados de cada cobrador ficam intactos).
+
+**Pendência de deploy (não aplicado em produção ainda):** redeployar **`campanha-lote`** (Supabase),
+aplicar a **migration 023** e **reaplicar o n8n** (`python n8n/criar_workflows.py`) p/ o W01 virar 5 min +
+espera dinâmica. Verificação local: `tsc --noEmit` do dashboard OK; sintaxe do `criar_workflows.py` OK.
