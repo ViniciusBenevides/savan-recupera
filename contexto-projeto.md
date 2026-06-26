@@ -1123,6 +1123,19 @@ sobe o piso global de **12→30** (só se ainda estiver em 12, não clobra ajust
 templates globais de abordagem com o spintax de tamanho variável (só `cobrador_id IS NULL`; os modelos
 personalizados de cada cobrador ficam intactos).
 
-**Pendência de deploy (não aplicado em produção ainda):** redeployar **`campanha-lote`** (Supabase),
-aplicar a **migration 023** e **reaplicar o n8n** (`python n8n/criar_workflows.py`) p/ o W01 virar 5 min +
-espera dinâmica. Verificação local: `tsc --noEmit` do dashboard OK; sintaxe do `criar_workflows.py` OK.
+**Aplicado em produção (projeto `wmggqsmqvklxlqwsksjs`):**
+- **Migration 023 aplicada** (MCP). Verificado por SQL: global `intervalo_min_segundos=30`,
+  `intervalo_max_segundos=90`; os 3 templates globais de abordagem atualizados. Render testado
+  (500 amostras/template): **0 chaves soltas** e tamanho variando ~102–208 chars.
+- **n8n W01 reaplicado e verificado** (`criar_workflows.py`): trigger **5 min**, nó **"Aguardar
+  intervalo"** com `amount = {{ $('Loop').item.json.delay_proximo }}`, workflow **ativo** (demais
+  SAVAN intactos).
+- **Front:** `git push` na `main` (commit `03cfea3`) → deploy Vercel automático.
+- ⚠️ **`campanha-lote` — REDEPLOY A CONFIRMAR:** o deploy foi disparado mas a conexão do MCP Supabase
+  caiu na resposta (socket), sem confirmação. **Re-verificar a versão da função e, se preciso,
+  redeployar** o `supabase/functions/campanha-lote/index.ts` (já no repo, é a fonte da verdade).
+  Sem esse deploy, o `delay_proximo`/intervalo aleatório não sai (o front/banco já estão prontos).
+
+**Nota de numeração:** existe em paralelo um `supabase/migrations/023_hardening_seguranca.sql`
+(auditoria de segurança 2026-06-26, **não** desta mudança e não commitado aqui) usando o mesmo nº 023 —
+renumerar um dos dois ao commitar o hardening. Verificação local: `tsc --noEmit` do dashboard OK.
