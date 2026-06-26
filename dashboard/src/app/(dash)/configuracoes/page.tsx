@@ -17,14 +17,14 @@ export default async function ConfigPage() {
   const ehAdmin = role === "admin";
 
   // só os defaults GLOBAIS (cobrador_id NULL). Asaas/Bot global são admin-only e infra.
-  // O nome do bot / modelo de IA (chave `ia`) virou por conta e é editado em Campanha.
+  // O nome do bot / modelo de IA (chave `ia`) é por conta e é editado aqui (card Robô).
   const { data: cfg } = await sb.from("configuracoes").select("chave, valor")
     .in("chave", ["asaas", "bot_persona", "bot_contexto", "bot_guardrails"]).is("cobrador_id", null);
   const c: Record<string, any> = {};
   for (const r of cfg ?? []) c[r.chave] = r.valor;
 
-  // modelo de IA do robô (chave `ia`) no escopo do ator: cobrador vê/edita o seu (cai no
-  // global); admin edita o padrão global. Usado pelo seletor de modelo em Configurações.
+  // nome do bot + modelo de IA (chave `ia`) no escopo do ator: cobrador vê/edita o seu (cai no
+  // global); admin edita o padrão global. Usado pelo card Robô em Configurações.
   const cobradorId = role === "cobrador" ? user!.id : null;
   const iaAtual = (await getConfigEscopo(cobradorId)).ia ?? {};
 

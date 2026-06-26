@@ -1,8 +1,8 @@
 "use client";
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Card, Button, Badge } from "@/components/ui/primitives";
-import { Cpu, Sparkles, Coins, Scale, RefreshCw, Save, CheckCircle2, AlertTriangle, Loader2 } from "lucide-react";
+import { Card, Button, Badge, Input, Label } from "@/components/ui/primitives";
+import { Sparkles, Coins, Scale, RefreshCw, Save, CheckCircle2, AlertTriangle, Loader2, Bot } from "lucide-react";
 
 type Modelo = {
   id: string; label: string; descricao: string;
@@ -28,6 +28,7 @@ export function ModeloIA({ iaAtual }: { iaAtual: { nome_bot?: string; modelo?: s
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState("");
   const [sel, setSel] = useState<string>(iaAtual.modelo ?? "gpt-4.1-mini");
+  const [nomeBot, setNomeBot] = useState<string>(iaAtual.nome_bot ?? "Ana");
   const [ok, setOk] = useState(false);
 
   async function buscar() {
@@ -49,31 +50,38 @@ export function ModeloIA({ iaAtual }: { iaAtual: { nome_bot?: string; modelo?: s
     start(async () => {
       const r = await fetch("/api/config", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ itens: [{ chave: "ia", valor: { ...iaAtual, modelo: sel } }] }),
+        body: JSON.stringify({ itens: [{ chave: "ia", valor: { ...iaAtual, nome_bot: nomeBot, modelo: sel } }] }),
       });
       if (r.ok) { setOk(true); setTimeout(() => setOk(false), 2500); router.refresh(); }
     });
   }
 
   const rec = dados?.recomendacoes;
-  const mudou = sel !== (iaAtual.modelo ?? "gpt-4.1-mini");
+  const mudou = sel !== (iaAtual.modelo ?? "gpt-4.1-mini") || nomeBot !== (iaAtual.nome_bot ?? "Ana");
 
   return (
     <Card className="flex flex-col gap-4">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h3 className="flex items-center gap-2 font-display text-base font-600 text-chalk">
-            <Cpu className="h-4 w-4 text-violet" /> Modelo de IA do robô
+            <Bot className="h-4 w-4 text-violet" /> Robô
           </h3>
           <p className="mt-1 text-xs text-mist">
-            Qual modelo da OpenAI o robô usa para negociar. O sistema lista os modelos que a sua
-            chave acessa e sugere os melhores para cobrança. Atual:{" "}
+            Nome do bot e qual modelo da OpenAI ele usa para negociar. O sistema lista os modelos
+            que a sua chave acessa e sugere os melhores para cobrança. Modelo atual:{" "}
             <span className="font-mono text-chalk">{iaAtual.modelo ?? "gpt-4.1-mini"}</span>.
           </p>
         </div>
         <Button size="sm" variant="ghost" onClick={buscar} disabled={carregando}>
           <RefreshCw className={`h-4 w-4 ${carregando ? "animate-spin" : ""}`} /> Atualizar
         </Button>
+      </div>
+
+      {/* Nome do bot — antes vivia em Campanha; agora o robô se configura tudo aqui */}
+      <div className="max-w-sm">
+        <Label>Nome do bot</Label>
+        <Input value={nomeBot} onChange={(e) => setNomeBot(e.target.value)} />
+        <p className="mt-1 text-[11px] text-mist">Usado nas mensagens (variável {"{{nome_bot}}"}) e na apresentação.</p>
       </div>
 
       {/* legenda dos selos */}

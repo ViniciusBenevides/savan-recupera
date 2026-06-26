@@ -167,7 +167,7 @@ export function ConfigForm({ role, asaas, iaAtual, usuarios, carteiras, cobrador
             </div>
           </div>
           <p className="text-[11px] text-mist">
-            O nome do bot é <b>por conta</b> (ajustado em <b>Campanha</b>). O modelo de IA pode ser escolhido logo abaixo, em <b>Modelo de IA do robô</b>.
+            O nome do bot e o modelo de IA são <b>por conta</b> e ficam logo abaixo, no card <b>Robô</b>.
           </p>
           <Button size="sm" className="self-start" onClick={salvarAsaas} disabled={pending}>
             <Save className="h-4 w-4" /> Salvar

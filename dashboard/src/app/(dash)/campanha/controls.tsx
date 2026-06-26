@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { Card, Switch, Input, Label, Button, Badge } from "@/components/ui/primitives";
 import { CalendarioEnvio } from "@/components/CalendarioEnvio";
 import { num } from "@/lib/utils";
-import { Power, FlaskConical, Clock, Timer, Flame, Save, CheckCircle2, Bot, CalendarDays, CalendarOff, CalendarRange, ChevronDown } from "lucide-react";
+import { Power, FlaskConical, Clock, Timer, Flame, Save, CheckCircle2, CalendarDays, CalendarOff, CalendarRange, ChevronDown } from "lucide-react";
 
 // Dias da semana (0=dom..6=sáb), ordenados começando na segunda p/ destacar os dias úteis.
 const DIAS_SEMANA = [
@@ -26,8 +26,6 @@ export function CampanhaControls({ cfg, aguardando, enviados, conta, ehGlobal }:
   const [intervalo, setIntervalo] = useState<number>(Number(cfg.intervalo_min_segundos ?? 12));
   const [aquec, setAquec] = useState<any[]>(cfg.aquecimento ?? []);
   const [mostrarCal, setMostrarCal] = useState(true);
-  const [nomeBot, setNomeBot] = useState<string>(cfg.ia?.nome_bot ?? "Ana");
-  const [modelo, setModelo] = useState<string>(cfg.ia?.modelo ?? "gpt-4.1-mini");
   const [ok, setOk] = useState(false);
 
   // envia ajustes para o escopo certo (cobrador edita os seus; admin pode mirar uma conta)
@@ -50,13 +48,6 @@ export function CampanhaControls({ cfg, aguardando, enviados, conta, ehGlobal }:
         { chave: "intervalo_min_segundos", valor: intervalo },
         { chave: "aquecimento", valor: aquec },
       ]);
-      if (sucesso) { setOk(true); setTimeout(() => setOk(false), 2500); router.refresh(); }
-    });
-  }
-
-  function salvarBot() {
-    start(async () => {
-      const sucesso = await salvar([{ chave: "ia", valor: { ...cfg.ia, nome_bot: nomeBot, modelo } }]);
       if (sucesso) { setOk(true); setTimeout(() => setOk(false), 2500); router.refresh(); }
     });
   }
@@ -233,29 +224,6 @@ export function CampanhaControls({ cfg, aguardando, enviados, conta, ehGlobal }:
           <p className="mt-2 text-xs text-mist">
             Limite progressivo anti-bloqueio. Cada chip respeita estes números conforme os dias desde a ativação.
           </p>
-        </div>
-      </Card>
-
-      {/* Bot (nome + modelo de IA) — por conta */}
-      <Card className="flex flex-col gap-4">
-        <div className="flex items-center justify-between">
-          <h4 className="flex items-center gap-2 font-display text-base font-600 text-chalk">
-            <Bot className="h-4 w-4 text-emerald" /> Robô
-          </h4>
-          <Button size="sm" onClick={salvarBot} disabled={pending}>
-            {ok ? <><CheckCircle2 className="h-4 w-4" /> Salvo</> : <><Save className="h-4 w-4" /> Salvar</>}
-          </Button>
-        </div>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div>
-            <Label>Nome do bot</Label>
-            <Input value={nomeBot} onChange={(e) => setNomeBot(e.target.value)} />
-            <p className="mt-1 text-[11px] text-mist">Usado nas mensagens (variável {"{{nome_bot}}"}) e na apresentação.</p>
-          </div>
-          <div>
-            <Label>Modelo de IA</Label>
-            <Input value={modelo} onChange={(e) => setModelo(e.target.value)} className="font-mono text-xs" />
-          </div>
         </div>
       </Card>
     </div>
