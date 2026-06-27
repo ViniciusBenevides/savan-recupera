@@ -107,7 +107,7 @@ Deno.serve(async (req) => {
   const ccR = await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/contato-criar`, {
     method: "POST",
     headers: { "Authorization": `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ inbox_id: chip.chatwoot_inbox_id, telefone_e164: numeroTeste, telefone_id: tel!.id, devedor_id: dev!.id, devedor_nome: dev!.nome, processo: dev!.processo, valor_divida: dev!.saldo }),
+    body: JSON.stringify({ inbox_id: chip.chatwoot_inbox_id, telefone_e164: numeroTeste, telefone_id: tel!.id, devedor_id: dev!.id, devedor_nome: dev!.nome, processo: dev!.processo, valor_divida: dev!.saldo, teste_real: true }),
   });
   const cc = await ccR.json();
   if (!cc?.ok || !cc?.exists || !cc?.conversation_id) {

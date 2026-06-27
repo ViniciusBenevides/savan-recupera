@@ -1270,12 +1270,24 @@ reconectou); `chips-monitor` rodou e confirmou. `mensagens` de entrada seguia ze
 recebeu resposta (depende do webhook "ao receber" da Z-API apontar pro Chatwoot, §20 — usar
 "Revincular Chatwoot" ao reconectar).
 
-**Pendências (melhorias de design, NÃO bloqueiam, não feitas ainda):**
-1. **"Acha que enviou" sem entrega real:** o sistema marca `enviado` quando o **Chatwoot aceita** a
-   mensagem (200), não quando o **WhatsApp entrega** → com chip caído, conta envios no vácuo. Ideia:
-   `campanha-lote` checar conexão Z-API do chip antes de selecionar / verificar entrega real.
-2. **Teste polui o Chatwoot:** mover a criação do contato (`contato-criar`) para **depois** do gate
-   de simulação no W01 (dry-run não deve criar contato real de devedor no Chatwoot).
+**Melhorias de design — FEITAS nesta sessão (deploy via MCP, sem mudar o n8n):**
+1. **Anti "enviar no vácuo" (`campanha-lote` v8):** antes de gastar lote, confere a **conexão real
+   do chip na Z-API** (`/status`). Chip caído → `marcarChipCaido` (status=desconectado + evento +
+   `failover_eventos` pendente, igual `chips-monitor`) e pula (`pulados.chip_desconectado`); erro ao
+   checar → pula sem marcar (`chip_sem_status`). Fecha a janela de até 15 min do `chips-monitor` e
+   impede contar envio fantasma com o chip morto. (Confirmação por-mensagem via webhook de status da
+   Z-API segue como melhoria futura — isto cobre o caso "chip caiu".)
+2. **Dry-run não polui o Chatwoot (`contato-criar` v5 + `disparar-teste` v5):** em `modo_simulacao`,
+   o `contato-criar` **pula todo o Chatwoot** e devolve `{exists:true, conversation_id:null,
+   simulado:true}` (resolve o modo pelo MESMO chip via inbox, casando com o `campanha-lote`). O
+   `disparar-teste` passa `teste_real:true` p/ furar o pulo (ele manda msg real ao seu número). **Sem
+   mudar o n8n** (o W01 segue chamando `contato-criar`, que agora se autogerencia). **Verificado:**
+   sim → `simulado:true`; `teste_real` → prossegue.
+3. **Teste não suja dados reais:** `campanha-registrar` v8 só marca `devedores.status_cobranca=
+   'contatado'` se **`!sim`** (antes o dry-run marcava devedores reais como contatados). `metricas-sync`
+   v6 **exclui eventos `payload.simulacao=true`** da recontagem diária (`.not("payload->>simulacao",
+   "eq","true")`) — fecha o vazamento em que o dry-run inflava `metricas_diarias` (o §17 só blindava
+   pagamentos). Verificado (SQL): split real/teste dos eventos de envio confere.
 
 **Reativar a operação:** confirmar chips OK (não banidos) → "Revincular Chatwoot" p/ fiar a entrada →
 "Enviar teste" e responder no WhatsApp p/ ver o `bot-turno` responder → religar `campanha_ativa`.

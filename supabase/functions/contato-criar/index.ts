@@ -49,6 +49,18 @@ Deno.serve(async (req) => {
   const { inbox_id, telefone_e164, devedor_id, devedor_nome, processo, valor_divida } = body;
   if (!inbox_id) return json({ ok: false, erro: "inbox_id_ausente" }, 400);
 
+  // Dry-run da campanha (modo_simulacao) NÃO deve criar contato/conversa reais no Chatwoot — isso
+  // poluía o inbox com devedores reais sem enviar nada. O disparar-teste passa `teste_real:true`
+  // p/ furar isso (ele manda mensagem de verdade ao SEU número de teste). Resolve o modo_simulacao
+  // do MESMO chip (via inbox) que o campanha-lote usou, p/ casar a flag por cobrador.
+  if (body.teste_real !== true) {
+    const { data: chipRow } = await sb.from("chips").select("cobrador_id").eq("chatwoot_inbox_id", inbox_id).maybeSingle();
+    const { data: simRows } = await sb.from("configuracoes").select("valor, cobrador_id").eq("chave", "modo_simulacao");
+    let val: any = (simRows ?? []).find((r) => r.cobrador_id == null)?.valor;
+    if (chipRow?.cobrador_id) { const o = (simRows ?? []).find((r) => r.cobrador_id === chipRow.cobrador_id); if (o) val = o.valor; }
+    if (val === true || val === "true") return json({ ok: true, exists: true, conversation_id: null, contact_id: null, simulado: true });
+  }
+
   // on_whatsapp
   const wppR = await fetch(`${url}/api/v1/accounts/${acc}/inboxes/${inbox_id}/on_whatsapp`, { method: "POST", headers: H, body: JSON.stringify({ phone_number: telefone_e164 }) });
   const wpp = wppR.ok ? await wppR.json() : { exists: false };

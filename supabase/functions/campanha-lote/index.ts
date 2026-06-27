@@ -17,6 +17,35 @@ const json = (b: unknown, s = 200) =>
 function admin(): SupabaseClient {
   return createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
 }
+async function carregarSegredos(sb: SupabaseClient): Promise<Record<string, string>> {
+  const { data } = await sb.from("segredos").select("chave, valor").is("cobrador_id", null);
+  const m: Record<string, string> = {};
+  for (const r of data ?? []) if (r.valor) m[r.chave] = r.valor;
+  return m;
+}
+// Anti "enviar no vácuo": o Chatwoot aceita a mensagem (200) mesmo com o chip CAÍDO na Z-API, e o
+// fluxo marcava como "enviada" — daí "mandou pra 30" sem nada chegar. Confere a conexão real antes
+// de gastar lote. true=conectado, false=caiu, null=não deu p/ checar (erro/sem credencial → pula sem marcar).
+async function chipConectado(sb: SupabaseClient, clientGlobal: string, chipId: number): Promise<boolean | null> {
+  const { data: cred } = await sb.from("chips_credenciais").select("zapi_instance_id, zapi_token, zapi_client_token").eq("chip_id", chipId).maybeSingle();
+  if (!cred?.zapi_instance_id || !cred?.zapi_token) return null;
+  try {
+    const r = await fetch(`https://api.z-api.io/instances/${cred.zapi_instance_id}/token/${cred.zapi_token}/status`, { headers: { "Client-Token": cred.zapi_client_token ?? clientGlobal } });
+    const d = await r.json();
+    return d?.connected === true;
+  } catch { return null; }
+}
+// Marca o chip como caído e abre failover pendente (mesma lógica do chips-monitor) p/ o operador confirmar.
+async function marcarChipCaido(sb: SupabaseClient, chip: any) {
+  await sb.from("chips").update({ status: "desconectado" }).eq("id", chip.id);
+  await sb.from("eventos_campanha").insert({ tipo: "chip_status", chip_id: chip.id, payload: { status: "desconectado", nome: chip.nome, origem: "campanha-lote" } });
+  const { data: resumo } = await sb.rpc("fn_failover_resumo", { p_chip_id: chip.id });
+  const tem = ((resumo?.aguardando ?? 0) + (resumo?.conversas_ativas ?? 0) + (resumo?.escaladas ?? 0)) > 0;
+  if (tem) {
+    const { data: existe } = await sb.from("failover_eventos").select("id").eq("chip_caido_id", chip.id).eq("status", "pendente").maybeSingle();
+    if (!existe) await sb.from("failover_eventos").insert({ chip_caido_id: chip.id, resumo });
+  }
+}
 
 // Chaves de config que existem "por cobrador" (o resto é só global/infra).
 const CHAVES_POR_COBRADOR = new Set([
@@ -144,6 +173,8 @@ Deno.serve(async (req) => {
   if (_role !== "service_role") return json({ ok: false, erro: "nao_autorizado" }, 401);
   const sb = admin();
   const resolverCfg = await carregarConfigResolver(sb);
+  const seg = await carregarSegredos(sb);
+  const zapiClientGlobal = seg.ZAPI_CLIENT_TOKEN ?? "";
 
   await sb.rpc("fn_resetar_presos", { p_min: 15 });
 
@@ -167,6 +198,12 @@ Deno.serve(async (req) => {
     // gate POR COBRADOR: a campanha dele precisa estar ligada e dentro da janela dele
     if (!(cfg.campanha_ativa === true || cfg.campanha_ativa === "true")) { pulados.campanha_inativa = (pulados.campanha_inativa ?? 0) + 1; continue; }
     if (!dentroDaJanela(cfg.janela_envio)) { pulados.fora_da_janela = (pulados.fora_da_janela ?? 0) + 1; continue; }
+
+    // Anti "enviar no vácuo": confirma a conexão real do chip na Z-API antes de gastar o lote.
+    // Chip caído -> marca desconectado + abre failover e pula (não vira envio fantasma).
+    const vivo = await chipConectado(sb, zapiClientGlobal, chip.id);
+    if (vivo === false) { await marcarChipCaido(sb, chip); pulados.chip_desconectado = (pulados.chip_desconectado ?? 0) + 1; continue; }
+    if (vivo === null) { pulados.chip_sem_status = (pulados.chip_sem_status ?? 0) + 1; continue; }
 
     // Intervalo ALEATÓRIO entre mensagens (anti-ban): cada envio aguarda um tempo sorteado em
     // [intervalo_min_segundos, intervalo_max_segundos]. Compatível com config antiga (só o mín).

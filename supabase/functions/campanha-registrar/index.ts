@@ -89,7 +89,8 @@ Deno.serve(async (req) => {
       }
     }
 
-    await sb.from("devedores").update({ status_cobranca: "contatado" })
+    // dry-run (teste) não mexe no status real do devedor (antes marcava devedores reais como "contatado")
+    if (!sim) await sb.from("devedores").update({ status_cobranca: "contatado" })
       .eq("id", b.devedor_id).in("status_cobranca", ["na_fila", "pendente"]);
     // teste não consome aquecimento do chip nem entra nas métricas reais do dia
     if (!sim) {

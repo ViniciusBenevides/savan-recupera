@@ -31,9 +31,10 @@ Deno.serve(async (req) => {
 
   // 2) recalcula contagens do dia a partir dos eventos (idempotente)
   const inicioDia = hoje + "T00:00:00Z";
+  // exclui eventos de TESTE (payload.simulacao=true): números reais nunca contam dry-run (§17).
   const conta = async (tipo: string) => {
     const { count } = await sb.from("eventos_campanha").select("id", { count: "exact", head: true })
-      .eq("tipo", tipo).gte("criado_em", inicioDia);
+      .eq("tipo", tipo).gte("criado_em", inicioDia).not("payload->>simulacao", "eq", "true");
     return count ?? 0;
   };
   const enviados = await conta("envio");
