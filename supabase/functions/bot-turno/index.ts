@@ -2,11 +2,7 @@
 // Prompt (persona/contexto/guardrails) vem do banco: padrão global em `configuracoes`
 // e, opcionalmente, override por carteira. Configurável pelo painel.
 // Modo teste: herda conversas.simulacao -> não suja métricas reais, passa flag ao gerar-pix.
-// Escalação: a carteira tem uma LISTA de escaladores (config_override.escaladores = {estrategia,
-// lista:[{chip_id,...}]}) com estratégia (rodizio|regiao|fixo). O bot escolhe UM, puxa o número
-// do chip conectado (numero_e164), grava resumo/numero, instrui o bot a passar o contato, AVISA o
-// escalador no WhatsApp (Z-API) e torna visível no Chatwoot (nota + label + atribuição ao time).
-// Compat: formato antigo era um objeto único em config_override.equipe.
+// SEGURANÇA (auditoria 2026-06-26): A1 — só o service_role (n8n W02) pode chamar; anon key recusada (401).
 import { createClient, SupabaseClient } from "jsr:@supabase/supabase-js@2";
 
 const OPENAI = "https://api.openai.com/v1/chat/completions";
@@ -20,8 +16,7 @@ const json = (b: unknown, s = 200) =>
 function admin(): SupabaseClient {
   return createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
 }
-const CHAVES_POR_COBRADOR = new Set(["campanha_ativa", "modo_simulacao", "janela_envio", "intervalo_min_segundos", "intervalo_max_segundos", "aquecimento", "faixas_desconto", "ia"]);
-// segredos: base global (cobrador_id NULL) + overlay do cobrador (sobrescreve quando preenchido)
+const CHAVES_POR_COBRADOR = new Set(["campanha_ativa", "modo_simulacao", "janela_envio", "intervalo_min_segundos", "aquecimento", "faixas_desconto", "ia"]);
 async function carregarSegredos(sb: SupabaseClient, cobradorId: string | null = null): Promise<Record<string, string>> {
   const { data: glob } = await sb.from("segredos").select("chave, valor").is("cobrador_id", null);
   const m: Record<string, string> = {};
@@ -32,7 +27,6 @@ async function carregarSegredos(sb: SupabaseClient, cobradorId: string | null = 
   }
   return m;
 }
-// config: base global + overlay do cobrador (apenas as chaves por-conta: ia/campanha/descontos…)
 async function getConfig(sb: SupabaseClient, cobradorId: string | null = null) {
   const { data: glob } = await sb.from("configuracoes").select("chave, valor").is("cobrador_id", null);
   const c: Record<string, any> = {};
@@ -51,8 +45,6 @@ async function getCarteira(sb: SupabaseClient, id: number | null) {
   return data;
 }
 
-// Escaladores da carteira: lista de cobradores humanos + estratégia de roteamento.
-// Compat: o formato antigo era um objeto único em config_override.equipe (ou cfg.equipe_padrao).
 function lerEscaladores(carteira: any, cfg: any): { estrategia: string; lista: any[] } {
   const esc = carteira?.config_override?.escaladores;
   if (esc && Array.isArray(esc.lista) && esc.lista.length) {
@@ -63,11 +55,6 @@ function lerEscaladores(carteira: any, cfg: any): { estrategia: string; lista: a
   return { estrategia: "fixo", lista: [] };
 }
 
-// Escolhe UM escalador conforme a estratégia. O número vem do chip conectado (numero_e164), não
-// do que ficou salvo no config. Retorna null se nenhum candidato tiver número.
-//  - rodizio: o escalador com menos escalação aberta (empate -> ordem da lista).
-//  - regiao:  casa UF/cidade do devedor com a região do chip; sem match -> rodízio geral.
-//  - fixo:    ordem da lista = prioridade (principal -> reservas), pulando quem está indisponível.
 async function escolherEscalador(sb: SupabaseClient, carteira: any, cfg: any, devedorId: number) {
   const { estrategia, lista } = lerEscaladores(carteira, cfg);
   if (!lista.length) return null;
@@ -93,7 +80,7 @@ async function escolherEscalador(sb: SupabaseClient, carteira: any, cfg: any, de
   const pick = (e: any) => ({ chip_id: e.chip_id, nome: e.nome, numero: e.numero });
   const disponivel = (e: any) => !["desconectado", "banido"].includes(String(e.status));
   const livres = cand.filter(disponivel);
-  const pool = livres.length ? livres : cand; // se todos caídos, ainda escala (não trava o caso)
+  const pool = livres.length ? livres : cand;
 
   const rodizio = async (grupo: any[]) => {
     const ids = grupo.map((e) => e.chip_id).filter(Boolean);
@@ -121,13 +108,6 @@ async function escolherEscalador(sb: SupabaseClient, carteira: any, cfg: any, de
   return await rodizio(pool);
 }
 
-// Auto-cura: a resposta do devedor pode cair numa conversa/contato DIFERENTE do que o disparo
-// criou. Caso clássico: o WhatsApp identifica o remetente por um ID oculto `@lid` (sem número),
-// então o Chatwoot arquiva a entrada num contato/conversa novos -> o lookup por
-// chatwoot_conversation_id falha (404 conversa_desconhecida) e o bot fica mudo.
-// Aqui, no 404, buscamos a conversa certa e re-linkamos o id (idempotente). Seguro p/ produção:
-// nunca "chuta" entre vários devedores reais — só auto-vincula com match de telefone, candidato
-// único, ou conversa de teste (simulacao).
 async function resolverConversaPorEntrada(sb: SupabaseClient, cfg: any, seg: Record<string, string>, convId: number) {
   const cwUrl = cfg.chatwoot?.url;
   const cwAcc = cfg.chatwoot?.account_id ?? 1;
@@ -147,21 +127,18 @@ async function resolverConversaPorEntrada(sb: SupabaseClient, cfg: any, seg: Rec
     lid = ident.endsWith("@lid") ? ident : null;
   } catch { return null; }
 
-  // chip dono do inbox (p/ restringir candidatos ao mesmo chip)
   let chipId: number | null = null;
   if (inboxId) {
     const { data: chip } = await sb.from("chips").select("id").eq("chatwoot_inbox_id", inboxId).maybeSingle();
     chipId = chip?.id ?? null;
   }
 
-  // resolução do devedor — prioridade: (0) @lid gravado [determinístico] -> (1) telefone -> fallback
   let devedorId: number | null = null;
   if (lid) {
     const { data: tl } = await sb.from("telefones_devedor").select("devedor_id").eq("chat_lid", lid).limit(2);
     const ids = [...new Set((tl ?? []).map((t: any) => t.devedor_id))];
     if (ids.length === 1) devedorId = ids[0];
   }
-  // casa por telefone — os últimos 8 dígitos cobrem variações do 9º dígito e do DDI.
   if (!devedorId && fone.length >= 8) {
     const cauda = fone.slice(-8);
     const { data: tels } = await sb.from("telefones_devedor").select("devedor_id").ilike("telefone_e164", `%${cauda}`);
@@ -169,7 +146,6 @@ async function resolverConversaPorEntrada(sb: SupabaseClient, cfg: any, seg: Rec
     if (ids.length === 1) devedorId = ids[0];
   }
 
-  // procura a conversa aberta correspondente
   let q = sb.from("conversas")
     .select("id, devedor_id, carteira_id, estado, chip_id, simulacao, telefone_id")
     .in("estado", ["aguardando_resposta", "bot_ativo"])
@@ -181,22 +157,17 @@ async function resolverConversaPorEntrada(sb: SupabaseClient, cfg: any, seg: Rec
   const { data: cands } = await q;
   if (!cands || cands.length === 0) return null;
 
-  // segurança: sem match por telefone, só vincula se for TESTE (simulacao) ou candidato único.
   let alvo: any = null;
   if (devedorId) alvo = cands[0];
   else if (cands.length === 1) alvo = cands[0];
   else alvo = cands.find((c: any) => c.simulacao === true) ?? null;
   if (!alvo) return null;
 
-  // re-linka o id da conversa de entrada (auto-cura) p/ próximas respostas baterem direto
   await sb.from("conversas").update({ chatwoot_conversation_id: convId }).eq("id", alvo.id);
   console.log(`bot-turno auto-cura: conversa ${alvo.id} vinculada ao chatwoot_conversation_id ${convId} (devedor ${alvo.devedor_id}, fone_entrada=${fone || "n/d"})`);
   return alvo;
 }
 
-// Lê o remetente da conversa no Chatwoot p/ decidir o caminho de envio da resposta.
-// Se o contato veio por @lid (privacidade do WhatsApp), o Chatwoot NÃO entrega (o source_id
-// dele só aceita dígitos) — então o próprio bot-turno envia via Z-API (send-text aceita @lid).
 async function infoRemetente(cfg: any, seg: Record<string, string>, convId: number): Promise<{ lid: string | null; phone: string | null } | null> {
   const cwUrl = cfg.chatwoot?.url;
   const cwAcc = cfg.chatwoot?.account_id ?? 1;
@@ -256,9 +227,18 @@ function tools() {
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
+  // A1: somente o service_role (n8n W02) pode chamar. A anon key pública é recusada.
+  // Trava revisada (§29): exige JWT de service_role pelo claim `role` (o verify_jwt já validou a
+  // assinatura). Imune à rotação/novo sistema de API keys do Supabase — antes comparava o valor cru
+  // do SERVICE_ROLE_KEY e quebrava (401 em tudo) quando a chave do env divergia do JWT do n8n.
+  let _role = "";
+  try {
+    let _p = ((req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "").split(".")[1] ?? "").replace(/-/g, "+").replace(/_/g, "/");
+    while (_p.length % 4) _p += "=";
+    _role = JSON.parse(atob(_p)).role;
+  } catch { _role = ""; }
+  if (_role !== "service_role") return json({ ok: false, erro: "nao_autorizado" }, 401);
   const sb = admin();
-  // base global p/ resolver a conversa (chatwoot/auto-cura são infra global); após achar a
-  // carteira, recarregamos cfg/seg COM o overlay do cobrador dono dela (OpenAI/ia por conta).
   let seg = await carregarSegredos(sb);
   let cfg = await getConfig(sb);
   const b = await req.json();
@@ -266,11 +246,10 @@ Deno.serve(async (req) => {
 
   let { data: conv } = await sb.from("conversas").select("id, devedor_id, carteira_id, estado, chip_id, simulacao, telefone_id").eq("chatwoot_conversation_id", convId).maybeSingle();
   if (!conv) {
-    // a resposta caiu numa conversa/contato diferente (ex.: @lid) — tenta auto-curar e re-linkar
     conv = await resolverConversaPorEntrada(sb, cfg, seg, convId);
     if (!conv) return json({ ok: false, erro: "conversa_desconhecida" }, 404);
   }
-  const simulacao = conv.simulacao === true; // modo teste herdado da conversa
+  const simulacao = conv.simulacao === true;
 
   if (conv.estado === "humano") {
     await sb.from("mensagens").insert({ conversa_id: conv.id, direcao: "entrada", origem: "devedor", conteudo: b.mensagem, simulacao });
@@ -286,11 +265,9 @@ Deno.serve(async (req) => {
     carteiraId = d?.carteira_id ?? null;
   }
   const carteira = await getCarteira(sb, carteiraId);
-  // config/chaves do COBRADOR dono da carteira (fallback global) — daqui pra frente cfg/seg já são as dele
   const cobradorId = carteira?.cobrador_id ?? null;
   cfg = await getConfig(sb, cobradorId);
   seg = await carregarSegredos(sb, cobradorId);
-  // escalador escolhido (1) — resolvido sob demanda só quando o bot escalar (ver escalar_humano)
   let equipe: { chip_id: number | null; nome: string | null; numero: string | null } | null = null;
 
   const { data: convsDev } = await sb.from("conversas").select("id").eq("devedor_id", conv.devedor_id);
@@ -362,9 +339,7 @@ Deno.serve(async (req) => {
         if (novaEscalacao) {
           await sb.from("escalacoes").insert({ conversa_id: conv.id, devedor_id: conv.devedor_id, carteira_id: carteiraId, chip_id: conv.chip_id ?? null, motivo: escalarMotivo, contexto_snapshot: { historico: hist, mensagem: b.mensagem }, resumo: resumoTxt, equipe_chip_id: equipe?.chip_id ?? null, atendente_numero: equipe?.numero ?? null, status: "aberta" });
         }
-        // notificacoes reais (nao em teste): WhatsApp do cobrador + Chatwoot (nota/label/atribuicao)
         if (!simulacao && novaEscalacao) {
-          // 1) WhatsApp para o cobrador via Z-API (chip do bot)
           if (equipe?.numero && conv.chip_id) {
             try {
               const { data: cred } = await sb.from("chips_credenciais").select("zapi_instance_id, zapi_token, zapi_client_token").eq("chip_id", conv.chip_id).maybeSingle();
@@ -375,7 +350,6 @@ Deno.serve(async (req) => {
               }
             } catch (_e) { /* nao bloqueia a escalacao */ }
           }
-          // 2) Chatwoot: nota interna com resumo + label escalado-humano + atribuicao ao time
           try {
             const cwUrl = cfg.chatwoot?.url ?? "https://chatwoot.example.com";
             const cwAcc = cfg.chatwoot?.account_id ?? 1;
@@ -411,11 +385,7 @@ Deno.serve(async (req) => {
     }
   }
 
-  // Caminho de envio. O Chatwoot não entrega para @lid; nesse caso o bot-turno envia via Z-API
-  // direto ao lid e devolve mensagens:[] para o n8n NÃO postar no Chatwoot (evita "Falha ao enviar").
-  // Para contato normal (telefone), mantém o fluxo atual: n8n posta e o Chatwoot envia.
   const remetente = await infoRemetente(cfg, seg, convId);
-  // aprende o @lid no telefone da conversa (próximas respostas casam direto pelo lid, sem fallback)
   if (remetente?.lid && conv.telefone_id) {
     await sb.from("telefones_devedor").update({ chat_lid: remetente.lid }).eq("id", conv.telefone_id).is("chat_lid", null);
   }
@@ -436,7 +406,6 @@ Deno.serve(async (req) => {
           body: JSON.stringify({ phone: remetente!.lid, message: txt }),
         });
       } catch (_e) { /* nao bloqueia */ }
-      // visibilidade p/ o agente (nota privada — o canal não entrega p/ @lid)
       try {
         const cwUrl = cfg.chatwoot?.url; const cwAcc = cfg.chatwoot?.account_id ?? 1;
         await fetch(`${cwUrl}/api/v1/accounts/${cwAcc}/conversations/${convId}/messages`, {

@@ -3,6 +3,8 @@
 // calcula o lote permitido por chip (aquecimento + pacing), seleciona itens da fila atomicamente
 // (apenas de carteiras ATIVAS, via fn_selecionar_lote) e devolve cada item com a mensagem renderizada.
 // Config/Templates: padrão global (cobrador_id NULL) sobrescrito pelos do cobrador dono do chip.
+// SEGURANÇA (auditoria 2026-06-26): A1 — só o service_role (n8n) pode chamar; a resposta carrega
+// PII (nome/telefone/valor), então a anon key pública é recusada (401).
 import { createClient, SupabaseClient } from "jsr:@supabase/supabase-js@2";
 
 const cors = {
@@ -129,6 +131,17 @@ function minutosRestantesJanela(janela: any): number {
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
+  // A1: somente o service_role (n8n) pode chamar. A anon key pública é recusada.
+  // Trava revisada (§29): exige JWT de service_role pelo claim `role` (o verify_jwt já validou a
+  // assinatura). Imune à rotação/novo sistema de API keys do Supabase — antes comparava o valor cru
+  // do SERVICE_ROLE_KEY e quebrava (401 em tudo) quando a chave do env divergia do JWT do n8n.
+  let _role = "";
+  try {
+    let _p = ((req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "").split(".")[1] ?? "").replace(/-/g, "+").replace(/_/g, "/");
+    while (_p.length % 4) _p += "=";
+    _role = JSON.parse(atob(_p)).role;
+  } catch { _role = ""; }
+  if (_role !== "service_role") return json({ ok: false, erro: "nao_autorizado" }, 401);
   const sb = admin();
   const resolverCfg = await carregarConfigResolver(sb);
 

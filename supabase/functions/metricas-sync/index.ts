@@ -3,6 +3,7 @@
 // promove chips de 'aquecendo' para 'ativo' ao fim da curva de aquecimento
 // (chip 'novo' ~31d; chip 'aquecido' fim da curva curta; limite fixo = próximo ciclo).
 // NOTA: versão self-contained (igual à deployada via MCP). Chamada pelo W09 (n8n, 5 min).
+// SEGURANÇA (auditoria 2026-06-26): A1 — só o service_role (n8n) pode chamar; anon key recusada (401).
 import { createClient, SupabaseClient } from "jsr:@supabase/supabase-js@2";
 
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, content-type", "Access-Control-Allow-Methods": "POST, OPTIONS" };
@@ -11,6 +12,17 @@ function admin(): SupabaseClient { return createClient(Deno.env.get("SUPABASE_UR
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
+  // A1: somente o service_role (n8n) pode chamar. A anon key pública é recusada.
+  // Trava revisada (§29): exige JWT de service_role pelo claim `role` (o verify_jwt já validou a
+  // assinatura). Imune à rotação/novo sistema de API keys do Supabase — antes comparava o valor cru
+  // do SERVICE_ROLE_KEY e quebrava (401 em tudo) quando a chave do env divergia do JWT do n8n.
+  let _role = "";
+  try {
+    let _p = ((req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "").split(".")[1] ?? "").replace(/-/g, "+").replace(/_/g, "/");
+    while (_p.length % 4) _p += "=";
+    _role = JSON.parse(atob(_p)).role;
+  } catch { _role = ""; }
+  if (_role !== "service_role") return json({ ok: false, erro: "nao_autorizado" }, 401);
   const sb = admin();
   const hoje = new Date().toISOString().slice(0, 10);
 
@@ -35,8 +47,6 @@ Deno.serve(async (req) => {
   }, { onConflict: "dia" });
 
   // 3) promove chips de 'aquecendo' para 'ativo' ao fim da curva de aquecimento.
-  // Chip 'novo' termina ao fim da curva global (~31d); 'aquecido' ao fim da curva curta;
-  // limite fixo (override) já está no teto, então promove no próximo ciclo.
   const { data: chips } = await sb.from("chips")
     .select("id, status, data_ativacao, maturidade, aquecimento_perfil, limite_dia_override, cobrador_id")
     .eq("status", "aquecendo");

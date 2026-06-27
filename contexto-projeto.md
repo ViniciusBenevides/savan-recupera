@@ -1,12 +1,23 @@
 # Contexto do Projeto — SAVAN Recupera
 
 > Documento para retomar o contexto em novas sessões com Claude.
-> Última atualização: **Anti-ban — intervalo de envio ALEATÓRIO (sorteado em [min, max], padrão 30–90s)
+> Última atualização: **INCIDENTE 401 + correções. Após o dono rotacionar a chave do Supabase, a
+> trava A1 (§29) — que comparava o `SUPABASE_SERVICE_ROLE_KEY` cru — passou a barrar o n8n com 401
+> em TODAS as 9 Edge Functions (backend congelado: nada disparava, bot não respondia). Causa real:
+> não era a chave (o JWT legado do n8n ainda passa no `verify_jwt`), e sim a comparação de string,
+> que quebrou com o novo sistema de API keys. Fix: a trava virou checagem do claim `role` do JWT
+> (exige `role=service_role`; barra anon) nas 9 funções — n8n NÃO precisou mudar. Mais: bug do
+> `campanha-registrar` que não gravava a 1ª mensagem em `mensagens` (aba Conversas vazia) corrigido
+> + backfill; campanha pausada por segurança. Diagnóstico: só 2 envios reais (1/chip), 78 conversas
+> eram TESTE. Ver §30.**
+> (Anterior: Auditoria de segurança completa (4 camadas) + hardening — 11 achados (1 Crítico/2 Alto/
+> 4 Médio/4 Baixo), 9 corrigidos: migration 024 + guarda A1 nas 9 Edge Functions, `gerar-pix` (preço
+> do servidor) e `webhook-asaas` (token fail-closed) — ver §29.)
+> (Anterior: Anti-ban — intervalo de envio ALEATÓRIO (sorteado em [min, max], padrão 30–90s)
 > + variação de TAMANHO das mensagens. `intervalo_min_segundos` ganha par `intervalo_max_segundos`;
 > `campanha-lote` sorteia `delay_proximo` por mensagem e o n8n W01 espera esse tempo (nó "Aguardar
-> intervalo" dinâmico) com cadência de 5 min p/ o sorteio surtir efeito; templates de abordagem ganham
-> spintax opcional (`{|texto}`) p/ variar o comprimento; UI da Campanha com campos mín/máx +
-> migration 023 — ver §28.**
+> intervalo" dinâmico) com cadência de 5 min; templates de abordagem ganham spintax opcional
+> (`{|texto}`) p/ variar o comprimento; UI da Campanha com campos mín/máx + migration 023 — ver §28.)
 > (Anterior: Janela de envio só em dias úteis (seg–sex) e pulando feriados nacionais —
 > `dias` vira padrão seg–sex e nova flag `pular_feriados` (feriados fixos + móveis via Páscoa, base
 > bancária/ANBIMA), com seletor de dias + switch + **calendário visual** (dias que rodam, feriados
@@ -1135,6 +1146,136 @@ personalizados de cada cobrador ficam intactos).
   `delay_proximo`/`delay_typing` e devolve nos itens.
 - **Front:** `git push` na `main` (commit `03cfea3`) → deploy Vercel automático.
 
-**Nota de numeração:** existe em paralelo um `supabase/migrations/023_hardening_seguranca.sql`
-(auditoria de segurança 2026-06-26, **não** desta mudança e não commitado aqui) usando o mesmo nº 023 —
-renumerar um dos dois ao commitar o hardening. Verificação local: `tsc --noEmit` do dashboard OK.
+**Nota de numeração (resolvida):** o hardening de segurança foi **renumerado para
+`024_hardening_seguranca.sql`** para não colidir com este `023_intervalo_aleatorio_tamanho.sql` —
+ver **§29**.
+
+---
+
+## 29. Auditoria de segurança completa (4 camadas) + hardening — adicionado nesta sessão
+
+Auditoria pedida pelo dono nas 4 camadas (Banco/RLS · Edge Functions · API Routes · Frontend),
+com testes ao vivo no projeto `wmggqsmqvklxlqwsksjs` (impersonação via `set role authenticated` +
+`request.jwt.claims`, tudo em transação com `ROLLBACK` — nada mutado). **11 achados** (1 Crítico,
+2 Alto, 4 Médio, 4 Baixo); **9 corrigidos** em código/banco, 2 dependem do dono.
+
+**Observação que contraria o §14:** o banco **não está zerado** — tem **2.633 devedores reais (PII)**
+e os 6 segredos preenchidos. Há 2 usuários `*@mailinator.com` (`recon_…`, `r8681c1`, papel
+visualizador, `cobrador_id` NULL → inertes) a revisar.
+
+**Achados Crítico/Alto e correções:**
+- **C1 🔴 (RLS) — escalonamento `cobrador → admin`.** As policies `upd/del_usuarios` checavam só
+  `cobrador_id = auth.uid()`, sem trava de coluna → um cobrador podia `UPDATE usuarios_app SET
+  role='admin'` num sub-usuário seu **direto via PostgREST** (anon key pública), virando admin da
+  plataforma (vê todos os tenants). **Confirmado empiricamente.** A rota `api/usuarios` bloqueia
+  `role='admin'`, mas o RLS permitia contornar a API. **Fix (migration 024):** `REVOKE
+  INSERT/UPDATE/DELETE ON usuarios_app FROM authenticated, anon` (escrita só via service_role/API;
+  mantém SELECT p/ o `getSessao`). Verificado: `has_table_privilege('authenticated',…,'UPDATE')=false`.
+- **A1 🟠 (Edge) — `verify_jwt=true` ≠ autorização.** A `NEXT_PUBLIC_SUPABASE_ANON_KEY` (pública) é um
+  JWT válido do projeto → passava no `verify_jwt` e **qualquer um** podia invocar as 9 funções, que
+  rodam com service_role internamente. **Fix:** guarda em **todas** as 9 funções `verify_jwt=true` —
+  `if (Authorization !== 'Bearer ' + SUPABASE_SERVICE_ROLE_KEY) → 401`. O n8n e o `bot-turno` já
+  chamam com o service_role, então o fluxo legítimo segue. **⚠️ As funções agora confiam no
+  service_role como senha** — ao rotacionar (§10.5), o n8n precisa usar a chave nova.
+- **A2 🟠 (Edge) — `gerar-pix` confiava em `valor_final`/`desconto_pct` do corpo + IDOR no
+  `devedor_id`.** Permitiria Pix de valor arbitrário (ex.: R$0,01) p/ qualquer devedor. **Fix:** preço
+  derivado de `fn_proposta`; valor do corpo só aceito **dentro da faixa** `[piso-com-extra .. base]`
+  (preserva o desconto-extra do bot, bloqueia abuso).
+
+**Achados Médio/Baixo corrigidos:**
+- **M1 (Edge) — `gerar-pix` sem idempotência** → Pix duplicado em corrida. **Fix:** reusa cobrança
+  `pendente` idêntica (< 2 min).
+- **M2 (Edge) — `webhook-asaas` fail-OPEN** (se `ASAAS_WEBHOOK_TOKEN` vazio, a checagem era pulada) +
+  sem idempotência. **Fix:** fail-CLOSED (`!token || token!=esperado → 401`) e só envia
+  confirmação/quitação na **1ª** transição p/ recebido/confirmado.
+- **M3 (RLS) — grants amplos** em `segredos`/`chips_credenciais`/`bot_locks`/`bot_fila_mensagens`
+  (RLS já negava, mas o GRANT default permanecia). **Fix (migration 024):** `REVOKE ALL FROM
+  authenticated, anon`.
+- **B3 (Edge) — `webhook-asaas` vazava `String(e)`** no corpo → mensagem genérica.
+- **(de passagem)** `contato-criar` tinha fallback hardcoded `chatwoot.virtusdoctor.com` →
+  normalizado p/ `chatwoot.example.com` (anonimização do §13).
+
+**Pontos verificados OK (não eram vulneráveis):** isolamento de escopo (credor/visualizador
+impersonados veem 0 linhas); `search_path` fixo em **todas** as funções SECURITY DEFINER;
+`fn_selecionar_lote` usa `FOR UPDATE SKIP LOCKED`; rotas de API consistentemente guardadas
+(`exigirCobrador` + `podeEditarCarteira`/`podeEditarChip` → sem IDOR na API); sem segredos
+hardcoded; `NEXT_PUBLIC_*` só expõe URL/anon-key/app-name; **`OPENAI_API_KEY` nunca chega ao
+browser** (lida só server-side via `getSegredo`); `anon` deslogado não lê nada (policies são todas
+`{authenticated}`).
+
+**Aplicado em produção (`wmggqsmqvklxlqwsksjs`):**
+- **Migration `024_hardening_seguranca.sql`** aplicada via MCP + verificada por SQL.
+- **Deploys (10):** `gerar-pix` v6 (A1+A2+M1) · `webhook-asaas` v4 (M2+B3, `verify_jwt=false`) ·
+  `campanha-lote` v6 · `bot-turno` v12 · `campanha-registrar` v5 · `contato-criar` v3 ·
+  `disparar-teste` v3 · `campanha-followup` v5 · `chips-monitor` v3 · `metricas-sync` v4 — todas
+  ACTIVE. As 10 funções no repo (`supabase/functions/`) foram **sincronizadas** com o deployado.
+
+**Pendências do dono (não dá pra fazer via MCP/código):**
+1. **Rotacionar a `service_role`** (§10.5) — circulou em texto + repo público. **Depois de rotacionar,
+   garantir que o n8n use a chave nova** (as funções agora exigem o service_role como Bearer).
+2. **Revisar os 2.633 devedores reais (PII)** e as 2 contas `*@mailinator.com` — confirmar se são
+   teste autorizado (senão, LGPD: §10.4).
+3. **Ligar "Leaked Password Protection"** no painel Supabase (Auth → Password Security) — advisor B1.
+
+**Baixos aceitos/documentados:** B2 (funções SECURITY DEFINER de escopo callable via RPC — são
+auto-escopadas por `auth.uid()`, necessárias às policies) · B4 (CORS `*` — auth é por Bearer, não
+cookie). **Teste pós-deploy recomendado:** Chips → "Enviar teste" p/ confirmar que o `bot-turno` v12
+responde com o service_role do n8n.
+
+---
+
+## 30. Incidente 401 (rotação de chave quebrou a trava A1) + aba Conversas vazia
+
+O dono relatou: "diz que mandou pra +30 pessoas, mas cada chip só mandou pra 1"; "depois desconectou";
+"na aba de Conversas não aparece mensagem"; "reconectei o bot e ele não responde". Investigação com
+dados de produção (`wmggqsmqvklxlqwsksjs`) achou **uma causa-raiz que congelou tudo** + 2 bugs.
+
+**Causa-raiz — 401 em TODO o backend (a trava A1, não a chave):**
+- `get_logs service=edge-function` mostrou **100% das chamadas do n8n em 401** (`campanha-lote`,
+  `campanha-followup`, `metricas-sync`, `chips-monitor`, etc.) por horas.
+- O dono havia **rotacionado a chave** do Supabase (novo sistema de API keys). Primeiro diagnóstico
+  (errado) foi "chave velha no n8n". **Teste empírico desmentiu:** a service_role do `.env` retornava
+  a mensagem PRÓPRIA da função `{"ok":false,"erro":"nao_autorizado"}` — não o erro de plataforma
+  (`{"code":"UNAUTHORIZED_INVALID_JWT_FORMAT"}` p/ token lixo / `UNAUTHORIZED_NO_AUTH_HEADER` sem
+  header). Logo o JWT **passa** no `verify_jwt` (assinatura válida, `role: service_role`) e morre na
+  **trava interna** A1 (§29): `Authorization !== 'Bearer ' + Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")`.
+  O env `SUPABASE_SERVICE_ROLE_KEY` que a função enxerga **divergiu** do JWT legado (efeito do novo
+  sistema de keys) → a comparação de string crua quebrou. **A chave do `.env`/n8n estava certa.**
+- **Fix (todas as 9 funções, redeploy via MCP):** a trava virou checagem do **claim `role`** do JWT —
+  decodifica o payload (o `verify_jwt` já validou a assinatura) e exige `role === 'service_role'`.
+  Barra a anon key (`role: anon`, o alvo do A1) e é **imune à rotação/novo sistema de keys**. Versões:
+  `campanha-registrar` v7, `chips-monitor` v4, `metricas-sync` v5, `contato-criar` v4, `disparar-teste`
+  v4, `campanha-lote` v7, `campanha-followup` v6, `gerar-pix` v7, `bot-turno` v13 — todas ACTIVE.
+  **Verificado:** service_role → 200; anon → 401; campanha pausada → `campanha-lote` retorna
+  `{total:0, pulados:{campanha_inativa:2}}`. **n8n NÃO precisou mudar** — a chave dele voltou a valer.
+  ⚠️ Lição: **nunca comparar a service_role crua**; usar o claim `role`. A pendência §29.1/§10.5
+  ("após rotacionar, garantir n8n com a chave nova") fica **obsoleta** para o auth das funções.
+
+**Bug 2 — aba Conversas sempre "sem mensagens ainda":** a página nova `(dash)/conversas` lê de
+`mensagens`, mas `campanha-registrar` criava a `conversas` e **nunca gravava a 1ª mensagem** em
+`mensagens` (só `bot-turno`/`campanha-followup`/`disparar-teste` escreviam lá; `mensagens` estava
+**zerada**). **Fix:** `campanha-registrar` (v6→v7) passou a inserir a abordagem em `mensagens` lendo
+`fila_envios.mensagem_renderizada` (sem mudar n8n; guarda contra duplicar em retry). **Backfill**
+(SQL) das **80 conversas** existentes a partir do `mensagem_renderizada` da fila.
+
+**"Mandou pra +30 mas só 1 por chip" — explicado (não era bug, era teste):** os números reais —
+`fila_enviado_real=2`, `chip_metricas=1+1`, `conversas_simulacao=78` de 80. Só **2 envios reais**
+saíram (JAIR via Chip 2, ROMARIO via Chip 1, ambos 11:00). As outras **78 eram TESTE** (modo
+simulação): o W01 chama `contato-criar` (cria o contato no Chatwoot) **antes** do gate de simulação,
+mas pula o "Enviar msg" → viram conversas vazias "Nova Mensagem" no Chatwoot, inflando a contagem.
+
+**Segurança/estado:** **campanha pausada** (`campanha_ativa=false`, global) p/ não disparar aos 2.557
+devedores reais da fila ao destravar. Chips 4 e 11 voltaram `conectado:true` no Z-API (o dono
+reconectou); `chips-monitor` rodou e confirmou. `mensagens` de entrada seguia zerada → o bot nunca
+recebeu resposta (depende do webhook "ao receber" da Z-API apontar pro Chatwoot, §20 — usar
+"Revincular Chatwoot" ao reconectar).
+
+**Pendências (melhorias de design, NÃO bloqueiam, não feitas ainda):**
+1. **"Acha que enviou" sem entrega real:** o sistema marca `enviado` quando o **Chatwoot aceita** a
+   mensagem (200), não quando o **WhatsApp entrega** → com chip caído, conta envios no vácuo. Ideia:
+   `campanha-lote` checar conexão Z-API do chip antes de selecionar / verificar entrega real.
+2. **Teste polui o Chatwoot:** mover a criação do contato (`contato-criar`) para **depois** do gate
+   de simulação no W01 (dry-run não deve criar contato real de devedor no Chatwoot).
+
+**Reativar a operação:** confirmar chips OK (não banidos) → "Revincular Chatwoot" p/ fiar a entrada →
+"Enviar teste" e responder no WhatsApp p/ ver o `bot-turno` responder → religar `campanha_ativa`.

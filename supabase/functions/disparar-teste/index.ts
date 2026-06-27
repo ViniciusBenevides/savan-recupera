@@ -4,6 +4,7 @@
 // "avança": você responde no seu WhatsApp e o bot negocia em modo teste (Pix sandbox/fake).
 // Entrada: { chip_id, numero_e164? }  — numero_e164 escolhe qual número de teste recebe
 // (precisa estar cadastrado em configuracoes.numero_teste). Sem ele, usa o primeiro ativo.
+// SEGURANÇA (auditoria 2026-06-26): A1 — só o service_role (rota /api/chips/teste) pode chamar.
 import { createClient, SupabaseClient } from "jsr:@supabase/supabase-js@2";
 
 const cors = {
@@ -43,6 +44,17 @@ const CPF_TESTE = "00000000191";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
+  // A1: somente o service_role (rota /api/chips/teste) pode chamar. A anon key pública é recusada.
+  // Trava revisada (§29): exige JWT de service_role pelo claim `role` (o verify_jwt já validou a
+  // assinatura). Imune à rotação/novo sistema de API keys do Supabase — antes comparava o valor cru
+  // do SERVICE_ROLE_KEY e quebrava (401 em tudo) quando a chave do env divergia do JWT do n8n.
+  let _role = "";
+  try {
+    let _p = ((req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "").split(".")[1] ?? "").replace(/-/g, "+").replace(/_/g, "/");
+    while (_p.length % 4) _p += "=";
+    _role = JSON.parse(atob(_p)).role;
+  } catch { _role = ""; }
+  if (_role !== "service_role") return json({ ok: false, erro: "nao_autorizado" }, 401);
   const sb = admin();
   const seg = await carregarSegredos(sb);
   const cfg = await getConfig(sb);

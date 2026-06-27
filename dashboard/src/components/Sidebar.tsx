@@ -4,6 +4,7 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard, Radio, Smartphone, MessageSquareText, Percent,
   Users, BarChart3, Settings, LogOut, HandCoins, FolderUp, LifeBuoy, Headset,
+  MessagesSquare,
 } from "lucide-react";
 import { Logo } from "@/components/Brand";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -21,6 +22,7 @@ const nav = [
   { href: "/templates", label: "Mensagens", icon: MessageSquareText, roles: ["admin", "cobrador"] },
   { href: "/descontos", label: "Descontos", icon: Percent, roles: ["admin", "cobrador"] },
   { href: "/devedores", label: "Devedores", icon: Users, roles: TODOS },
+  { href: "/conversas", label: "Conversas", icon: MessagesSquare, roles: ["admin", "cobrador", "credor"] },
   { href: "/escalacoes", label: "Escalações", icon: Headset, roles: ["admin", "cobrador"] },
   { href: "/pagamentos", label: "Pagamentos", icon: HandCoins, roles: TODOS },
   { href: "/relatorios", label: "Relatórios", icon: BarChart3, roles: TODOS },
