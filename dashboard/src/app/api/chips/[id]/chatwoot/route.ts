@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-server";
 import { exigirCobrador, podeEditarChip, erroDono } from "@/lib/auth";
 import { vincularChatwootInbox, sincronizarProviderConfig } from "@/lib/chatwoot";
+import { garantirWebhookEntrada } from "@/lib/zapi";
 
 // (Re)vincula o inbox do Chatwoot a um chip já cadastrado. Usado quando a criação
 // automática falhou (ex.: chip antigo sem chatwoot_inbox_id) ou para reconectar.
@@ -34,8 +35,18 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     clientToken: cred.zapi_client_token ?? undefined,
   });
 
+  // Garante que o webhook "ao receber" da Z-API aponte para o Chatwoot: sem isso a
+  // resposta do devedor nunca chega ao bot (sincronizarProviderConfig só conserta a
+  // SAÍDA). Idempotente; usa o número do /device com fallback ao numero_e164 salvo.
+  const entrada = await garantirWebhookEntrada({
+    chipId: chip.id, instanceId: cred.zapi_instance_id, token: cred.zapi_token,
+    clientToken: cred.zapi_client_token ?? process.env.ZAPI_CLIENT_TOKEN ?? "",
+  });
+
   return NextResponse.json({
     ok: true, inbox_id: cw.inbox_id, ja_existia: cw.ja_existia ?? false,
     provider_config_sincronizado: sync.ok, aviso_envio: sync.ok ? undefined : sync.mensagem,
+    webhook_entrada_ok: entrada.ok, webhook_entrada_url: entrada.url,
+    aviso_entrada: entrada.ok ? undefined : entrada.mensagem,
   });
 }
