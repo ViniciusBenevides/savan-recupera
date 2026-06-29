@@ -389,6 +389,10 @@ Deno.serve(async (req) => {
   if (remetente?.lid && conv.telefone_id) {
     await sb.from("telefones_devedor").update({ chat_lid: remetente.lid }).eq("id", conv.telefone_id).is("chat_lid", null);
   }
+  // O envio direto via @lid é EXCLUSIVO do Z-API (privacidade do WhatsApp Web). Um chip Meta
+  // Cloud API endereça por telefone (não há @lid) e não tem linha em chips_credenciais → creds
+  // fica null e o bloco abaixo no-opa, caindo no caminho normal Chatwoot→canal (texto livre vale
+  // dentro da janela de 24h da Cloud API). Logo, nada a gatear: meta já segue pelo Chatwoot.
   const enviarDireto = !!remetente?.lid;
   let creds: any = null;
   if (enviarDireto && conv.chip_id) {

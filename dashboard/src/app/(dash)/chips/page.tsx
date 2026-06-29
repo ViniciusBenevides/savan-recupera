@@ -4,7 +4,7 @@ import { Card, SectionTitle, Button } from "@/components/ui/primitives";
 import { getSessao } from "@/lib/auth";
 import { ChipCard } from "./chip-card";
 import { TesteCard } from "./teste-card";
-import { Plus, Smartphone } from "lucide-react";
+import { Plus, Smartphone, Calculator } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
@@ -39,8 +39,13 @@ export default async function ChipsPage() {
     <>
       <SectionTitle
         title="Chips"
-        sub="Cada chip é um número de WhatsApp conectado via Z-API."
-        action={<Link href="/chips/novo"><Button><Plus className="h-4 w-4" /> Adicionar chip</Button></Link>}
+        sub="Cada chip é um número de WhatsApp — conectado via Z-API (QR) ou pela API oficial da Meta."
+        action={
+          <div className="flex gap-2">
+            <Link href="/chips/custos"><Button variant="outline"><Calculator className="h-4 w-4" /> Custos</Button></Link>
+            <Link href="/chips/novo"><Button><Plus className="h-4 w-4" /> Adicionar chip</Button></Link>
+          </div>
+        }
       />
 
       {(chips ?? []).length === 0 ? (

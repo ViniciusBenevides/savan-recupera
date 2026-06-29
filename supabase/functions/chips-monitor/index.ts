@@ -32,9 +32,52 @@ Deno.serve(async (req) => {
   const seg = await carregarSegredos(sb);
   const clientToken = seg.ZAPI_CLIENT_TOKEN ?? "";
 
-  const { data: chips } = await sb.from("chips").select("id, nome, status").not("status", "in", "(cadastrado,banido)");
+  const { data: chips } = await sb.from("chips").select("id, nome, status, conector").not("status", "in", "(cadastrado,banido)");
   const resultados: any[] = [];
+  const hoje = new Date().toISOString().slice(0, 10);
   for (const chip of chips ?? []) {
+    // ── Conector Meta Cloud API: lê qualidade/limite/status pela Graph API ───────────────
+    if ((chip.conector ?? "zapi") === "meta_cloud") {
+      const { data: credM } = await sb.from("chips_credenciais_meta").select("phone_number_id, access_token").eq("chip_id", chip.id).maybeSingle();
+      if (!credM) continue;
+      let saude: any = null, ok = false;
+      try {
+        const r = await fetch(`https://graph.facebook.com/v21.0/${credM.phone_number_id}?fields=display_phone_number,verified_name,quality_rating,messaging_limit_tier,status,name_status`, { headers: { Authorization: `Bearer ${credM.access_token}` } });
+        const d = await r.json();
+        if (r.ok) {
+          ok = true;
+          const { data: met } = await sb.from("chip_metricas_diarias").select("novos_contatos").eq("chip_id", chip.id).eq("dia", hoje).maybeSingle();
+          saude = {
+            quality_rating: d.quality_rating ?? "UNKNOWN", messaging_limit_tier: d.messaging_limit_tier ?? "TIER_250",
+            number_status: d.status ?? "UNKNOWN", name_status: d.name_status ?? null, verified_name: d.verified_name ?? null,
+            msgs_hoje: met?.novos_contatos ?? 0, atualizado_em: new Date().toISOString(),
+          };
+        } else { saude = { erro: d?.error?.message ?? "graph erro", atualizado_em: new Date().toISOString() }; }
+      } catch (e) { saude = { erro: String(e) }; }
+
+      // número RESTRINGIDO pela Meta (status != CONNECTED) = equivalente ao "chip caiu": pausa + failover.
+      let novoStatus = chip.status;
+      const restrito = ok && saude?.number_status && saude.number_status !== "CONNECTED";
+      if (restrito && ["ativo", "aquecendo", "conectado"].includes(chip.status)) {
+        novoStatus = "desconectado";
+        await sb.from("eventos_campanha").insert({ tipo: "chip_status", chip_id: chip.id, payload: { status: "desconectado", motivo: "meta_restrito", nome: chip.nome } });
+        const { data: resumo } = await sb.rpc("fn_failover_resumo", { p_chip_id: chip.id });
+        const tem = ((resumo?.aguardando ?? 0) + (resumo?.conversas_ativas ?? 0) + (resumo?.escaladas ?? 0)) > 0;
+        if (tem) {
+          const { data: existe } = await sb.from("failover_eventos").select("id").eq("chip_caido_id", chip.id).eq("status", "pendente").maybeSingle();
+          if (!existe) await sb.from("failover_eventos").insert({ chip_caido_id: chip.id, resumo });
+        }
+      } else if (ok && saude?.quality_rating === "RED") {
+        // qualidade vermelha: o número ainda envia, mas está perto de ser restrito → registra alerta
+        // (uma vez por dia, para não poluir) para o painel/feed avisar o gestor.
+        const { data: jaHoje } = await sb.from("eventos_campanha").select("id").eq("tipo", "chip_qualidade").eq("chip_id", chip.id).gte("criado_em", `${hoje}T00:00:00Z`).maybeSingle();
+        if (!jaHoje) await sb.from("eventos_campanha").insert({ tipo: "chip_qualidade", chip_id: chip.id, payload: { quality: "RED", nome: chip.nome } });
+      }
+      await sb.from("chips").update({ saude, status: novoStatus }).eq("id", chip.id);
+      resultados.push({ chip: chip.id, conector: "meta_cloud", quality: saude?.quality_rating, status: novoStatus });
+      continue;
+    }
+
     const { data: cred } = await sb.from("chips_credenciais").select("zapi_instance_id, zapi_token").eq("chip_id", chip.id).maybeSingle();
     if (!cred) continue;
     let saude: any = null, conectado = false;

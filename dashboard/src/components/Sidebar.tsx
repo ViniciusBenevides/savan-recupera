@@ -4,7 +4,7 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard, Radio, Smartphone, MessageSquareText, Percent,
   Users, BarChart3, Settings, LogOut, HandCoins, FolderUp, LifeBuoy, Headset,
-  MessagesSquare,
+  MessagesSquare, FileBadge,
 } from "lucide-react";
 import { Logo } from "@/components/Brand";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -20,6 +20,7 @@ const nav = [
   { href: "/campanha", label: "Campanha", icon: Radio, roles: ["admin", "cobrador"] },
   { href: "/chips", label: "Chips", icon: Smartphone, roles: ["admin", "cobrador"] },
   { href: "/templates", label: "Mensagens", icon: MessageSquareText, roles: ["admin", "cobrador"] },
+  { href: "/templates-meta", label: "Templates Meta", icon: FileBadge, roles: ["admin", "cobrador"] },
   { href: "/descontos", label: "Descontos", icon: Percent, roles: ["admin", "cobrador"] },
   { href: "/devedores", label: "Devedores", icon: Users, roles: TODOS },
   { href: "/conversas", label: "Conversas", icon: MessagesSquare, roles: ["admin", "cobrador", "credor"] },
@@ -48,7 +49,7 @@ export function Sidebar({ nome, role }: { nome: string; role: string }) {
 
       <nav className="mt-8 flex flex-1 flex-col gap-1">
         {itens.map(({ href, label, icon: Icon }) => {
-          const ativo = href === "/" ? path === "/" : path.startsWith(href);
+          const ativo = href === "/" ? path === "/" : (path === href || path.startsWith(href + "/"));
           return (
             <Link
               key={href}

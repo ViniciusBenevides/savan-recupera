@@ -189,7 +189,7 @@ Deno.serve(async (req) => {
   }
 
   // chips com o dono (cobrador) p/ resolver a config/template de cada um
-  const { data: chips } = await sb.from("chips").select("id, nome, chatwoot_inbox_id, status, cobrador_id").in("status", ["ativo", "aquecendo"]);
+  const { data: chips } = await sb.from("chips").select("id, nome, chatwoot_inbox_id, status, cobrador_id, conector").in("status", ["ativo", "aquecendo"]);
   const itens: any[] = [];
   const pulados: Record<string, number> = {}; // motivo -> nº de chips
 
@@ -198,6 +198,20 @@ Deno.serve(async (req) => {
     // gate POR COBRADOR: a campanha dele precisa estar ligada e dentro da janela dele
     if (!(cfg.campanha_ativa === true || cfg.campanha_ativa === "true")) { pulados.campanha_inativa = (pulados.campanha_inativa ?? 0) + 1; continue; }
     if (!dentroDaJanela(cfg.janela_envio)) { pulados.fora_da_janela = (pulados.fora_da_janela ?? 0) + 1; continue; }
+
+    // Conector Meta Cloud API: o disparo frio por número Meta NÃO sai como texto livre — a 1ª
+    // mensagem a um contato novo precisa ser um TEMPLATE aprovado pela Meta (categoria
+    // marketing/utility). Gate: sem um template de abordagem aprovado e mapeado, o chip Meta é
+    // pulado (não vira envio fantasma nem texto livre que a Meta recusaria). O envio por template
+    // é o caminho dedicado (ver §32) — este caminho free-form (Chatwoot→Z-API/W01) é só do Z-API.
+    if ((chip.conector ?? "zapi") === "meta_cloud") {
+      const nomeTpl = (cfg.meta_abordagem_template?.name ?? "").trim();
+      if (!nomeTpl) { pulados.meta_template_ausente = (pulados.meta_template_ausente ?? 0) + 1; continue; }
+      const { data: aprov } = await sb.from("meta_templates").select("status")
+        .eq("cobrador_id", chip.cobrador_id).eq("name", nomeTpl).eq("status", "APPROVED").maybeSingle();
+      if (!aprov) { pulados.meta_template_nao_aprovado = (pulados.meta_template_nao_aprovado ?? 0) + 1; continue; }
+      pulados.meta_envio_template_pendente = (pulados.meta_envio_template_pendente ?? 0) + 1; continue;
+    }
 
     // Anti "enviar no vácuo": confirma a conexão real do chip na Z-API antes de gastar o lote.
     // Chip caído -> marca desconectado + abre failover e pula (não vira envio fantasma).

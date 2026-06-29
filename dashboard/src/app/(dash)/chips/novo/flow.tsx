@@ -4,19 +4,48 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Card, Input, Label, Button, Badge } from "@/components/ui/primitives";
 import { MaturidadeField, type MaturidadeValor } from "@/components/MaturidadeField";
 import { TipoChipField, type TipoChip } from "@/components/TipoChipField";
+import { ConectorChipField, type Conector } from "@/components/ConectorChipField";
 import {
   Smartphone, CheckCircle2, RefreshCw, ArrowRight,
   CreditCard, AlertTriangle, ExternalLink, KeyRound,
+  BadgeCheck, Copy, Webhook, FileText,
 } from "lucide-react";
 
 type Motivo = "assinatura" | "config" | "credencial" | "indisponivel" | null;
+
+type MetaResultado = {
+  numero: string | null;
+  saude: { quality_rating: string; messaging_limit_tier: string; verified_name: string | null } | null;
+  chatwoot: { ok: boolean; mensagem?: string };
+  callback_url: string | null;
+  verify_token: string | null;
+  waba_assinada: boolean;
+};
+
+// Campo somente-leitura com botão de copiar (URL de callback / verify token da Meta).
+function CampoCopiavel({ rotulo, valor, onCopiar }: { rotulo: string; valor: string; onCopiar: (v: string) => void }) {
+  const [copiado, setCopiado] = useState(false);
+  return (
+    <div>
+      <Label>{rotulo}</Label>
+      <div className="relative">
+        <Input readOnly value={valor} className="pr-10 font-mono text-[11px]" />
+        <button type="button" tabIndex={-1} aria-label="Copiar"
+                onClick={() => { onCopiar(valor); setCopiado(true); setTimeout(() => setCopiado(false), 1500); }}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-mist hover:text-chalk">
+          {copiado ? <CheckCircle2 className="h-4 w-4 text-emerald" /> : <Copy className="h-4 w-4" />}
+        </button>
+      </div>
+    </div>
+  );
+}
 
 export function NovoChipFlow() {
   const router = useRouter();
   const params = useSearchParams();
   const idExistente = params.get("id");
 
-  const [etapa, setEtapa] = useState<"form" | "qr">(idExistente ? "qr" : "form");
+  const [etapa, setEtapa] = useState<"form" | "qr" | "meta_ok">(idExistente ? "qr" : "form");
   const [chipId, setChipId] = useState<string | null>(idExistente);
   const [nome, setNome] = useState("");
   const [instance, setInstance] = useState("");
@@ -24,6 +53,13 @@ export function NovoChipFlow() {
   const [clientToken, setClientToken] = useState("");
   const [maturidade, setMaturidade] = useState<MaturidadeValor>({ maturidade: "novo", limite_dia_override: null });
   const [tipo, setTipo] = useState<TipoChip>("fisico");
+  const [conector, setConector] = useState<Conector>("zapi");
+  // credenciais Meta Cloud (conector oficial)
+  const [metaPhone, setMetaPhone] = useState("");
+  const [metaWaba, setMetaWaba] = useState("");
+  const [metaToken, setMetaToken] = useState("");
+  const [metaAppSecret, setMetaAppSecret] = useState("");
+  const [metaResultado, setMetaResultado] = useState<MetaResultado | null>(null);
   const [papel, setPapel] = useState<"bot" | "equipe">("bot");
   const [agente, setAgente] = useState("");
   const [numeroEquipe, setNumeroEquipe] = useState("");
@@ -48,12 +84,19 @@ export function NovoChipFlow() {
     e.preventDefault();
     setErro(""); setSalvando(true);
     const equipe = papel === "equipe";
+    const meta = !equipe && conector === "meta_cloud";
     const body = equipe
       ? { nome, papel: "equipe", agente_nome: agente, numero_e164: numeroEquipe }
-      : {
-          nome, instance_id: instance, token, client_token: clientToken, tipo, papel: "bot",
-          maturidade: maturidade.maturidade, limite_dia_override: maturidade.limite_dia_override,
-        };
+      : meta
+        ? {
+            nome, papel: "bot", conector: "meta_cloud",
+            meta_phone_number_id: metaPhone, meta_waba_id: metaWaba, meta_token: metaToken, meta_app_secret: metaAppSecret,
+            maturidade: maturidade.maturidade, limite_dia_override: maturidade.limite_dia_override,
+          }
+        : {
+            nome, instance_id: instance, token, client_token: clientToken, tipo, papel: "bot",
+            maturidade: maturidade.maturidade, limite_dia_override: maturidade.limite_dia_override,
+          };
     const r = await fetch("/api/chips", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -64,6 +107,16 @@ export function NovoChipFlow() {
     // escalador humano só registrado: não tem QR nem Chatwoot — volta para a lista
     if (equipe) { router.push("/chips"); router.refresh(); return; }
     setChipId(String(d.chip_id));
+    // Meta oficial: número já conectado (sem QR) — vai para a tela de confirmação
+    if (meta) {
+      setMetaResultado({
+        numero: d.numero ?? null, saude: d.saude ?? null,
+        chatwoot: d.chatwoot ?? { ok: false }, callback_url: d.callback_url ?? null,
+        verify_token: d.verify_token ?? null, waba_assinada: !!d.waba_assinada,
+      });
+      setEtapa("meta_ok");
+      return;
+    }
     setChatwootVinculado(d.chatwoot?.ok === true);
     if (d.chatwoot && d.chatwoot.ok === false) setChatwootMsg({ ok: false, mensagem: d.chatwoot.mensagem });
     setEtapa("qr");
@@ -134,27 +187,68 @@ export function NovoChipFlow() {
 
           {papel === "bot" ? (
             <>
-              <div>
-                <Label>Instance ID (Z-API)</Label>
-                <Input value={instance} onChange={(e) => setInstance(e.target.value)}
-                       placeholder="3F258A682CEAA17C040FFAB71E115C52" required className="font-mono text-xs" />
-              </div>
-              <div>
-                <Label>Token da instância (Z-API)</Label>
-                <Input value={token} onChange={(e) => setToken(e.target.value)}
-                       placeholder="B777F7686FC2C33DB62C18FE" required className="font-mono text-xs" />
-              </div>
-              <div>
-                <Label>Token de Segurança (Z-API)</Label>
-                <Input value={clientToken} onChange={(e) => setClientToken(e.target.value)}
-                       placeholder="F73f… (token de segurança da conta)" required className="font-mono text-xs" />
-                <p className="mt-1.5 text-xs text-mist">
-                  Os três vêm do painel da Z-API: <b className="text-chalk">Instance ID</b> e <b className="text-chalk">Token</b> na sua
-                  instância; o <b className="text-chalk">Token de Segurança</b> na aba <b className="text-chalk">Segurança</b> da conta.
-                  Cada conta Z-API tem o seu — por isso ele é informado aqui por chip.
-                </p>
-              </div>
-              <TipoChipField value={tipo} onChange={setTipo} />
+              <ConectorChipField value={conector} onChange={setConector} />
+
+              {conector === "zapi" ? (
+                <>
+                  <div>
+                    <Label>Instance ID (Z-API)</Label>
+                    <Input value={instance} onChange={(e) => setInstance(e.target.value)}
+                           placeholder="3F258A682CEAA17C040FFAB71E115C52" required className="font-mono text-xs" />
+                  </div>
+                  <div>
+                    <Label>Token da instância (Z-API)</Label>
+                    <Input value={token} onChange={(e) => setToken(e.target.value)}
+                           placeholder="B777F7686FC2C33DB62C18FE" required className="font-mono text-xs" />
+                  </div>
+                  <div>
+                    <Label>Token de Segurança (Z-API)</Label>
+                    <Input value={clientToken} onChange={(e) => setClientToken(e.target.value)}
+                           placeholder="F73f… (token de segurança da conta)" required className="font-mono text-xs" />
+                    <p className="mt-1.5 text-xs text-mist">
+                      Os três vêm do painel da Z-API: <b className="text-chalk">Instance ID</b> e <b className="text-chalk">Token</b> na sua
+                      instância; o <b className="text-chalk">Token de Segurança</b> na aba <b className="text-chalk">Segurança</b> da conta.
+                      Cada conta Z-API tem o seu — por isso ele é informado aqui por chip.
+                    </p>
+                  </div>
+                  <TipoChipField value={tipo} onChange={setTipo} />
+                </>
+              ) : (
+                <>
+                  <div className="flex gap-2 rounded-lg border border-blue/30 bg-blue/10 px-3 py-2.5 text-[11px] leading-relaxed text-blue">
+                    <BadgeCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                    <span>
+                      Antes: crie um app no <b>Meta Business</b> com o produto <b>WhatsApp</b>, adicione o número e
+                      gere um <b>token permanente de usuário do sistema</b> (Etapa 5 da doc da Meta). Cole abaixo
+                      o <b>ID do número</b>, o <b>ID da WABA</b> e o <b>token</b>.
+                    </span>
+                  </div>
+                  <div>
+                    <Label>ID do número de telefone (phone_number_id)</Label>
+                    <Input value={metaPhone} onChange={(e) => setMetaPhone(e.target.value)}
+                           placeholder="1098765432109876" required className="font-mono text-xs" />
+                  </div>
+                  <div>
+                    <Label>ID da conta WhatsApp Business (WABA)</Label>
+                    <Input value={metaWaba} onChange={(e) => setMetaWaba(e.target.value)}
+                           placeholder="1023456789012345" required className="font-mono text-xs" />
+                  </div>
+                  <div>
+                    <Label>Token de acesso permanente</Label>
+                    <Input type="password" value={metaToken} onChange={(e) => setMetaToken(e.target.value)}
+                           placeholder="EAAG… (token do usuário do sistema)" required className="font-mono text-xs" />
+                  </div>
+                  <div>
+                    <Label>App Secret (opcional)</Label>
+                    <Input type="password" value={metaAppSecret} onChange={(e) => setMetaAppSecret(e.target.value)}
+                           placeholder="só se for usar alertas em tempo real" className="font-mono text-xs" />
+                    <p className="mt-1.5 text-xs text-mist">
+                      Validamos o token na Meta na hora — se estiver certo, o número conecta sem QR e já aparece a
+                      <b className="text-chalk"> qualidade</b> dele.
+                    </p>
+                  </div>
+                </>
+              )}
               <MaturidadeField value={maturidade} onChange={setMaturidade} />
             </>
           ) : (
@@ -180,10 +274,76 @@ export function NovoChipFlow() {
             {salvando ? "Cadastrando…"
               : papel === "equipe"
                 ? <>Cadastrar escalador <ArrowRight className="h-4 w-4" /></>
-                : <>Cadastrar e gerar QR <ArrowRight className="h-4 w-4" /></>}
+                : conector === "meta_cloud"
+                  ? <>Conectar número oficial <ArrowRight className="h-4 w-4" /></>
+                  : <>Cadastrar e gerar QR <ArrowRight className="h-4 w-4" /></>}
           </Button>
         </Card>
       </form>
+    );
+  }
+
+  if (etapa === "meta_ok" && metaResultado) {
+    const m = metaResultado;
+    const qTone = m.saude?.quality_rating === "GREEN" ? "green" : m.saude?.quality_rating === "RED" ? "rose" : "amber";
+    const copiar = (v: string) => navigator.clipboard?.writeText(v).catch(() => {});
+    return (
+      <div className="max-w-lg space-y-4">
+        <Card className="flex flex-col items-center gap-5 py-8 text-center">
+          <span className="grid h-16 w-16 place-items-center rounded-2xl bg-emerald/15 text-emerald glow-ring">
+            <BadgeCheck className="h-8 w-8" />
+          </span>
+          <div>
+            <h3 className="font-display text-lg font-700 text-chalk">Número oficial conectado!</h3>
+            {m.numero && <p className="mt-1 font-mono text-sm text-chalk tabnums">{m.numero}</p>}
+            {m.saude?.verified_name && <p className="mt-0.5 text-xs text-mist">{m.saude.verified_name}</p>}
+          </div>
+          {m.saude && (
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              <Badge tone={qTone as any}>Qualidade: {m.saude.quality_rating}</Badge>
+              <Badge tone="neutral">Limite: {m.saude.messaging_limit_tier.replace("TIER_", "")}</Badge>
+            </div>
+          )}
+          <div className="w-full space-y-1.5 text-left text-xs">
+            <div className="flex items-center gap-2">
+              {m.chatwoot.ok ? <CheckCircle2 className="h-4 w-4 text-emerald" /> : <AlertTriangle className="h-4 w-4 text-amber" />}
+              <span className="text-mist">Chatwoot {m.chatwoot.ok ? "vinculado (canal Cloud API)" : "não vinculado"}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              {m.waba_assinada ? <CheckCircle2 className="h-4 w-4 text-emerald" /> : <AlertTriangle className="h-4 w-4 text-amber" />}
+              <span className="text-mist">WABA {m.waba_assinada ? "assinada ao app" : "não assinada (verifique permissões do token)"}</span>
+            </div>
+            {!m.chatwoot.ok && m.chatwoot.mensagem && <p className="text-rose">{m.chatwoot.mensagem}</p>}
+          </div>
+          <Button onClick={() => { router.push("/chips"); router.refresh(); }}>Voltar para chips</Button>
+        </Card>
+
+        {/* Etapa manual única: apontar o webhook do app da Meta para o Chatwoot */}
+        {m.callback_url && (
+          <Card className="flex flex-col gap-2.5 py-4">
+            <div className="flex items-center gap-2 text-sm text-chalk">
+              <Webhook className="h-4 w-4 text-blue" /> Configure o webhook no app da Meta
+            </div>
+            <p className="text-xs text-mist">
+              No painel da Meta (seu app → WhatsApp → Configuração), cole a <b className="text-chalk">URL de callback</b> e
+              o <b className="text-chalk">token de verificação</b> abaixo. É o que faz as respostas dos contatos chegarem.
+            </p>
+            <CampoCopiavel rotulo="URL de callback" valor={m.callback_url} onCopiar={copiar} />
+            {m.verify_token && <CampoCopiavel rotulo="Token de verificação" valor={m.verify_token} onCopiar={copiar} />}
+          </Card>
+        )}
+
+        {/* Lembrete do regime: template aprovado para o 1º contato frio */}
+        <Card className="flex gap-2.5 border-amber/30 bg-amber/5 py-4">
+          <FileText className="mt-0.5 h-4 w-4 shrink-0 text-amber" />
+          <div className="text-xs leading-relaxed text-mist">
+            <b className="text-amber">Para disparar a campanha por este número</b>, a 1ª mensagem a um contato novo
+            precisa ser um <b className="text-chalk">modelo (template) aprovado pela Meta</b>. Crie e acompanhe a
+            aprovação em <a href="/templates-meta" className="text-emerald-soft underline">Templates Meta</a>. A qualidade
+            do número cai se as pessoas bloquearem/denunciarem — acompanhe o semáforo no card do chip.
+          </div>
+        </Card>
+      </div>
     );
   }
 

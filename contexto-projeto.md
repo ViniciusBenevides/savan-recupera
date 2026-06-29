@@ -1,7 +1,13 @@
 # Contexto do Projeto — SAVAN Recupera
 
 > Documento para retomar o contexto em novas sessões com Claude.
-> Última atualização: **§31 — INCIDENTE: chips 1 e 2 RESTRINGIDOS pelo WhatsApp (29/06) + fix do
+> Última atualização: **§32 — CONECTOR WhatsApp Cloud API (Meta oficial) pelo painel: cadastro de número
+> oficial por "colar credenciais" (sem QR), **semáforo de qualidade do número** (GREEN/YELLOW/RED) + tier
+> de limite no card e via `chips-monitor` (deployado v5), tela **Templates Meta** (criar/submeter/status de
+> aprovação), **calculadora de custos** Z-API×Meta, multi-número. Migration 025 aplicada (RLS service_role
+> em `chips_credenciais_meta`). Conector ADICIONAL: Z-API segue intacto. Envio frio por Meta depende de
+> template aprovado (gate pronto). Ver §32.**
+> (Anterior: **§31 — INCIDENTE: chips 1 e 2 RESTRINGIDOS pelo WhatsApp (29/06) + fix do
 > webhook de entrada. Os 2 chips de bot (mesmo aparelho/conta Z-API, `maturidade=novo`) caíram com a
 > tela "Sua conta está restringida" — NÃO por volume (só 3 envios reais em 3 dias, 0 de entrada), e sim
 > pelo perfil de risco (número novo cru + WhatsApp Web não-oficial da Z-API + cold outreach a estranhos
@@ -1362,3 +1368,67 @@ com chip cru não sobrevive a cobrança fria).
 
 **Estado ao fim da sessão:** campanha **ainda ligada** (`campanha_ativa=true`, real, 2.555 na fila) —
 nada dispara com os chips caídos, mas reconectar volta a disparar real (pendência aberta: pausar).
+
+---
+
+## 32. Conector WhatsApp Cloud API (Meta oficial) pelo painel — adicionado nesta sessão
+
+Pedido do dono (após o ban da §31): conectar **número oficial da Meta (WhatsApp Cloud API)** pelo
+próprio front, ver o **índice de qualidade do número** ("perto de banir?"), **gerir/enviar templates** e
+ter **vários números** + **calculadora de custos**. Decisões: conector **adicional por chip** (Z-API e
+Meta coexistem); onboarding por **colar credenciais** (phone_number_id + WABA + token permanente de System
+User — sem Embedded Signup/App Review); custos = **calculadora viva no painel**.
+
+**Verdade documentada na UI (não é passe livre):** a 1ª mensagem a contato novo = **template aprovado**
+pela Meta; **qualidade por número** (GREEN/YELLOW/RED) cai com bloqueio/denúncia → **limite despenca →
+número restrito**; **custo por mensagem**; opt-in pressuposto. O ban muda de forma (administrativo), não
+some. Por isso o painel **expõe a qualidade** para o dono pausar antes.
+
+**Arquitetura:** a **conversa** continua mediada pelo **Chatwoot** (canal nativo
+`provider:"whatsapp_cloud"`) → reusa o pipeline (campanha-lote→W01→Chatwoot→envia; entrada→Chatwoot→
+webhook id 5→W02→`bot-turno`). O SAVAN fala **direto com a Graph API** só para **qualidade/limites** e
+**autoria/aprovação de templates** (o Chatwoot não entrega isso). Webhook do app aponta pro Chatwoot
+(mensagens); qualidade/templates o SAVAN obtém por **polling** (chips-monitor 15 min + tela de templates).
+
+**Banco — migration `025_meta_cloud_api.sql` (aplicada via MCP, verificada):**
+- `chips.conector` (`zapi`|`meta_cloud`, default `zapi`, check) — os 3 chips atuais seguem `zapi`.
+- **`chips_credenciais_meta`** (`phone_number_id`, `waba_id`, `access_token`, `app_secret?`,
+  `webhook_verify_token?`): RLS on, **sem policy** + `revoke all from authenticated, anon` (só
+  service_role; `has_table_privilege('authenticated',…,SELECT)=false` confirmado).
+- **`meta_templates`** (cache do status de aprovação, escopo por `cobrador_id`, RLS select por dono/admin;
+  escrita só service_role).
+- `chips.saude` (jsonb) passa a guardar p/ Meta `{quality_rating, messaging_limit_tier, number_status, name_status, msgs_hoje, atualizado_em}`.
+
+**Front (`dashboard/`, build + tsc OK):**
+- `lib/meta.ts` (Graph API: `verificarNumero`, `subscribarWaba`, `listar/criar/excluirTemplate`,
+  `tetoDoTier`); `lib/meta/precos.ts` (tarifas BR de referência **datadas+editáveis**, padrão do §23).
+- `lib/chatwoot.ts` `criarInboxMeta` (provider `whatsapp_cloud`; número real, **sem placeholder/QR**;
+  devolve callback URL + verify token p/ colar na Meta).
+- `api/chips` (POST) e `[id]` (GET/PATCH) aceitam `conector` + creds Meta (mascaradas no GET);
+  `api/chips/[id]/qualidade` (refresh sob demanda); `api/meta/templates` (GET/POST/DELETE por escopo §22).
+- `components/ConectorChipField.tsx` (seletor Z-API×Meta) no cadastro; `chips/novo/flow.tsx` ganha branch
+  Meta (cola creds → **conecta sem QR** → tela com número/qualidade/Chatwoot/webhook/lembrete de template);
+  `chips/chip-card.tsx` ganha **selo "Meta oficial" + semáforo de qualidade + tier + usado/teto + "Atualizar
+  saúde"** e edição das creds Meta.
+- Página **Templates Meta** (`(dash)/templates-meta`, item na Sidebar): criar/submeter template à Meta,
+  listar com **status de aprovação + motivo de reprovação + quality score**, excluir.
+- **Calculadora de custos** (`components/CalculadoraCusto.tsx` + `(dash)/chips/custos`, botão no header de
+  Chips): Z-API+Salvy (flat×nº) × Meta (por mensagem×volume) em R$/mês + ponto de equilíbrio.
+
+**Edge Functions:**
+- **`chips-monitor` (deployada v5, ACTIVE):** chip `meta_cloud` → lê qualidade/limite/status pela Graph,
+  grava `saude`; número restrito (status≠CONNECTED) → desconectado + evento + failover; RED → evento
+  `chip_qualidade` (1×/dia). Z-API intacto. **É o monitoramento "perto de banir" ao vivo.**
+- **`campanha-lote` (repo atualizado; deploy no próximo push):** gate p/ chip Meta — sem template de
+  abordagem **aprovado e mapeado** (`meta_abordagem_template`), pula (não manda texto livre que a Meta
+  recusaria). **A versão deployada já pula chip Meta com segurança** (sem creds Z-API → `chip_sem_status`),
+  então não redeployei o disparador crítico só p/ melhorar o motivo do skip.
+- **`bot-turno`:** o envio direto @lid é **só Z-API** (Cloud API não tem @lid e não tem linha em
+  `chips_credenciais` → no-opa e cai no Chatwoot, texto livre vale na janela de 24h). Mudança só de
+  comentário — sem redeploy.
+
+**Pendência aberta (envio frio por Meta):** depende de **template APROVADO** (processo de dias na Meta) +
+mapear `meta_abordagem_template` por cobrador + o caminho de envio do template no disparo (via Chatwoot
+`template_params` ou Graph direto). O gate já está pronto; falta o template existir e o último elo do
+envio. **Testável hoje:** conectar número → ver qualidade → criar/submeter template → **receber** msg no
+número oficial (entra no Chatwoot → bot-turno responde na janela de 24h). Disparo frio só após template aprovado.

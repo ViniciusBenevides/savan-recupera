@@ -13,14 +13,16 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   if (!(await podeEditarChip(g.sessao, Number(id)))) return erroDono();
 
   const admin = supabaseAdmin();
-  const [{ data: chip }, { data: cred }] = await Promise.all([
-    admin.from("chips").select("nome, maturidade, aquecimento_perfil, limite_dia_override, papel, agente_nome, tipo, numero_e164, chatwoot_inbox_id").eq("id", Number(id)).maybeSingle(),
+  const [{ data: chip }, { data: cred }, { data: credMeta }] = await Promise.all([
+    admin.from("chips").select("nome, maturidade, aquecimento_perfil, limite_dia_override, papel, agente_nome, tipo, numero_e164, chatwoot_inbox_id, conector, saude").eq("id", Number(id)).maybeSingle(),
     admin.from("chips_credenciais").select("zapi_instance_id, zapi_token, zapi_client_token").eq("chip_id", Number(id)).maybeSingle(),
+    admin.from("chips_credenciais_meta").select("phone_number_id, waba_id, access_token, app_secret").eq("chip_id", Number(id)).maybeSingle(),
   ]);
   if (!chip) return NextResponse.json({ erro: "chip_nao_encontrado" }, { status: 404 });
 
   return NextResponse.json({
     nome: chip.nome,
+    conector: chip.conector ?? "zapi",
     maturidade: chip.maturidade ?? "novo",
     aquecimento_perfil: chip.aquecimento_perfil ?? null,
     limite_dia_override: chip.limite_dia_override ?? null,
@@ -28,11 +30,17 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     agente_nome: chip.agente_nome ?? "",
     tipo: chip.tipo ?? "fisico",
     numero_e164: chip.numero_e164 ?? "",
+    saude: chip.saude ?? null,
     // escalador "só registrado": papel=equipe, sem credenciais e sem inbox no Chatwoot
     sem_zapi: (chip.papel ?? "bot") === "equipe" && !cred && !chip.chatwoot_inbox_id,
     instance_id: cred?.zapi_instance_id ?? "",
     token: cred?.zapi_token ?? "",
     client_token: cred?.zapi_client_token ?? "",
+    // credenciais Meta (chegam ao navegador só aqui, sob auth — para preencher a edição)
+    meta_phone_number_id: credMeta?.phone_number_id ?? "",
+    meta_waba_id: credMeta?.waba_id ?? "",
+    meta_token: credMeta?.access_token ?? "",
+    meta_app_secret: credMeta?.app_secret ?? "",
   });
 }
 
@@ -43,7 +51,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (g.erro) return g.erro;
   if (!(await podeEditarChip(g.sessao, Number(id)))) return erroDono();
 
-  const { nome, instance_id, token, client_token, maturidade, aquecimento_perfil, limite_dia_override, papel, agente_nome, tipo, numero_e164 } = await req.json();
+  const { nome, instance_id, token, client_token, maturidade, aquecimento_perfil, limite_dia_override, papel, agente_nome, tipo, numero_e164,
+    meta_phone_number_id, meta_waba_id, meta_token, meta_app_secret } = await req.json();
   const admin = supabaseAdmin();
 
   const chipPatch: Record<string, unknown> = {};
@@ -73,6 +82,18 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (typeof client_token === "string" && client_token.trim()) patch.zapi_client_token = client_token.trim();
   if (Object.keys(patch).length > 0) {
     const { error } = await admin.from("chips_credenciais").update(patch).eq("chip_id", Number(id));
+    if (error) return NextResponse.json({ erro: error.message }, { status: 400 });
+  }
+
+  // credenciais Meta (conector meta_cloud) — atualiza só os campos enviados
+  const patchMeta: Record<string, string | null> = {};
+  if (typeof meta_phone_number_id === "string" && meta_phone_number_id.trim()) patchMeta.phone_number_id = meta_phone_number_id.trim();
+  if (typeof meta_waba_id === "string" && meta_waba_id.trim()) patchMeta.waba_id = meta_waba_id.trim();
+  if (typeof meta_token === "string" && meta_token.trim()) patchMeta.access_token = meta_token.trim();
+  if (meta_app_secret !== undefined) patchMeta.app_secret = (typeof meta_app_secret === "string" && meta_app_secret.trim()) ? meta_app_secret.trim() : null;
+  if (Object.keys(patchMeta).length > 0) {
+    patchMeta.atualizado_em = new Date().toISOString();
+    const { error } = await admin.from("chips_credenciais_meta").update(patchMeta).eq("chip_id", Number(id));
     if (error) return NextResponse.json({ erro: error.message }, { status: 400 });
   }
 

@@ -5,8 +5,19 @@ import { Card, Badge, Button, Input, Label } from "@/components/ui/primitives";
 import { MaturidadeField, type MaturidadeValor } from "@/components/MaturidadeField";
 import { TipoChipField, type TipoChip } from "@/components/TipoChipField";
 import { num } from "@/lib/utils";
-import { Play, Pause, QrCode, Smartphone, AlertTriangle, MoreVertical, Pencil, Trash2, X, Eye, EyeOff, Loader2 } from "lucide-react";
+import { Play, Pause, QrCode, Smartphone, AlertTriangle, MoreVertical, Pencil, Trash2, X, Eye, EyeOff, Loader2, Cloud, Activity, RotateCw } from "lucide-react";
 import Link from "next/link";
+
+// Semáforo da qualidade do número na Meta (saber se está perto de banir).
+const QUALIDADE: Record<string, { tone: any; label: string }> = {
+  GREEN: { tone: "green", label: "Qualidade alta" },
+  YELLOW: { tone: "amber", label: "Qualidade média" },
+  RED: { tone: "rose", label: "Qualidade baixa — risco de restrição" },
+  UNKNOWN: { tone: "neutral", label: "Qualidade —" },
+};
+const TETO_TIER: Record<string, number | null> = {
+  TIER_50: 50, TIER_250: 250, TIER_1K: 1000, TIER_10K: 10000, TIER_100K: 100000, TIER_UNLIMITED: null,
+};
 
 // Campo de token oculto (tipo senha) com botão de ver/ocultar.
 function CampoToken({ label, value, onChange, disabled }: {
@@ -74,6 +85,26 @@ export function ChipCard({ chip, metrica, donoNome }: { chip: any; metrica?: any
   const [carregando, setCarregando] = useState(false);
   const [orig, setOrig] = useState({ instance: "", token: "", clientToken: "" });
 
+  // conector Meta (oficial): credenciais e saúde do número
+  const ehMeta = (chip.conector ?? "zapi") === "meta_cloud";
+  const [eMetaPhone, setEMetaPhone] = useState("");
+  const [eMetaWaba, setEMetaWaba] = useState("");
+  const [eMetaToken, setEMetaToken] = useState("");
+  const [origMeta, setOrigMeta] = useState({ phone: "", waba: "", token: "" });
+  const [saude, setSaude] = useState<any>(chip.saude ?? null);
+  const [atualizandoSaude, setAtualizandoSaude] = useState(false);
+
+  async function atualizarSaude() {
+    setAtualizandoSaude(true);
+    try {
+      const r = await fetch(`/api/chips/${chip.id}/qualidade`, { method: "POST" });
+      const d = await r.json();
+      if (r.ok && d.saude) setSaude(d.saude);
+      else setErro(d.erro ?? "Falha ao atualizar a saúde.");
+    } catch { setErro("Falha ao atualizar a saúde."); }
+    setAtualizandoSaude(false);
+  }
+
   const st = STATUS[chip.status] ?? STATUS.cadastrado;
   const dia = diaAquecimento(chip.data_ativacao);
   const enviados = metrica?.novos_contatos ?? 0;
@@ -107,6 +138,8 @@ export function ChipCard({ chip, metrica, donoNome }: { chip: any; metrica?: any
         setEPapel(d.papel ?? "bot"); setEAgente(d.agente_nome ?? ""); setENumero(d.numero_e164 ?? "");
         setOrigPapel({ papel: d.papel ?? "bot", agente: d.agente_nome ?? "", numero: d.numero_e164 ?? "" });
         setETipo((d.tipo ?? "fisico") as TipoChip); setOrigTipo((d.tipo ?? "fisico") as TipoChip);
+        setEMetaPhone(d.meta_phone_number_id ?? ""); setEMetaWaba(d.meta_waba_id ?? ""); setEMetaToken(d.meta_token ?? "");
+        setOrigMeta({ phone: d.meta_phone_number_id ?? "", waba: d.meta_waba_id ?? "", token: d.meta_token ?? "" });
       })
       .catch(() => setErro("Falha ao carregar os dados do chip."))
       .finally(() => setCarregando(false));
@@ -127,6 +160,9 @@ export function ChipCard({ chip, metrica, donoNome }: { chip: any; metrica?: any
     if (eAgente.trim() !== origPapel.agente) body.agente_nome = eAgente.trim();
     if (eNumero.trim() !== origPapel.numero) body.numero_e164 = eNumero.trim();
     if (eTipo !== origTipo) body.tipo = eTipo;
+    if (eMetaPhone.trim() !== origMeta.phone) body.meta_phone_number_id = eMetaPhone.trim();
+    if (eMetaWaba.trim() !== origMeta.waba) body.meta_waba_id = eMetaWaba.trim();
+    if (eMetaToken.trim() !== origMeta.token) body.meta_token = eMetaToken.trim();
     if (Object.keys(body).length === 0) { setEditando(false); return; }
     start(async () => {
       const r = await fetch(`/api/chips/${chip.id}`, {
@@ -191,6 +227,19 @@ export function ChipCard({ chip, metrica, donoNome }: { chip: any; metrica?: any
                   Com DDD. É o número que recebe as transferências. Este escalador não usa Z-API nem aparece no Chatwoot.
                 </p>
               </div>
+            ) : ehMeta ? (
+              <>
+                <div>
+                  <Label>ID do número (phone_number_id)</Label>
+                  <Input value={eMetaPhone} onChange={(e) => setEMetaPhone(e.target.value)} className="font-mono text-xs" />
+                </div>
+                <div>
+                  <Label>ID da WABA</Label>
+                  <Input value={eMetaWaba} onChange={(e) => setEMetaWaba(e.target.value)} className="font-mono text-xs" />
+                </div>
+                <CampoToken label="Token de acesso (Meta)" value={eMetaToken} onChange={setEMetaToken} />
+                <MaturidadeField value={eMaturidade} onChange={setEMaturidade} />
+              </>
             ) : (
               <>
                 <div>
@@ -229,7 +278,8 @@ export function ChipCard({ chip, metrica, donoNome }: { chip: any; metrica?: any
               {(chip.papel ?? "bot") === "equipe"
                 ? <Badge tone="violet">Cobrador{chip.agente_nome ? ` · ${chip.agente_nome}` : ""}</Badge>
                 : <Badge tone="blue">Bot</Badge>}
-              {!escaladorManual && (() => { const t = TIPO[chip.tipo ?? "fisico"] ?? TIPO.fisico; return <Badge tone={t.tone}>{t.label}</Badge>; })()}
+              {ehMeta && <Badge tone="green"><Cloud className="h-3 w-3" /> Meta oficial</Badge>}
+              {!escaladorManual && !ehMeta && (() => { const t = TIPO[chip.tipo ?? "fisico"] ?? TIPO.fisico; return <Badge tone={t.tone}>{t.label}</Badge>; })()}
               {donoNome && <Badge tone="neutral">Conta: {donoNome}</Badge>}
             </div>
             <div className="font-mono text-xs text-mist tabnums">{chip.numero_e164 ?? "sem número"}</div>
@@ -273,14 +323,51 @@ export function ChipCard({ chip, metrica, donoNome }: { chip: any; metrica?: any
         </div>
       )}
 
-      {!escaladorManual && (
+      {!escaladorManual && ehMeta && (() => {
+        const q = QUALIDADE[saude?.quality_rating ?? "UNKNOWN"] ?? QUALIDADE.UNKNOWN;
+        const tier = saude?.messaging_limit_tier ?? "TIER_250";
+        const teto = TETO_TIER[tier];
+        const usado = saude?.msgs_hoje ?? enviados;
+        const pct = teto ? Math.min(100, (usado / teto) * 100) : 0;
+        return (
+          <div className="space-y-2.5 rounded-xl border border-line bg-ink-850 px-3 py-3">
+            <div className="flex items-center justify-between">
+              <span className="inline-flex items-center gap-1.5 text-xs text-mist"><Activity className="h-3.5 w-3.5" /> Saúde na Meta</span>
+              <button onClick={atualizarSaude} disabled={atualizandoSaude}
+                      className="inline-flex items-center gap-1 text-[11px] text-mist hover:text-chalk disabled:opacity-50">
+                <RotateCw className={`h-3 w-3 ${atualizandoSaude ? "animate-spin" : ""}`} /> Atualizar
+              </button>
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <Badge tone={q.tone as any}>{q.label}</Badge>
+              <Badge tone="neutral">Limite {tier.replace("TIER_", "")}</Badge>
+            </div>
+            <div>
+              <div className="mb-1 flex items-center justify-between text-[11px] text-mist">
+                <span>Conversas iniciadas hoje</span>
+                <span className="font-mono text-chalk tabnums">{num(usado)}{teto ? ` / ${num(teto)}` : ""}</span>
+              </div>
+              {teto && (
+                <div className="h-1.5 overflow-hidden rounded-full bg-ink-800">
+                  <div className={`h-full rounded-full ${pct >= 80 ? "bg-rose" : pct >= 60 ? "bg-amber" : "bg-emerald"}`} style={{ width: `${pct}%` }} />
+                </div>
+              )}
+            </div>
+            {saude?.quality_rating === "RED" && (
+              <p className="text-[11px] text-rose">Qualidade vermelha: pause os disparos. Mais bloqueio/denúncia → a Meta restringe o número.</p>
+            )}
+          </div>
+        );
+      })()}
+
+      {!escaladorManual && !ehMeta && (
         <div className="flex items-center justify-between rounded-xl border border-line bg-ink-850 px-3 py-2.5">
           <span className="text-xs text-mist">Enviados hoje</span>
           <span className="font-mono text-sm font-600 text-chalk tabnums">{num(enviados)}</span>
         </div>
       )}
 
-      {!escaladorManual && !chip.chatwoot_inbox_id && (
+      {!escaladorManual && !ehMeta && !chip.chatwoot_inbox_id && (
         <Link href={`/chips/novo?id=${chip.id}`}
               className="flex items-center gap-2 rounded-lg border border-amber/30 bg-amber/10 px-3 py-2 text-xs text-amber transition-colors hover:bg-amber/15">
           <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
@@ -308,9 +395,11 @@ export function ChipCard({ chip, metrica, donoNome }: { chip: any; metrica?: any
         </div>
       ) : (
         <div className="flex gap-2">
-          <Link href={`/chips/novo?id=${chip.id}`} className="flex-1">
-            <Button variant="outline" size="sm" className="w-full"><QrCode className="h-4 w-4" /> QR Code</Button>
-          </Link>
+          {!ehMeta && (
+            <Link href={`/chips/novo?id=${chip.id}`} className="flex-1">
+              <Button variant="outline" size="sm" className="w-full"><QrCode className="h-4 w-4" /> QR Code</Button>
+            </Link>
+          )}
           {podeAtivar && (
             <Button size="sm" className="flex-1" onClick={() => acao("ativar")} disabled={pending}>
               <Play className="h-4 w-4" /> Ativar
