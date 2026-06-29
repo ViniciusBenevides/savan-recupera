@@ -1,15 +1,19 @@
 # Contexto do Projeto — SAVAN Recupera
 
 > Documento para retomar o contexto em novas sessões com Claude.
-> Última atualização: **INCIDENTE 401 + correções. Após o dono rotacionar a chave do Supabase, a
-> trava A1 (§29) — que comparava o `SUPABASE_SERVICE_ROLE_KEY` cru — passou a barrar o n8n com 401
-> em TODAS as 9 Edge Functions (backend congelado: nada disparava, bot não respondia). Causa real:
-> não era a chave (o JWT legado do n8n ainda passa no `verify_jwt`), e sim a comparação de string,
-> que quebrou com o novo sistema de API keys. Fix: a trava virou checagem do claim `role` do JWT
-> (exige `role=service_role`; barra anon) nas 9 funções — n8n NÃO precisou mudar. Mais: bug do
-> `campanha-registrar` que não gravava a 1ª mensagem em `mensagens` (aba Conversas vazia) corrigido
-> + backfill; campanha pausada por segurança. Diagnóstico: só 2 envios reais (1/chip), 78 conversas
-> eram TESTE. Ver §30.**
+> Última atualização: **§31 — INCIDENTE: chips 1 e 2 RESTRINGIDOS pelo WhatsApp (29/06) + fix do
+> webhook de entrada. Os 2 chips de bot (mesmo aparelho/conta Z-API, `maturidade=novo`) caíram com a
+> tela "Sua conta está restringida" — NÃO por volume (só 3 envios reais em 3 dias, 0 de entrada), e sim
+> pelo perfil de risco (número novo cru + WhatsApp Web não-oficial da Z-API + cold outreach a estranhos
+> + 2 chips no mesmo IP). `fila_envios.status='enviado'` é só o ACEITE da Z-API, não entrega → por isso
+> o celular não mostra msg enviada. Gatilho: campanha RELIGADA em 27/06. Mais: atacado o item "resolver
+> a entrada" — o botão "Revincular Chatwoot" só consertava a SAÍDA e nunca setava o webhook "ao receber"
+> da Z-API; agora chama `garantirWebhookEntrada` (commit `88da551`), webhook reaplicado ao vivo nos 2
+> chips e elo Chatwoot→n8n (webhook id 5) confirmado. Ver §31.**
+> (Anterior: INCIDENTE 401 — após rotacionar a chave do Supabase, a trava A1 (§29, comparação do
+> `SUPABASE_SERVICE_ROLE_KEY` cru) barrou o n8n com 401 em TODAS as 9 Edge Functions; fix: a trava virou
+> checagem do claim `role` do JWT (exige `role=service_role`; barra anon); + bug do `campanha-registrar`
+> que não gravava a 1ª msg em `mensagens` (aba Conversas vazia) + backfill; campanha pausada. Ver §30.)
 > (Anterior: Auditoria de segurança completa (4 camadas) + hardening — 11 achados (1 Crítico/2 Alto/
 > 4 Médio/4 Baixo), 9 corrigidos: migration 024 + guarda A1 nas 9 Edge Functions, `gerar-pix` (preço
 > do servidor) e `webhook-asaas` (token fail-closed) — ver §29.)
@@ -1291,3 +1295,70 @@ recebeu resposta (depende do webhook "ao receber" da Z-API apontar pro Chatwoot,
 
 **Reativar a operação:** confirmar chips OK (não banidos) → "Revincular Chatwoot" p/ fiar a entrada →
 "Enviar teste" e responder no WhatsApp p/ ver o `bot-turno` responder → religar `campanha_ativa`.
+
+---
+
+## 31. Incidente: chips banidos pelo WhatsApp (29/06) + fix do webhook de entrada
+
+O dono relatou: "hoje de manhã meus 2 chips que estavam no mesmo celular (chip 1 e 2) caíram" + print da
+tela do WhatsApp **"Sua conta está restringida no momento"** (timer ~5h19); "o mais estranho é que ao
+abrir o WhatsApp dos 2 chips no celular consta que não mandou nenhuma mensagem". Investigação com dados
+de produção (`wmggqsmqvklxlqwsksjs`).
+
+**Não é falha técnica da Z-API — é bloqueio do WhatsApp.** A tela é uma restrição da conta (bloqueia
+**iniciar conversas novas**). O `chips.status=desconectado` + `saude.error="You are not connected"` é só
+a consequência (a sessão WhatsApp Web da Z-API cai quando o WhatsApp restringe).
+
+**Timeline (29/06, BRT = UTC−3), de `eventos_campanha`/`fila_envios`:**
+- 08:00:21 — campanha rodou; **Chip 2 (id 11) já estava caído** (`chip_status`), não enviou hoje (último
+  envio dele foi 26/06).
+- 08:00:51 — **Chip 1 (id 4)** enviou **1 mensagem real** (devedor 57), sem erro.
+- 08:05:41 — **Chip 1 detectado caído** (~5 min após o único envio → a restrição entrou logo depois).
+- 08:35 — a trava anti-vácuo (§30) reconfirmou os dois caídos e parou de gastar lote.
+- 08:41 — print do dono: restrição ativa, faltando 5h19.
+
+**Não foi spam por volume.** `fila_envios`: 3 `enviado` real · 2.555 `aguardando` · 32 `sem_whatsapp` ·
+43 testes. `chip_metricas_diarias`: 1 contato/chip/dia (chip 4 em 26/06 e 29/06; chip 11 em 26/06) →
+**só 3 envios reais em 3 dias**. `mensagens`: **161 no total, todas de saída, 0 de entrada** (ninguém
+respondeu / nada foi entregue). `conversas`: 81 (78 teste + 3 reais).
+
+**Causas (ordem de peso):** (1) chips **novos e sem aquecimento** (criados 21/06 e 24/06, `maturidade=
+novo`) iniciando conversa com estranhos = perfil nº 1 de ban; (2) **Z-API = protocolo WhatsApp Web não-
+oficial** → flag agressivo p/ número novo em automação; (3) **2 chips no mesmo aparelho/IP/conta Z-API**
+= fingerprint correlacionado (derruba um e o "irmão" — exatamente o observado); (4) sondagem de muitos
+números desconhecidos (`on_whatsapp`); (5) dívidas de ~15 anos = números reciclados → bloqueio/denúncia
+do destinatário. **Gatilho de contexto:** a campanha foi **RELIGADA** (`campanha_ativa=true` desde
+27/06, `modo_simulacao=false`) depois do incidente da §30 que a havia pausado.
+
+**O "não mandou nenhuma msg no celular" — explicado (é a prova do bloqueio):** `fila_envios.status=
+'enviado'` significa que a **Z-API aceitou** o pedido, **não** que o WhatsApp entregou. Numa conta nova
+já restrita, o WhatsApp aceita-e-descarta silenciosamente (sem entrega, sem tique) → a conversa nunca
+materializa → nada aparece no app. A própria tela confirma: bloqueio de **iniciar conversas novas** (=
+exatamente o cold outreach).
+
+**Recomendações (não-código):** pausar a campanha; **não reconectar p/ disparar** (reincidência → ban
+permanente); aquecer de verdade antes (uso humano por dias, foto/nome, rampa lenta, **1 chip por
+aparelho/IP**); resolver a entrada (abaixo); p/ escala real ir p/ **WhatsApp Cloud API oficial** (Z-API
+com chip cru não sobrevive a cobrança fria).
+
+**Fix do item "resolver a entrada" (webhook Z-API → Chatwoot) — APLICADO:**
+- **Gap encontrado:** a rota `api/chips/[id]/chatwoot` ("Revincular Chatwoot") só consertava a **SAÍDA**
+  (`vincularChatwootInbox` + `sincronizarProviderConfig`) e **nunca** chamava `garantirWebhookEntrada` —
+  o botão de recuperação documentado **não setava o webhook "ao receber" da Z-API**. Só
+  `finalizarConexaoChip` (no QR) e "Enviar teste" setavam. Se nenhum pegasse, a entrada ficava órfã →
+  `bot-turno` nunca era invocada (explica as 0 de 161 de entrada).
+- **Fix de código (commit `88da551`, na `main` → deploy Vercel):** a rota passou a chamar
+  `garantirWebhookEntrada` (entrada + saída de uma vez) e retorna `webhook_entrada_ok`/
+  `webhook_entrada_url`/`aviso_entrada`. `tsc --noEmit` limpo.
+- **Fix ao vivo (idempotente, não dispara envio):** webhook de entrada reaplicado na Z-API dos 2 chips
+  (`PUT update-every-webhooks` → `200 {"value":true}`): chip 4 → `…/webhooks/whatsapp/+556282624555`
+  (inbox 4); chip 11 → `…/webhooks/whatsapp/+556282624557` (inbox 5).
+- **Cadeia de entrada verificada:** `phone_number` do inbox = número do chip nos dois (necessário pro
+  fork rotear); **Chatwoot→n8n já OK** (webhook id 5, nível conta, `message_created` → `…/webhook/savan-
+  bot`); n8n W02 → `bot-turno` ACTIVE. A causa da entrada `@lid` segue tratada no `bot-turno` v9+ (ver
+  memória `savan-teste-webhook-zapi-entrada`).
+- **Ressalva:** não dá p/ testar ponta a ponta enquanto os chips estão banidos (nada é entregue); a
+  cadeia fica pronta p/ quando um chip saudável conectar e alguém responder.
+
+**Estado ao fim da sessão:** campanha **ainda ligada** (`campanha_ativa=true`, real, 2.555 na fila) —
+nada dispara com os chips caídos, mas reconectar volta a disparar real (pendência aberta: pausar).
