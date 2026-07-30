@@ -1547,3 +1547,29 @@ e vira uma **etapa que segura o resto da conversa**.
 desligado, extração do marcador, marcador nunca vazando no texto enviado, etapa inventada ignorada,
 maiúsculo/minúsculo); migration 029 aplicada e conferida (10 etapas no modelo, colunas criadas);
 `npm run build` OK (18 páginas); `bot-turno` v15 ACTIVE respondendo 200 com service_role.
+
+### 33.2 — O editor de fluxo virou canvas visual
+
+O dono comparou com a referência e a primeira versão perdia feio: eu tinha feito uma **lista vertical
+de formulários**, enquanto o concorrente usa um **canvas de nós** (vue-flow) — grid pontilhado, blocos
+arrastáveis, arestas com rótulo, minimapa e barra flutuante. Screenshot da referência capturada em
+`referencias/cnpj-biz/raw/screenshots/cnpjbiz-FLUXO-canvas.png` (a tela fica em
+`/appjs/assistant/edit/:id?area=workflow`, sub-aba "Fluxo").
+
+Refeito com **`@xyflow/react` (React Flow)** — o equivalente React do vue-flow que eles usam:
+- `carteiras/[id]/roteiro.tsx` — canvas com nó customizado por etapa (ícone por tipo: início/meio/fim,
+  prévia da instrução, contador de caminhos), handles para **ligar arrastando** (cria o caminho na
+  etapa de origem), **painel lateral** para editar a etapa selecionada, barra flutuante
+  (nova etapa / enquadrar / reorganizar), minimapa e `Background` pontilhado. Tema claro/escuro via
+  `colorMode` ligado ao `useTheme()` que já existia.
+- `carteiras/[id]/roteiro-layout.ts` — lógica pura, testável: `calcularPosicoes` (auto-layout em
+  camadas por BFS, com órfãs na última coluna), `idUnico` (rótulo → identificador, sem colisão),
+  `validar` (id repetido, caminho para etapa inexistente, etapa sem instrução) e `inalcancaveis`.
+
+**O formato salvo não mudou** — continua `{ativo, etapas[{id, objetivo, instrucao, casos[]}]}`, que é o
+que o `bot-turno` lê. As posições viajam em `etapas[].pos`; o bot ignora campos que não conhece, então
+o layout visual não interfere no prompt. "Reorganizar" limpa as posições e o auto-layout reassume.
+
+**Verificado:** 19 testes da lógica de layout/validação passando; `npm run build` OK (18 páginas).
+**Não verificado visualmente por mim:** a renderização do canvas depende de sessão autenticada no
+painel, e eu não tenho credencial do dashboard — o dono precisa abrir a aba e conferir.
