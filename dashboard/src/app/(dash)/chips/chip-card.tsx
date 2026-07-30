@@ -5,7 +5,7 @@ import { Card, Badge, Button, Input, Label } from "@/components/ui/primitives";
 import { MaturidadeField, type MaturidadeValor } from "@/components/MaturidadeField";
 import { TipoChipField, type TipoChip } from "@/components/TipoChipField";
 import { num } from "@/lib/utils";
-import { Play, Pause, QrCode, Smartphone, AlertTriangle, MoreVertical, Pencil, Trash2, X, Eye, EyeOff, Loader2, Cloud, Activity, RotateCw } from "lucide-react";
+import { Play, Pause, QrCode, Smartphone, AlertTriangle, MoreVertical, Pencil, Trash2, X, Eye, EyeOff, Loader2, Cloud, Activity, RotateCw, Gauge, PauseCircle } from "lucide-react";
 import Link from "next/link";
 
 // Semáforo da qualidade do número na Meta (saber se está perto de banir).
@@ -62,7 +62,10 @@ function diaAquecimento(dataAtivacao: string | null): number | null {
   return Math.floor((Date.now() - new Date(dataAtivacao).getTime()) / 86400000) + 1;
 }
 
-export function ChipCard({ chip, metrica, donoNome }: { chip: any; metrica?: any; donoNome?: string | null }) {
+export function ChipCard({ chip, metrica, donoNome, ritmoHora }: {
+  chip: any; metrica?: any; donoNome?: string | null;
+  ritmoHora?: { limite: number | null; usados: number };
+}) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [menu, setMenu] = useState(false);
@@ -361,9 +364,36 @@ export function ChipCard({ chip, metrica, donoNome }: { chip: any; metrica?: any
       })()}
 
       {!escaladorManual && !ehMeta && (
-        <div className="flex items-center justify-between rounded-xl border border-line bg-ink-850 px-3 py-2.5">
-          <span className="text-xs text-mist">Enviados hoje</span>
-          <span className="font-mono text-sm font-600 text-chalk tabnums">{num(enviados)}</span>
+        <div className="flex flex-col gap-2 rounded-xl border border-line bg-ink-850 px-3 py-2.5">
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-mist">Enviados hoje</span>
+            <span className="font-mono text-sm font-600 text-chalk tabnums">{num(enviados)}</span>
+          </div>
+          {/* Orçamento de ritmo por hora (§33): o freio que impede gastar a cota do dia numa rajada */}
+          {ritmoHora?.limite ? (
+            <div className="flex items-center justify-between border-t border-line pt-2">
+              <span className="flex items-center gap-1.5 text-xs text-mist">
+                <Gauge className="h-3.5 w-3.5" /> Ritmo desta hora
+              </span>
+              <span className={`font-mono text-xs font-600 tabnums ${
+                ritmoHora.usados >= ritmoHora.limite ? "text-amber" : "text-chalk"
+              }`}>
+                {num(ritmoHora.usados)} / {num(ritmoHora.limite)}
+              </span>
+            </div>
+          ) : null}
+        </div>
+      )}
+
+      {/* Trava de abordagem: o chip continua respondendo, só não inicia conversa nova */}
+      {chip.abordagem_travada_ate && new Date(chip.abordagem_travada_ate) > new Date() && (
+        <div className="flex items-start gap-2 rounded-lg border border-amber/30 bg-amber/10 px-3 py-2 text-xs text-amber">
+          <PauseCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <span>
+            Abordagem travada até{" "}
+            <b>{new Date(chip.abordagem_travada_ate).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}</b>.
+            O chip continua respondendo quem já respondeu — só não inicia conversa nova.
+          </span>
         </div>
       )}
 

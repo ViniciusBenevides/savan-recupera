@@ -54,12 +54,35 @@ export function diaMes(iso: string): string {
 
 export type StatusDia = "envia" | "fora" | "feriado" | "feriado_extra";
 
+/**
+ * Faixas de envio de um dia da semana. Formato novo (§33): `faixas_por_dia[dow] = [["08:00","12:00"], …]`
+ * — dia ausente ou lista vazia = dia desligado. Sem esse campo, cai no formato antigo (`dias` +
+ * `inicio`/`fim`), então configurações existentes continuam valendo sem migração.
+ * Espelha `faixasDoDia` das Edge Functions — as duas pontas têm de concordar.
+ */
+export function faixasDoDia(janela: any, dow: number): [string, string][] {
+  const mapa = janela?.faixas_por_dia;
+  if (mapa && typeof mapa === "object") {
+    const faixas = mapa[String(dow)];
+    if (!Array.isArray(faixas)) return [];
+    return faixas.filter((f: any) => Array.isArray(f) && f.length === 2 && f[1] > f[0]) as [string, string][];
+  }
+  const dias: number[] = janela?.dias ?? [1, 2, 3, 4, 5];
+  if (!dias.includes(dow)) return [];
+  return [[janela?.inicio ?? "08:00", janela?.fim ?? "20:00"]];
+}
+
+/** Resumo legível das faixas de um dia: "08:00–12:00 · 14:00–18:00" ou "não envia". */
+export function resumoFaixas(janela: any, dow: number): string {
+  const f = faixasDoDia(janela, dow);
+  return f.length ? f.map(([i, fim]) => `${i}–${fim}`).join(" · ") : "não envia";
+}
+
 // Mesma decisão do gate das Edge Functions, mas por data da grade (sem horário).
 export function statusDoDia(iso: string, dow: number, janela: any, feriadosAno: Map<string, string>): StatusDia {
   const extras: string[] = Array.isArray(janela?.feriados_extra) ? janela.feriados_extra : [];
   if (extras.includes(iso)) return "feriado_extra";
   if (janela?.pular_feriados !== false && feriadosAno.has(iso)) return "feriado";
-  const dias: number[] = janela?.dias ?? [1, 2, 3, 4, 5];
-  if (!dias.includes(dow)) return "fora";
+  if (faixasDoDia(janela, dow).length === 0) return "fora";
   return "envia";
 }

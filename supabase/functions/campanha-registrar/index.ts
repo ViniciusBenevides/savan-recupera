@@ -35,6 +35,13 @@ function ehServiceRole(req: Request): boolean {
   } catch { return false; }
 }
 
+// Data e hora no fuso da operação — o orçamento de ritmo por hora (§33) é local, não UTC.
+function dataHoraLocal(tz = "America/Sao_Paulo"): { dia: string; hora: number } {
+  const dia = new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+  const hora = new Date(new Date().toLocaleString("en-US", { timeZone: tz })).getHours();
+  return { dia, hora };
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (!ehServiceRole(req)) return json({ ok: false, erro: "nao_autorizado" }, 401);
@@ -96,6 +103,11 @@ Deno.serve(async (req) => {
     if (!sim) {
       await sb.rpc("fn_inc_chip_metrica", { p_chip: b.chip_id, p_dia: hoje, p_novos: 1, p_msgs: 1, p_resp: 0 });
       await sb.rpc("fn_inc_metrica_dia", { p_dia: hoje, p_campo: "enviados", p_n: 1 });
+      // contador por HORA (§33): alimenta o orçamento de ritmo do campanha-lote e o heatmap.
+      // Usa data/hora LOCAIS (a janela de envio é local); dentro da janela 8h–20h de São Paulo a data
+      // local coincide com a UTC usada acima, então as duas contagens não divergem.
+      const { dia: diaLocal, hora } = dataHoraLocal();
+      await sb.rpc("fn_inc_chip_metrica_hora", { p_chip: b.chip_id, p_dia: diaLocal, p_hora: hora, p_msgs: 1, p_resp: 0 });
     }
     await sb.from("chips").update({ ultimo_envio_em: new Date().toISOString() }).eq("id", b.chip_id);
     await sb.from("eventos_campanha").insert({ tipo: "envio", devedor_id: b.devedor_id, chip_id: b.chip_id, carteira_id: carteiraId, payload: { simulacao: sim } });

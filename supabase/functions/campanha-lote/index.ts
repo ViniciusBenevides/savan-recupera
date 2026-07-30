@@ -134,28 +134,52 @@ function ehFeriadoHoje(janela: any, tz: string): boolean {
   const extras: string[] = Array.isArray(janela?.feriados_extra) ? janela.feriados_extra : [];
   return feriadosNacionais(Number(hoje.slice(0, 4))).has(hoje) || extras.includes(hoje);
 }
-function dentroDaJanela(janela: any): boolean {
-  const tz = janela?.tz ?? "America/Sao_Paulo";
-  const agora = new Date();
-  const partes = new Intl.DateTimeFormat("pt-BR", { timeZone: tz, hour: "2-digit", minute: "2-digit", weekday: "short", hour12: false }).formatToParts(agora);
-  const h = Number(partes.find((p) => p.type === "hour")?.value ?? "0");
-  const m = Number(partes.find((p) => p.type === "minute")?.value ?? "0");
-  const minutosAgora = h * 60 + m;
-  const diaTz = new Date(agora.toLocaleString("en-US", { timeZone: tz }));
-  const dias: number[] = janela?.dias ?? [1, 2, 3, 4, 5]; // padrão: dias úteis (seg–sex)
-  if (!dias.includes(diaTz.getDay())) return false;
-  if (ehFeriadoHoje(janela, tz)) return false;
-  const [hi, mi] = String(janela?.inicio ?? "08:00").split(":").map(Number);
-  const [hf, mf] = String(janela?.fim ?? "20:00").split(":").map(Number);
-  return minutosAgora >= hi * 60 + mi && minutosAgora < hf * 60 + mf;
+const emMinutos = (hhmm: string, padrao: number): number => {
+  const [h, m] = String(hhmm ?? "").split(":").map(Number);
+  return Number.isFinite(h) ? h * 60 + (Number.isFinite(m) ? m : 0) : padrao;
+};
+
+// Faixas de envio do dia (§33). O formato novo é `faixas_por_dia[dow] = [["08:00","12:00"], …]`,
+// que permite excluir o almoço ou encurtar a sexta. Sem ele, cai no formato antigo
+// (`dias` + `inicio`/`fim`), então nenhuma configuração existente precisa ser migrada.
+function faixasDoDia(janela: any, dow: number): [number, number][] {
+  const mapa = janela?.faixas_por_dia;
+  if (mapa && typeof mapa === "object") {
+    const faixas = mapa[String(dow)];
+    if (!Array.isArray(faixas)) return [];                    // dia sem faixa = dia desligado
+    return faixas
+      .filter((f: any) => Array.isArray(f) && f.length === 2)
+      .map((f: any) => [emMinutos(f[0], 0), emMinutos(f[1], 0)] as [number, number])
+      .filter(([ini, fim]) => fim > ini);
+  }
+  const dias: number[] = janela?.dias ?? [1, 2, 3, 4, 5];      // padrão: dias úteis (seg–sex)
+  if (!dias.includes(dow)) return [];
+  return [[emMinutos(janela?.inicio, 8 * 60), emMinutos(janela?.fim, 20 * 60)]];
 }
-function minutosRestantesJanela(janela: any): number {
-  const tz = janela?.tz ?? "America/Sao_Paulo";
+
+function agoraNaTz(tz: string): { minutos: number; dow: number } {
   const partes = new Intl.DateTimeFormat("pt-BR", { timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(new Date());
   const h = Number(partes.find((p) => p.type === "hour")?.value ?? "0");
   const m = Number(partes.find((p) => p.type === "minute")?.value ?? "0");
-  const [hf, mf] = String(janela?.fim ?? "20:00").split(":").map(Number);
-  return Math.max(1, hf * 60 + mf - (h * 60 + m));
+  const dow = new Date(new Date().toLocaleString("en-US", { timeZone: tz })).getDay();
+  return { minutos: h * 60 + m, dow };
+}
+
+function dentroDaJanela(janela: any): boolean {
+  const tz = janela?.tz ?? "America/Sao_Paulo";
+  if (ehFeriadoHoje(janela, tz)) return false;
+  const { minutos, dow } = agoraNaTz(tz);
+  return faixasDoDia(janela, dow).some(([ini, fim]) => minutos >= ini && minutos < fim);
+}
+
+// Minutos que ainda restam de janela HOJE (soma das faixas ainda por vir, não só a atual) — é o que
+// dimensiona a demanda do lote para o volume do dia ser diluído em vez de sair em rajada.
+function minutosRestantesJanela(janela: any): number {
+  const tz = janela?.tz ?? "America/Sao_Paulo";
+  const { minutos, dow } = agoraNaTz(tz);
+  const restante = faixasDoDia(janela, dow)
+    .reduce((soma, [ini, fim]) => soma + Math.max(0, fim - Math.max(ini, minutos)), 0);
+  return Math.max(1, restante);
 }
 
 Deno.serve(async (req) => {
@@ -233,14 +257,34 @@ Deno.serve(async (req) => {
     const usados = mDia?.novos_contatos ?? 0;
     const restante = Math.max(0, (limite ?? 0) - usados);
     if (restante <= 0) continue;
+
+    // ORÇAMENTO POR HORA (§33) — o teto diário sozinho não impede a RAJADA: um chip podia gastar a
+    // cota inteira do dia em minutos, que é o padrão que o WhatsApp lê como robô (§31). Aqui entra o
+    // segundo freio: quantas mensagens este chip ainda pode mandar NESTA hora.
+    const tzChip = cfg.janela_envio?.tz ?? "America/Sao_Paulo";
+    const diaLocal = new Intl.DateTimeFormat("en-CA", { timeZone: tzChip, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+    const horaAtual = new Date(new Date().toLocaleString("en-US", { timeZone: tzChip })).getHours();
+    const { data: limHora } = await sb.rpc("fn_limite_chip_hora", { p_chip_id: chip.id });
+    const { data: mHora } = await sb.from("chip_metricas_horarias").select("msgs")
+      .eq("chip_id", chip.id).eq("dia", diaLocal).eq("hora", horaAtual).maybeSingle();
+    const restanteHora = Math.max(0, (limHora ?? 0) - (mHora?.msgs ?? 0));
+    if (restanteHora <= 0) { pulados.teto_hora = (pulados.teto_hora ?? 0) + 1; continue; }
+
     // O W01 roda a cada 5 min; o lote cobre esse horizonte e é espaçado item a item pela espera
     // aleatória do n8n (campo delay_proximo). Dimensiono pelo intervalo MÁX p/ o ciclo não estourar
     // os 5 min (no pior caso, lote × intMax ≈ horizonte).
     const HORIZONTE_MIN = 5;
     const porHorizonte = Math.max(1, Math.floor((HORIZONTE_MIN * 60) / intMax));
     const demanda = Math.ceil((restante / restanteJanela) * HORIZONTE_MIN * 1.2);
-    const lote = Math.min(porHorizonte, Math.max(1, demanda));
+    // o teto da hora entra como mais um limitador do lote (nunca o AUMENTA)
+    const lote = Math.min(porHorizonte, Math.max(1, demanda), restanteHora);
     if (lote <= 0) continue;
+
+    // Piso do intervalo derivado do ritmo: com um teto de N msgs/hora, dois envios não podem sair
+    // mais juntos que 3600/N segundos. O sorteio anti-ban (§28) continua, só que a partir desse piso.
+    const pisoRitmo = (limHora ?? 0) > 0 ? Math.floor(3600 / (limHora as number)) : 0;
+    const intMinEfetivo = Math.max(intMin, pisoRitmo);
+    const intMaxEfetivo = Math.max(intMax, intMinEfetivo);
 
     const { data: selec } = await sb.rpc("fn_selecionar_lote", { p_chip_id: chip.id, p_n: lote });
 
@@ -261,7 +305,7 @@ Deno.serve(async (req) => {
 
       // "digitando" curto e proporcional ao texto (parece humano); espera até o próximo envio = sorteio anti-ban
       const delayTyping = Math.min(8, 3 + Math.floor(conteudo.length / 60) + Math.floor(Math.random() * 3));
-      const delayProximo = intMin + Math.floor(Math.random() * (intMax - intMin + 1));
+      const delayProximo = intMinEfetivo + Math.floor(Math.random() * (intMaxEfetivo - intMinEfetivo + 1));
 
       itens.push({
         fila_id: item.id, carteira_id: item.carteira_id, chip_id: chip.id, inbox_id: chip.chatwoot_inbox_id,

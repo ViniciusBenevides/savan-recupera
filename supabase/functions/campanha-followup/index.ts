@@ -58,15 +58,32 @@ function ehFeriadoHoje(j: any, tz: string): boolean {
   const extras: string[] = Array.isArray(j?.feriados_extra) ? j.feriados_extra : [];
   return feriadosNacionais(Number(hoje.slice(0, 4))).has(hoje) || extras.includes(hoje);
 }
+const emMinutos = (hhmm: string, padrao: number): number => {
+  const [h, m] = String(hhmm ?? "").split(":").map(Number);
+  return Number.isFinite(h) ? h * 60 + (Number.isFinite(m) ? m : 0) : padrao;
+};
+// Faixas do dia (§33): formato novo `faixas_por_dia[dow]`, com fallback no antigo (dias + inicio/fim).
+// Espelha campanha-lote — os dois precisam concordar sobre quando a janela está aberta.
+function faixasDoDia(j: any, dow: number): [number, number][] {
+  const mapa = j?.faixas_por_dia;
+  if (mapa && typeof mapa === "object") {
+    const faixas = mapa[String(dow)];
+    if (!Array.isArray(faixas)) return [];
+    return faixas
+      .filter((f: any) => Array.isArray(f) && f.length === 2)
+      .map((f: any) => [emMinutos(f[0], 0), emMinutos(f[1], 0)] as [number, number])
+      .filter(([ini, fim]) => fim > ini);
+  }
+  if (!(j?.dias ?? [1, 2, 3, 4, 5]).includes(dow)) return [];
+  return [[emMinutos(j?.inicio, 8 * 60), emMinutos(j?.fim, 20 * 60)]];
+}
 function dentroJanela(j: any): boolean {
   const tz = j?.tz ?? "America/Sao_Paulo";
+  if (ehFeriadoHoje(j, tz)) return false;
   const pp = new Intl.DateTimeFormat("pt-BR", { timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(new Date());
   const h = Number(pp.find((p) => p.type === "hour")?.value ?? "0"); const m = Number(pp.find((p) => p.type === "minute")?.value ?? "0");
   const min = h * 60 + m; const dow = new Date(new Date().toLocaleString("en-US", { timeZone: tz })).getDay();
-  if (!(j?.dias ?? [1,2,3,4,5]).includes(dow)) return false; // padrão: dias úteis (seg–sex)
-  if (ehFeriadoHoje(j, tz)) return false;
-  const [hi, mi] = String(j?.inicio ?? "08:00").split(":").map(Number); const [hf, mf] = String(j?.fim ?? "20:00").split(":").map(Number);
-  return min >= hi*60+mi && min < hf*60+mf;
+  return faixasDoDia(j, dow).some(([ini, fim]) => min >= ini && min < fim);
 }
 
 Deno.serve(async (req) => {

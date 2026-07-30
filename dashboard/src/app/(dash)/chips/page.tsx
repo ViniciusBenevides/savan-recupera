@@ -12,13 +12,23 @@ export default async function ChipsPage() {
   const sb = await supabaseServer();
   const sessao = await getSessao();
   const hoje = new Date().toISOString().slice(0, 10);
-  const [{ data: chips }, { data: metr }, { data: cfgTeste }] = await Promise.all([
+  // hora local da operação — o orçamento de ritmo (§33) é por hora local, não UTC
+  const tzOp = "America/Sao_Paulo";
+  const diaLocal = new Intl.DateTimeFormat("en-CA", { timeZone: tzOp, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+  const horaLocal = new Date(new Date().toLocaleString("en-US", { timeZone: tzOp })).getHours();
+
+  const [{ data: chips }, { data: metr }, { data: cfgTeste }, { data: metrHora }, { data: cfgRitmo }] = await Promise.all([
     sb.from("chips").select("*").order("id"),
     sb.from("chip_metricas_diarias").select("chip_id, novos_contatos, msgs_enviadas").eq("dia", hoje),
     sb.from("configuracoes").select("valor").eq("chave", "numero_teste").is("cobrador_id", null).maybeSingle(),
+    sb.from("chip_metricas_horarias").select("chip_id, msgs").eq("dia", diaLocal).eq("hora", horaLocal),
+    sb.from("configuracoes").select("valor").eq("chave", "ritmo").is("cobrador_id", null).maybeSingle(),
   ]);
   const porChip: Record<number, any> = {};
   for (const m of metr ?? []) porChip[m.chip_id] = m;
+  const usadosHoraPorChip: Record<number, number> = {};
+  for (const m of metrHora ?? []) usadosHoraPorChip[m.chip_id] = m.msgs ?? 0;
+  const ritmo: Record<string, any> = (cfgRitmo?.valor as any) ?? {};
 
   // admin vê de quem é cada chip (separação): mapa cobrador_id -> nome
   const donoPorChip: Record<number, string | null> = {};
@@ -66,7 +76,17 @@ export default async function ChipsPage() {
         <>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {(chips ?? []).map((c) => (
-              <ChipCard key={c.id} chip={c} metrica={porChip[c.id]} donoNome={donoPorChip[c.id]} />
+              <ChipCard
+                key={c.id}
+                chip={c}
+                metrica={porChip[c.id]}
+                donoNome={donoPorChip[c.id]}
+                ritmoHora={{
+                  // mesma precedência de fn_limite_chip_hora: override manual > curva por maturidade
+                  limite: c.limite_hora_override ?? ritmo?.[c.maturidade ?? "novo"]?.msgs_hora ?? null,
+                  usados: usadosHoraPorChip[c.id] ?? 0,
+                }}
+              />
             ))}
           </div>
           <div className="mt-4">

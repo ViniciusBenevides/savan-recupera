@@ -183,7 +183,18 @@ async function infoRemetente(cfg: any, seg: Record<string, string>, convId: numb
   } catch { return null; }
 }
 
-function montarSystemPrompt(cfg: any, carteira: any, prop: any): string {
+// Base de conhecimento (§33): só entram entradas APROVADAS e ATIVAS, do escopo da carteira ou globais.
+// O gate de aprovação é o que impede um texto novo chegar ao devedor sem revisão humana — exigência
+// do contexto jurídico da §1.
+async function carregarConhecimento(sb: SupabaseClient, carteiraId: number | null): Promise<string[]> {
+  let q = sb.from("bot_conhecimento").select("pergunta, resposta, carteira_id")
+    .eq("aprovado", true).eq("ativo", true);
+  q = carteiraId ? q.or(`carteira_id.is.null,carteira_id.eq.${carteiraId}`) : q.is("carteira_id", null);
+  const { data } = await q.limit(60);
+  return (data ?? []).map((e) => `P: ${e.pergunta}\nR: ${e.resposta}`);
+}
+
+function montarSystemPrompt(cfg: any, carteira: any, prop: any, conhecimento: string[] = []): string {
   const nomeBot = cfg.ia?.nome_bot ?? "Ana";
   const primeiroNome = prop?.primeiro_nome ?? "a pessoa";
   const interp = (t: unknown) =>
@@ -205,10 +216,17 @@ function montarSystemPrompt(cfg: any, carteira: any, prop: any): string {
   regras.push(`Desconto extra: no máximo ${maxRodadas} vez(es), e somente após recusa explícita da primeira proposta. Use a tool desconto_extra. Nunca ofereça abaixo do valor mínimo.`);
   if (g.regras_extras) regras.push(String(g.regras_extras));
   const tom = g.tom || "humano, caloroso, brasileiro, frases curtas, no máximo 2 perguntas por vez e 1 emoji por mensagem";
+  // O conhecimento vem DEPOIS das regras: é insumo de conteúdo, nunca licença para furá-las.
+  const blocoConhecimento = conhecimento.length
+    ? ["", "CONHECIMENTO DO NEGÓCIO (respostas já aprovadas — use quando a dúvida for essa; se não cobrir, " +
+       "responda pelas regras acima e nunca invente):", ...conhecimento.map((c) => `- ${interp(c)}`)]
+    : [];
+
   return [
     interp(persona), interp(contexto), "",
     "REGRAS INEGOCIÁVEIS (violar qualquer uma é falha grave):",
-    ...regras.map((r, i) => `${i + 1}. ${interp(r)}`), "",
+    ...regras.map((r, i) => `${i + 1}. ${interp(r)}`),
+    ...blocoConhecimento, "",
     "FLUXO IDEAL: confirmar identidade -> contextualizar -> consultar_divida -> apresentar proposta (valor, desconto, validade) -> tratar objeções -> gerar_pix -> orientar pagamento -> avisar que após o pagamento envia o termo de quitação.", "",
     `ESTILO: ${interp(tom)}. Não soe robótica.`,
   ].join("\n");
@@ -274,14 +292,26 @@ Deno.serve(async (req) => {
   const convIds = (convsDev ?? []).map((c) => c.id);
   const { data: histRaw } = await sb.from("mensagens").select("origem, direcao, conteudo").in("conversa_id", convIds.length ? convIds : [conv.id]).order("criado_em", { ascending: false }).limit(20);
   const hist = (histRaw ?? []).reverse();
-  const messages: any[] = [{ role: "system", content: montarSystemPrompt(cfg, carteira, prop) }];
+  const conhecimento = await carregarConhecimento(sb, carteiraId ?? null);
+  const messages: any[] = [{ role: "system", content: montarSystemPrompt(cfg, carteira, prop, conhecimento) }];
   for (const m of hist) messages.push({ role: m.direcao === "entrada" ? "user" : "assistant", content: m.conteudo ?? "" });
   messages.push({ role: "user", content: b.mensagem ?? "" });
 
   await sb.from("mensagens").insert({ conversa_id: conv.id, direcao: "entrada", origem: "devedor", conteudo: b.mensagem, simulacao });
   await sb.from("conversas").update({ estado: "bot_ativo", ultima_msg_em: new Date().toISOString(), ultima_msg_de: "devedor", proximo_followup_em: null }).eq("id", conv.id);
   await sb.from("eventos_campanha").insert({ tipo: "resposta", devedor_id: conv.devedor_id, carteira_id: carteiraId, payload: { simulacao } });
-  if (!simulacao) await sb.rpc("fn_inc_metrica_dia", { p_dia: new Date().toISOString().slice(0, 10), p_campo: "respostas", p_n: 1 });
+  if (!simulacao) {
+    await sb.rpc("fn_inc_metrica_dia", { p_dia: new Date().toISOString().slice(0, 10), p_campo: "respostas", p_n: 1 });
+    // Resposta também é creditada AO CHIP (§33): é o que permite medir taxa de resposta por chip e o
+    // heatmap hora × dia. Antes só existia o total global, que não responde "esse chip está queimado?".
+    if (conv.chip_id) {
+      const tz = "America/Sao_Paulo";
+      const diaLocal = new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+      const horaLocal = new Date(new Date().toLocaleString("en-US", { timeZone: tz })).getHours();
+      await sb.rpc("fn_inc_chip_metrica", { p_chip: conv.chip_id, p_dia: new Date().toISOString().slice(0, 10), p_novos: 0, p_msgs: 0, p_resp: 1 });
+      await sb.rpc("fn_inc_chip_metrica_hora", { p_chip: conv.chip_id, p_dia: diaLocal, p_hora: horaLocal, p_msgs: 0, p_resp: 1 });
+    }
+  }
 
   const apiKey = seg.OPENAI_API_KEY;
   if (!apiKey) return json({ ok: false, erro: "openai_key_ausente" }, 500);

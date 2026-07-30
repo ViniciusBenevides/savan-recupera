@@ -1,7 +1,15 @@
 # Contexto do Projeto — SAVAN Recupera
 
 > Documento para retomar o contexto em novas sessões com Claude.
-> Última atualização: **§32 — CONECTOR WhatsApp Cloud API (Meta oficial) pelo painel: cadastro de número
+> Última atualização: **§33 — RITMO SEGURO POR HORA + janela por dia + análise de resposta + base de
+> conhecimento. Vindo do estudo de uma plataforma concorrente: o freio que faltava era o teto por
+> HORA (só havia teto por dia + intervalo entre mensagens). Migrations 026/027/028; `campanha-lote`
+> v10 (gate `teto_hora` + piso do delay pelo ritmo + faixas por dia), `campanha-registrar` v9,
+> `chips-monitor` v6 (**RED trava a abordagem 72h**), `campanha-followup` v7, `bot-turno` v14
+> (conhecimento aprovado no prompt + resposta creditada ao chip). Front: assessor "isso é seguro?",
+> card Fila de hoje, heatmap hora×dia, desempenho por modelo e tela `/conhecimento`. ⚠️ Produção
+> divergia do doc: intervalo já estava em 1000–2000s e o aquecimento todo em 30/dia. Ver §33.**
+> (Anterior: **§32 — CONECTOR WhatsApp Cloud API (Meta oficial) pelo painel: cadastro de número
 > oficial por "colar credenciais" (sem QR), **semáforo de qualidade do número** (GREEN/YELLOW/RED) + tier
 > de limite no card e via `chips-monitor` (deployado v5), tela **Templates Meta** (criar/submeter/status de
 > aprovação), **calculadora de custos** Z-API×Meta, multi-número. Migration 025 aplicada (RLS service_role
@@ -1432,3 +1440,73 @@ mapear `meta_abordagem_template` por cobrador + o caminho de envio do template n
 `template_params` ou Graph direto). O gate já está pronto; falta o template existir e o último elo do
 envio. **Testável hoje:** conectar número → ver qualidade → criar/submeter template → **receber** msg no
 número oficial (entra no Chatwoot → bot-turno responde na janela de 24h). Disparo frio só após template aprovado.
+
+---
+
+## 33. Ritmo seguro, janela por dia, análise de resposta e base de conhecimento
+
+Origem: estudo de uma plataforma concorrente de prospecção por WhatsApp (raspagem da conta do dono,
+material bruto em `referencias/cnpj-biz/`, fora do repo). O achado que motivou tudo: **o freio que
+faltava era o ritmo por HORA**. O SAVAN só tinha teto por dia (`fn_limite_chip`) e intervalo sorteado
+entre mensagens — nada impedia um chip queimar a cota do dia numa rajada curta, que é o perfil que o
+WhatsApp lê como robô (a causa provável da §31). A referência de mercado alerta acima de **20–30
+msg/h** e opera a 5,5–10 msg/h; o **default do código** do SAVAN (30–90s) equivale a 40–120 msg/h.
+
+⚠️ **Estado de produção encontrado (divergia do documentado):** o dono já havia apertado tudo à mão —
+`intervalo_min/max_segundos = 1000/2000` (≈16–33 min) e a curva `aquecimento` **inteira em 30/dia**
+(não é mais 30→100→250→400→500). Por isso os defaults do código **não** foram alterados: o que entrou
+é a rede de segurança que faltava, para o ritmo não voltar a 120/h se alguém salvar a tela com valores
+baixos. `campanha_ativa=true` com `modo_simulacao=false` e 2.555 devedores reais na fila — hoje nada
+sai porque nenhum chip está `ativo`/`aquecendo`, mas **no instante em que um chip conectar, dispara
+para valer**. Decisão do dono.
+
+**Migrations aplicadas (via Management API com o token pessoal — sem MCP, a pedido do dono):**
+- **`026_ritmo_seguro.sql`** — `chips.limite_hora_override`, `chips.abordagem_travada_ate`, tabela
+  **`chip_metricas_horarias`** (chip × dia × hora: msgs e respostas), `fn_inc_chip_metrica_hora`,
+  **`fn_limite_chip_hora`** (override → curva por maturidade → teto do dia diluído pelas horas da
+  janela) e `fn_selecionar_lote` ignorando chip com abordagem travada. Seed `ritmo` conservador:
+  `{"novo":{"msgs_hora":8},"aquecido":{"msgs_hora":25},"pausar_em_red":true,"trava_red_horas":72}`.
+- **`027_analise_resposta.sql`** — views `v_resposta_por_hora` (heatmap) e `v_resposta_por_template`
+  (enviadas/responderam/pagaram), ambas `security_invoker` para herdar o RLS.
+- **`028_bot_conhecimento.sql`** — tabela `bot_conhecimento` com escopo por carteira/cobrador, gate
+  `aprovado` e escrita só por service_role.
+
+⚠️ As migrations **005–007 não estão no repo** (vivem só no banco). Por isso nada foi feito com
+`create or replace` nelas — as funções novas são adicionais (`fn_inc_chip_metrica_hora`).
+
+**Edge Functions (deployadas):**
+- **`campanha-lote` v10** — gate `pulados.teto_hora`; o lote passa a ser limitado também pelo restante
+  da hora; **piso do `delay_proximo` derivado do ritmo** (`3600/limite_hora`), com o sorteio da §28 por
+  cima; e a janela agora entende **faixas por dia**.
+- **`campanha-registrar` v9** — incrementa `chip_metricas_horarias` (guardado por `!simulacao`).
+- **`chips-monitor` v6** — qualidade Meta **RED agora trava a abordagem** por 72h (config
+  `ritmo.pausar_em_red`) em vez de só emitir alerta. O chip continua respondendo.
+- **`campanha-followup` v7** — mesma janela com faixas por dia.
+- **`bot-turno` v14** — injeta o bloco **"CONHECIMENTO DO NEGÓCIO"** (só entradas `aprovado`+`ativo`,
+  do escopo da carteira ou globais) **depois** das regras inegociáveis; e credita a resposta ao chip
+  (`chip_metricas_diarias` + `chip_metricas_horarias`), que é o que alimenta o heatmap.
+
+**Front (`dashboard/`, build OK):**
+- `lib/ritmo.ts` — `avaliarRitmo()` (4 veredictos: volume por hora alto, intervalo curto, chip novo com
+  volume alto, configuração segura) + `ritmoPorIntervalo`/`minutosAteEsgotar`.
+- **Campanha**: veredicto de segurança abaixo do intervalo, com o ritmo estimado por hora; modo
+  **"horários diferentes por dia"** (faixas múltiplas por dia da semana, dá para pular o almoço);
+  card **`FilaHoje`** (pendentes, X de Y do dia, restantes, conexões, ritmo, quando a cota acaba e até
+  que horas a janela anda).
+- **Chips**: "Ritmo desta hora X/Y" no card e aviso de **abordagem travada**.
+- **Relatórios**: `HeatmapResposta` (dia × hora) + tabela de desempenho por modelo de mensagem.
+- **Base de conhecimento** (`/conhecimento` + `api/conhecimento`, item na Sidebar): CRUD com
+  aprovação; **editar o texto derruba a aprovação** e o bot para de usar até nova revisão.
+
+**Formato da janela (retrocompatível):** `janela_envio.faixas_por_dia = {"1":[["08:00","12:00"],
+["14:00","18:00"]], …}`. Sem esse campo vale o formato antigo (`dias` + `inicio`/`fim`) — **nenhuma
+config existente precisou migrar**. Os dois formatos não coexistem: salvar em "horário único" remove
+o `faixas_por_dia`. `feriados_extra` e o calendário clicável da §27 seguem como estavam.
+
+**Verificado:** migrations aplicadas e conferidas por SQL; `fn_selecionar_lote` devolve **0 com a trava
+e 3 sem** (teste em transação abortada — fila intacta em 2.555); orçamento por hora ponta a ponta
+(incrementos 5+3=8 contra `fn_limite_chip_hora=8` → restante 0, gate fecha); view do heatmap enxerga o
+envio; conhecimento não-aprovado fica fora do prompt; 12 testes da janela nova passando (formato antigo
+inalterado); `npm run build` OK; as 4 funções respondem 200 com service_role e 401 com anon.
+**Pendente de observação real:** o skip `teto_hora` só aparece no log quando houver **chip conectado**
+(o gate de conexão da §30 roda antes e hoje pula todos os chips).

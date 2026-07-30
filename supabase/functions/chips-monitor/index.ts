@@ -32,6 +32,10 @@ Deno.serve(async (req) => {
   const seg = await carregarSegredos(sb);
   const clientToken = seg.ZAPI_CLIENT_TOKEN ?? "";
 
+  // config "ritmo" (§33): controla a auto-trava de abordagem quando a qualidade Meta cai para RED
+  const { data: cfgRitmo } = await sb.from("configuracoes").select("valor").eq("chave", "ritmo").is("cobrador_id", null).maybeSingle();
+  const ritmoCfg: Record<string, any> = cfgRitmo?.valor ?? {};
+
   const { data: chips } = await sb.from("chips").select("id, nome, status, conector").not("status", "in", "(cadastrado,banido)");
   const resultados: any[] = [];
   const hoje = new Date().toISOString().slice(0, 10);
@@ -57,6 +61,7 @@ Deno.serve(async (req) => {
 
       // número RESTRINGIDO pela Meta (status != CONNECTED) = equivalente ao "chip caiu": pausa + failover.
       let novoStatus = chip.status;
+      let travarAte: string | null = null;
       const restrito = ok && saude?.number_status && saude.number_status !== "CONNECTED";
       if (restrito && ["ativo", "aquecendo", "conectado"].includes(chip.status)) {
         novoStatus = "desconectado";
@@ -72,8 +77,15 @@ Deno.serve(async (req) => {
         // (uma vez por dia, para não poluir) para o painel/feed avisar o gestor.
         const { data: jaHoje } = await sb.from("eventos_campanha").select("id").eq("tipo", "chip_qualidade").eq("chip_id", chip.id).gte("criado_em", `${hoje}T00:00:00Z`).maybeSingle();
         if (!jaHoje) await sb.from("eventos_campanha").insert({ tipo: "chip_qualidade", chip_id: chip.id, payload: { quality: "RED", nome: chip.nome } });
+        // AUTO-TRAVA (§33): avisar não bastava — quem está em RED e continua abordando estranhos vai
+        // para restrição. Trava só a ABORDAGEM (fn_selecionar_lote ignora o chip); responder quem já
+        // respondeu segue valendo, porque conversa em andamento não é o que derruba o número.
+        if (ritmoCfg.pausar_em_red !== false) {
+          const horas = Number(ritmoCfg.trava_red_horas ?? 72);
+          travarAte = new Date(Date.now() + horas * 3600_000).toISOString();
+        }
       }
-      await sb.from("chips").update({ saude, status: novoStatus }).eq("id", chip.id);
+      await sb.from("chips").update({ saude, status: novoStatus, ...(travarAte ? { abordagem_travada_ate: travarAte } : {}) }).eq("id", chip.id);
       resultados.push({ chip: chip.id, conector: "meta_cloud", quality: saude?.quality_rating, status: novoStatus });
       continue;
     }
