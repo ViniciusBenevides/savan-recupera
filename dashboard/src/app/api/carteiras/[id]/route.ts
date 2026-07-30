@@ -4,7 +4,7 @@ import { exigirCobrador, podeEditarCarteira, erroDono } from "@/lib/auth";
 
 const STATUS_VALIDOS = ["importando", "ativa", "pausada", "arquivada"];
 // campos que o painel pode atualizar (credor_id liga o usuário-credor dono da carteira)
-const CAMPOS = ["nome", "credor", "credor_id", "descricao", "status", "prompt_persona", "contexto_negocio", "guardrails", "config_override"];
+const CAMPOS = ["nome", "credor", "credor_id", "descricao", "status", "prompt_persona", "contexto_negocio", "guardrails", "config_override", "roteiro"];
 
 // PATCH: atualiza status / overrides de prompt e config da carteira (admin ou cobrador dono)
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {

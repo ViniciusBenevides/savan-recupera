@@ -27,7 +27,7 @@ export default async function CarteiraPage({ params, searchParams }: { params: P
   const padrao: Record<string, any> = {};
   if (podeEditar) {
     const { data: cfgRows } = await sb.from("configuracoes").select("chave, valor")
-      .in("chave", ["bot_persona", "bot_contexto", "bot_guardrails", "faixas_desconto", "validade_proposta_dias", "ia", "asaas"])
+      .in("chave", ["bot_persona", "bot_contexto", "bot_guardrails", "faixas_desconto", "validade_proposta_dias", "ia", "asaas", "roteiro_modelo"])
       .is("cobrador_id", null);
     for (const r of cfgRows ?? []) padrao[r.chave] = r.valor;
   }

@@ -51,7 +51,7 @@ export function NovoChipFlow() {
   const [instance, setInstance] = useState("");
   const [token, setToken] = useState("");
   const [clientToken, setClientToken] = useState("");
-  const [maturidade, setMaturidade] = useState<MaturidadeValor>({ maturidade: "novo", limite_dia_override: null });
+  const [maturidade, setMaturidade] = useState<MaturidadeValor>({ maturidade: "novo", limite_dia_override: null, limite_hora_override: null });
   const [tipo, setTipo] = useState<TipoChip>("fisico");
   const [conector, setConector] = useState<Conector>("zapi");
   // credenciais Meta Cloud (conector oficial)
@@ -92,10 +92,12 @@ export function NovoChipFlow() {
             nome, papel: "bot", conector: "meta_cloud",
             meta_phone_number_id: metaPhone, meta_waba_id: metaWaba, meta_token: metaToken, meta_app_secret: metaAppSecret,
             maturidade: maturidade.maturidade, limite_dia_override: maturidade.limite_dia_override,
+            limite_hora_override: maturidade.limite_hora_override,
           }
         : {
             nome, instance_id: instance, token, client_token: clientToken, tipo, papel: "bot",
             maturidade: maturidade.maturidade, limite_dia_override: maturidade.limite_dia_override,
+            limite_hora_override: maturidade.limite_hora_override,
           };
     const r = await fetch("/api/chips", {
       method: "POST", headers: { "Content-Type": "application/json" },

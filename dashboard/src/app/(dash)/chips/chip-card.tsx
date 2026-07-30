@@ -77,8 +77,8 @@ export function ChipCard({ chip, metrica, donoNome, ritmoHora }: {
   const [eInstance, setEInstance] = useState("");
   const [eToken, setEToken] = useState("");
   const [eClientToken, setEClientToken] = useState("");
-  const [eMaturidade, setEMaturidade] = useState<MaturidadeValor>({ maturidade: "novo", limite_dia_override: null });
-  const [origMat, setOrigMat] = useState<MaturidadeValor>({ maturidade: "novo", limite_dia_override: null });
+  const [eMaturidade, setEMaturidade] = useState<MaturidadeValor>({ maturidade: "novo", limite_dia_override: null, limite_hora_override: null });
+  const [origMat, setOrigMat] = useState<MaturidadeValor>({ maturidade: "novo", limite_dia_override: null, limite_hora_override: null });
   const [ePapel, setEPapel] = useState<string>("bot");
   const [eAgente, setEAgente] = useState<string>("");
   const [eNumero, setENumero] = useState<string>("");
@@ -136,7 +136,7 @@ export function ChipCard({ chip, metrica, donoNome, ritmoHora }: {
         setEToken(d.token ?? "");
         setEClientToken(d.client_token ?? "");
         setOrig({ instance: d.instance_id ?? "", token: d.token ?? "", clientToken: d.client_token ?? "" });
-        const mat: MaturidadeValor = { maturidade: d.maturidade ?? "novo", limite_dia_override: d.limite_dia_override ?? null };
+        const mat: MaturidadeValor = { maturidade: d.maturidade ?? "novo", limite_dia_override: d.limite_dia_override ?? null, limite_hora_override: d.limite_hora_override ?? null };
         setEMaturidade(mat); setOrigMat(mat);
         setEPapel(d.papel ?? "bot"); setEAgente(d.agente_nome ?? ""); setENumero(d.numero_e164 ?? "");
         setOrigPapel({ papel: d.papel ?? "bot", agente: d.agente_nome ?? "", numero: d.numero_e164 ?? "" });
@@ -156,6 +156,9 @@ export function ChipCard({ chip, metrica, donoNome, ritmoHora }: {
     if (eToken.trim() && eToken.trim() !== orig.token) body.token = eToken.trim();
     if (eClientToken.trim() && eClientToken.trim() !== orig.clientToken) body.client_token = eClientToken.trim();
     if (eMaturidade.maturidade !== origMat.maturidade) body.maturidade = eMaturidade.maturidade;
+    if (eMaturidade.limite_hora_override !== origMat.limite_hora_override) {
+      body.limite_hora_override = eMaturidade.limite_hora_override;
+    }
     if (eMaturidade.limite_dia_override !== origMat.limite_dia_override) {
       body.limite_dia_override = eMaturidade.limite_dia_override;
     }

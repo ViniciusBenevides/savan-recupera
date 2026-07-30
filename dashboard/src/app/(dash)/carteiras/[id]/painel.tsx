@@ -13,10 +13,12 @@ import {
   Play, Pause, Archive, Trash2, Save, CheckCircle2, Loader2, Upload, Users, FileSpreadsheet, AlertTriangle,
   CreditCard, Headset,
 } from "lucide-react";
+import { AbaRoteiro } from "./roteiro";
 
 const TABS = [
   { k: "status", t: "Status & envios" },
   { k: "prompt", t: "Prompt do robô" },
+  { k: "roteiro", t: "Fluxo do robô" },
   { k: "descontos", t: "Descontos" },
   { k: "asaas", t: "Asaas & cobrador" },
   { k: "historico", t: "Importações" },
@@ -40,6 +42,7 @@ export function CarteiraPainel({ carteira, importacoes, padrao, tabInicial, pode
       </div>
       {tab === "status" && <AbaStatus carteira={carteira} podeEditar={podeEditar} />}
       {tab === "prompt" && podeEditar && <AbaPrompt carteira={carteira} padrao={padrao} />}
+      {tab === "roteiro" && podeEditar && <AbaRoteiroLigado carteira={carteira} padrao={padrao} />}
       {tab === "descontos" && podeEditar && <AbaDescontos carteira={carteira} padrao={padrao} />}
       {tab === "asaas" && podeEditar && <AbaAsaas carteira={carteira} padrao={padrao} />}
       {tab === "historico" && <AbaHistorico carteira={carteira} importacoes={importacoes} podeEditar={podeEditar} />}
@@ -611,4 +614,10 @@ function StatusBadge({ status }: { status: string }) {
   };
   const s = map[status] ?? map.pausada;
   return <div className="mt-1"><Badge tone={s.tone}>{s.label}</Badge></div>;
+}
+
+/* ---------- Fluxo do robô: liga o editor ao PATCH da carteira ---------- */
+function AbaRoteiroLigado({ carteira, padrao }: { carteira: any; padrao: Record<string, any> }) {
+  const { patch } = useSalvar(carteira.id);
+  return <AbaRoteiro carteira={carteira} padrao={padrao} salvar={patch} />;
 }

@@ -14,7 +14,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
   const admin = supabaseAdmin();
   const [{ data: chip }, { data: cred }, { data: credMeta }] = await Promise.all([
-    admin.from("chips").select("nome, maturidade, aquecimento_perfil, limite_dia_override, papel, agente_nome, tipo, numero_e164, chatwoot_inbox_id, conector, saude").eq("id", Number(id)).maybeSingle(),
+    admin.from("chips").select("nome, maturidade, aquecimento_perfil, limite_dia_override, limite_hora_override, papel, agente_nome, tipo, numero_e164, chatwoot_inbox_id, conector, saude").eq("id", Number(id)).maybeSingle(),
     admin.from("chips_credenciais").select("zapi_instance_id, zapi_token, zapi_client_token").eq("chip_id", Number(id)).maybeSingle(),
     admin.from("chips_credenciais_meta").select("phone_number_id, waba_id, access_token, app_secret").eq("chip_id", Number(id)).maybeSingle(),
   ]);
@@ -26,6 +26,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     maturidade: chip.maturidade ?? "novo",
     aquecimento_perfil: chip.aquecimento_perfil ?? null,
     limite_dia_override: chip.limite_dia_override ?? null,
+    limite_hora_override: chip.limite_hora_override ?? null,
     papel: chip.papel ?? "bot",
     agente_nome: chip.agente_nome ?? "",
     tipo: chip.tipo ?? "fisico",
@@ -51,7 +52,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (g.erro) return g.erro;
   if (!(await podeEditarChip(g.sessao, Number(id)))) return erroDono();
 
-  const { nome, instance_id, token, client_token, maturidade, aquecimento_perfil, limite_dia_override, papel, agente_nome, tipo, numero_e164,
+  const { nome, instance_id, token, client_token, maturidade, aquecimento_perfil, limite_dia_override, limite_hora_override, papel, agente_nome, tipo, numero_e164,
     meta_phone_number_id, meta_waba_id, meta_token, meta_app_secret } = await req.json();
   const admin = supabaseAdmin();
 
@@ -70,6 +71,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (aquecimento_perfil !== undefined) chipPatch.aquecimento_perfil = aquecimento_perfil || null;
   if (limite_dia_override !== undefined) {
     chipPatch.limite_dia_override = limite_dia_override === null || limite_dia_override === "" ? null : Number(limite_dia_override);
+  }
+  // teto por HORA deste chip (§33) — em branco volta para a sugestão por maturidade (fn_limite_chip_hora)
+  if (limite_hora_override !== undefined) {
+    chipPatch.limite_hora_override = limite_hora_override === null || limite_hora_override === "" ? null : Number(limite_hora_override);
   }
   if (Object.keys(chipPatch).length > 0) {
     const { error } = await admin.from("chips").update(chipPatch).eq("id", Number(id));

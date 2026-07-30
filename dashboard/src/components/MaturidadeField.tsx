@@ -1,20 +1,41 @@
 "use client";
 import { Label, HelpHint } from "@/components/ui/primitives";
-import { Snowflake, Flame, Info } from "lucide-react";
+import { Snowflake, Flame, Info, Gauge, ShieldCheck, ShieldAlert, TriangleAlert } from "lucide-react";
+import { avaliarRitmo, minutosAteEsgotar, formatarDuracao } from "@/lib/ritmo";
 
 export type MaturidadeValor = {
   maturidade: "novo" | "aquecido";
   limite_dia_override: number | null;
+  limite_hora_override: number | null;
 };
 
-// Seletor de maturidade do chip + explicação transparente + sugestão do sistema.
+// Sugestão do sistema por maturidade — espelha o seed `ritmo` da migration 026 (§33).
+const SUGESTAO_HORA: Record<string, number> = { novo: 8, aquecido: 25 };
+
+// Seletor de maturidade do chip + ritmo de envio (por hora e por dia).
 // Usado no cadastro (novo/flow.tsx) e na edição (chip-card.tsx).
-// O usuário decide; o sistema apenas sugere e explica o que cada opção faz.
+// O usuário decide; o sistema sugere, explica e avisa quando a configuração fica arriscada.
 export function MaturidadeField({ value, onChange }: {
   value: MaturidadeValor;
   onChange: (v: MaturidadeValor) => void;
 }) {
   const aquecido = value.maturidade === "aquecido";
+  const sugestaoHora = SUGESTAO_HORA[value.maturidade] ?? 8;
+  const horaEfetiva = value.limite_hora_override ?? sugestaoHora;
+  const diaEfetivo = value.limite_dia_override ?? 0;
+
+  const veredicto = avaliarRitmo({
+    msgsHora: horaEfetiva,
+    limiteDia: diaEfetivo,
+    idadeDias: value.maturidade === "novo" ? 1 : undefined,
+  });
+  const estilo = {
+    seguro: { cor: "border-emerald/30 bg-emerald/10 text-emerald", Icone: ShieldCheck },
+    atencao: { cor: "border-amber/30 bg-amber/10 text-amber", Icone: ShieldAlert },
+    risco: { cor: "border-rose/30 bg-rose/10 text-rose", Icone: TriangleAlert },
+  }[veredicto.nivel];
+  const { Icone } = estilo;
+  const esgota = minutosAteEsgotar(diaEfetivo, horaEfetiva);
 
   return (
     <div>
@@ -26,7 +47,7 @@ export function MaturidadeField({ value, onChange }: {
       <div className="mt-2 grid grid-cols-2 gap-2">
         <button
           type="button"
-          onClick={() => onChange({ maturidade: "novo", limite_dia_override: null })}
+          onClick={() => onChange({ ...value, maturidade: "novo" })}
           className={`flex items-start gap-2.5 rounded-xl border p-3 text-left transition-colors ${
             !aquecido ? "border-emerald/50 bg-emerald/8" : "border-line bg-ink-850 hover:border-ink-500"
           }`}
@@ -40,7 +61,7 @@ export function MaturidadeField({ value, onChange }: {
 
         <button
           type="button"
-          onClick={() => onChange({ maturidade: "aquecido", limite_dia_override: value.limite_dia_override })}
+          onClick={() => onChange({ ...value, maturidade: "aquecido" })}
           className={`flex items-start gap-2.5 rounded-xl border p-3 text-left transition-colors ${
             aquecido ? "border-amber/50 bg-amber/8" : "border-line bg-ink-850 hover:border-ink-500"
           }`}
@@ -58,42 +79,71 @@ export function MaturidadeField({ value, onChange }: {
         <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-blue" />
         {aquecido ? (
           <span>
-            <b className="text-chalk">Sugestão do sistema:</b> rampa curta de segurança —{" "}
-            <span className="text-amber">250 contatos/dia nos 3 primeiros dias, depois 500/dia</span>. Mesmo
-            aquecido, um número novo para o <i>WhatsApp Business</i> ainda pode ser bloqueado se disparar tudo de
-            uma vez. Você pode trocar pelo limite fixo abaixo.
+            <b className="text-chalk">Sugestão do sistema:</b> rampa curta de segurança e{" "}
+            <span className="text-amber">{SUGESTAO_HORA.aquecido} mensagens por hora</span>. Mesmo aquecido, um
+            número novo para o <i>WhatsApp Business</i> ainda pode ser bloqueado se disparar tudo de uma vez.
           </span>
         ) : (
           <span>
-            <b className="text-chalk">Sugestão do sistema:</b> aquecimento gradual de ~30 dias —{" "}
-            <span className="text-emerald-soft">30 → 100 → 250 → 400 → 500 contatos/dia</span>. É o recomendado
-            para chips recém-comprados, para reduzir o risco de bloqueio do WhatsApp.
+            <b className="text-chalk">Sugestão do sistema:</b> aquecimento gradual e{" "}
+            <span className="text-emerald-soft">{SUGESTAO_HORA.novo} mensagens por hora</span>. É o recomendado
+            para chip recém-comprado. A curva diária é a que estiver salva na tela de Campanha.
           </span>
         )}
       </div>
 
-      {/* Limite manual (opcional) — vale para qualquer maturidade, mas faz mais sentido no aquecido */}
-      {aquecido && (
-        <div className="mt-2">
-          <Label className="text-xs">
-            Limite diário fixo (opcional)
-            <HelpHint text="Se preenchido, ignora a rampa e usa este número de novos contatos por dia. Deixe em branco para usar a sugestão do sistema." />
-          </Label>
-          <input
-            type="number"
-            min={1}
-            placeholder="ex.: 500 — em branco usa a sugestão"
-            value={value.limite_dia_override ?? ""}
-            onChange={(e) =>
-              onChange({
-                maturidade: "aquecido",
+      {/* Ritmo de envio deste chip — por hora e por dia, com projeção e veredicto */}
+      <div className="mt-3 rounded-xl border border-line bg-ink-850 p-3">
+        <Label className="text-xs">
+          <Gauge className="mr-1 inline h-3.5 w-3.5" /> Ritmo de envio deste chip
+          <HelpHint text="Em branco = usa a sugestão do sistema para a maturidade escolhida (por hora) e a curva de aquecimento da tela de Campanha (por dia). Preencher aqui vale só para este chip." />
+        </Label>
+
+        <div className="mt-2 grid gap-3 sm:grid-cols-2">
+          <div>
+            <span className="mb-1 block text-[11px] text-mist">Mensagens por hora</span>
+            <input
+              type="number"
+              min={1}
+              placeholder={`em branco = ${sugestaoHora}`}
+              value={value.limite_hora_override ?? ""}
+              onChange={(e) => onChange({
+                ...value,
+                limite_hora_override: e.target.value === "" ? null : Number(e.target.value),
+              })}
+              className="h-10 w-full rounded-xl border border-line bg-ink-900 px-3.5 font-mono text-sm text-chalk placeholder:text-mist/50 outline-none focus:border-ink-500"
+            />
+          </div>
+          <div>
+            <span className="mb-1 block text-[11px] text-mist">Mensagens por dia</span>
+            <input
+              type="number"
+              min={1}
+              placeholder="em branco = curva de aquecimento"
+              value={value.limite_dia_override ?? ""}
+              onChange={(e) => onChange({
+                ...value,
                 limite_dia_override: e.target.value === "" ? null : Number(e.target.value),
-              })
-            }
-            className="mt-1 h-10 w-full rounded-xl border border-line bg-ink-850 px-3.5 font-mono text-sm text-chalk placeholder:text-mist/50 outline-none focus:border-ink-500"
-          />
+              })}
+              className="h-10 w-full rounded-xl border border-line bg-ink-900 px-3.5 font-mono text-sm text-chalk placeholder:text-mist/50 outline-none focus:border-ink-500"
+            />
+          </div>
         </div>
-      )}
+
+        <div className={`mt-3 flex items-start gap-2 rounded-lg border p-2.5 ${estilo.cor}`}>
+          <Icone className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <div className="min-w-0">
+            <div className="text-xs font-600">{veredicto.titulo}</div>
+            <p className="mt-0.5 text-[11px] leading-snug opacity-90">{veredicto.explicacao}</p>
+            {esgota && (
+              <p className="mt-1 text-[11px] opacity-70">
+                No ritmo de {horaEfetiva}/h, a cota de {diaEfetivo} mensagens do dia se esgota em{" "}
+                <b>{formatarDuracao(esgota)}</b>.
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

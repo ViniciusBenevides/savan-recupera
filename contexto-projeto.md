@@ -1510,3 +1510,40 @@ envio; conhecimento não-aprovado fica fora do prompt; 12 testes da janela nova 
 inalterado); `npm run build` OK; as 4 funções respondem 200 com service_role e 401 com anon.
 **Pendente de observação real:** o skip `teto_hora` só aparece no log quando houver **chip conectado**
 (o gate de conexão da §30 roda antes e hoje pula todos os chips).
+
+### 33.1 — Complemento: ritmo editável por chip e fluxo do robô
+
+Duas lacunas apontadas pelo dono depois da primeira entrega:
+
+**1. Faltava ONDE configurar msgs/hora e msgs/dia.** A coluna `limite_hora_override` existia e o card
+mostrava "Ritmo desta hora X/Y", mas não havia editor — só o teto/dia era editável, e só para chip
+aquecido. Agora `MaturidadeField` tem um bloco **"Ritmo de envio deste chip"** com os dois campos
+(hora e dia), o placeholder mostrando a sugestão do sistema, **veredicto de risco ao vivo** e a
+projeção "no ritmo de X/h, a cota de Y do dia se esgota em Z". Campo em branco = herda
+(`fn_limite_chip_hora` → sugestão por maturidade; dia → curva de aquecimento). Passa por
+`api/chips` (POST) e `api/chips/[id]` (GET/PATCH), no cadastro e na edição.
+
+**2. O fluxo do robô (D2 do plano) não tinha sido implementado** na primeira entrega — só a base de
+conhecimento (D1). Entregue agora:
+
+- **Migration `029_roteiro_bot.sql`**: `carteiras.roteiro jsonb`, `conversas.etapa_roteiro text` e o
+  seed `roteiro_modelo` em `configuracoes` (10 etapas: identificar → proposta → objeção/prescrição →
+  pagamento → encerramentos, com as regras da §1 embutidas).
+- **`bot-turno` v15**: `etapaDoRoteiro()` escolhe a etapa (a salva na conversa, ou a primeira);
+  `blocoRoteiro()` injeta objetivo + instrução + caminhos no system prompt **no lugar** do "fluxo
+  ideal" genérico. O modelo marca o caminho com uma última linha `PROXIMA_ETAPA: <id>`, que é
+  **removida antes de qualquer envio** e só aceita id que exista mesmo no roteiro (etapa inventada não
+  move a conversa). Sem roteiro ativo, nada muda — o bot segue solto pelo prompt.
+- **Front**: nova aba **"Fluxo do robô"** na carteira (`carteiras/[id]/roteiro.tsx`) — etapas em ordem,
+  objetivo, instrução, caminhos com destino em select, botão "usar o modelo pronto", validação de id
+  duplicado e de caminho apontando para etapa inexistente, e "limpar e voltar ao robô livre".
+  `api/carteiras/[id]` aceita `roteiro`.
+
+**Por que isso importa:** a **confirmação de identidade** (exigência de LGPD da §1 — telefone de 15
+anos tem alto risco de número reciclado) deixa de ser uma frase no prompt que o modelo pode atropelar
+e vira uma **etapa que segura o resto da conversa**.
+
+**Verificado:** 15 testes da mecânica do roteiro passando (seleção de etapa, retomada, roteiro
+desligado, extração do marcador, marcador nunca vazando no texto enviado, etapa inventada ignorada,
+maiúsculo/minúsculo); migration 029 aplicada e conferida (10 etapas no modelo, colunas criadas);
+`npm run build` OK (18 páginas); `bot-turno` v15 ACTIVE respondendo 200 com service_role.

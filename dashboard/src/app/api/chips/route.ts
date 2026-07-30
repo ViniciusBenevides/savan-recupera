@@ -16,7 +16,7 @@ export async function POST(req: Request) {
   const { sessao } = g;
 
   const body = await req.json();
-  const { nome, instance_id, token, client_token, maturidade, aquecimento_perfil, limite_dia_override, papel, agente_nome, tipo, cobrador_id, numero_e164 } = body;
+  const { nome, instance_id, token, client_token, maturidade, aquecimento_perfil, limite_dia_override, limite_hora_override, papel, agente_nome, tipo, cobrador_id, numero_e164 } = body;
   const conector = body.conector === "meta_cloud" ? "meta_cloud" : "zapi";
   if (!nome) return NextResponse.json({ erro: "campos_obrigatorios" }, { status: 400 });
 
@@ -46,6 +46,7 @@ export async function POST(req: Request) {
     };
     if (maturidade === "aquecido" || maturidade === "novo") novoMeta.maturidade = maturidade;
     if (limite_dia_override != null && limite_dia_override !== "") novoMeta.limite_dia_override = Number(limite_dia_override);
+    if (limite_hora_override != null && limite_hora_override !== "") novoMeta.limite_hora_override = Number(limite_hora_override);
 
     const { data: chipM, error: errM } = await admin.from("chips").insert(novoMeta).select("id").single();
     if (errM) return NextResponse.json({ erro: errM.message }, { status: 400 });
@@ -96,6 +97,7 @@ export async function POST(req: Request) {
     if (maturidade === "aquecido" || maturidade === "novo") novo.maturidade = maturidade;
     if (typeof aquecimento_perfil === "string" && aquecimento_perfil.trim()) novo.aquecimento_perfil = aquecimento_perfil.trim();
     if (limite_dia_override != null && limite_dia_override !== "") novo.limite_dia_override = Number(limite_dia_override);
+    if (limite_hora_override != null && limite_hora_override !== "") novo.limite_hora_override = Number(limite_hora_override);
   }
 
   const { data: chip, error } = await admin

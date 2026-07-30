@@ -40,7 +40,7 @@ async function getConfig(sb: SupabaseClient, cobradorId: string | null = null) {
 async function getCarteira(sb: SupabaseClient, id: number | null) {
   if (!id) return null;
   const { data } = await sb.from("carteiras")
-    .select("id, nome, credor, status, cobrador_id, prompt_persona, contexto_negocio, guardrails, config_override")
+    .select("id, nome, credor, status, cobrador_id, prompt_persona, contexto_negocio, guardrails, config_override, roteiro")
     .eq("id", id).maybeSingle();
   return data;
 }
@@ -147,7 +147,7 @@ async function resolverConversaPorEntrada(sb: SupabaseClient, cfg: any, seg: Rec
   }
 
   let q = sb.from("conversas")
-    .select("id, devedor_id, carteira_id, estado, chip_id, simulacao, telefone_id")
+    .select("id, devedor_id, carteira_id, estado, chip_id, simulacao, telefone_id, etapa_roteiro")
     .in("estado", ["aguardando_resposta", "bot_ativo"])
     .order("ultima_msg_em", { ascending: false, nullsFirst: false })
     .order("id", { ascending: false })
@@ -194,7 +194,34 @@ async function carregarConhecimento(sb: SupabaseClient, carteiraId: number | nul
   return (data ?? []).map((e) => `P: ${e.pergunta}\nR: ${e.resposta}`);
 }
 
-function montarSystemPrompt(cfg: any, carteira: any, prop: any, conhecimento: string[] = []): string {
+// Roteiro declarativo da carteira (§33). Guia a conversa por etapas, sem substituir as tools:
+// o modelo continua livre para conversar, mas sabe em que etapa está, o que precisa acontecer nela e
+// para onde ir. O ganho concreto é a confirmação de identidade virar ETAPA (com o resto do roteiro
+// bloqueado atrás dela), em vez de uma frase de prompt que o modelo pode atropelar.
+function etapaDoRoteiro(carteira: any, etapaAtual: string | null): any | null {
+  const r = carteira?.roteiro;
+  if (!r?.ativo || !Array.isArray(r.etapas) || r.etapas.length === 0) return null;
+  return r.etapas.find((e: any) => e.id === etapaAtual) ?? r.etapas[0];
+}
+
+function blocoRoteiro(etapa: any, interp: (t: unknown) => string): string[] {
+  if (!etapa) return [];
+  const casos = (etapa.casos ?? [])
+    .filter((c: any) => c?.quando && c?.vai_para)
+    .map((c: any) => `  - se ${interp(c.quando)} → responda e informe PROXIMA_ETAPA: ${c.vai_para}`);
+  return [
+    "",
+    `ETAPA ATUAL DA CONVERSA: "${etapa.id}" — ${interp(etapa.objetivo ?? "")}`,
+    `O QUE FAZER AGORA: ${interp(etapa.instrucao ?? "")}`,
+    ...(casos.length
+      ? ["CAMINHOS A PARTIR DAQUI:", ...casos,
+         "Ao final da sua resposta, quando um caminho se aplicar, acrescente numa última linha isolada " +
+         "exatamente `PROXIMA_ETAPA: <id>`. Essa linha é removida antes de chegar à pessoa — nunca a comente."]
+      : ["Esta etapa encerra o atendimento."]),
+  ];
+}
+
+function montarSystemPrompt(cfg: any, carteira: any, prop: any, conhecimento: string[] = [], etapa: any = null): string {
   const nomeBot = cfg.ia?.nome_bot ?? "Ana";
   const primeiroNome = prop?.primeiro_nome ?? "a pessoa";
   const interp = (t: unknown) =>
@@ -222,12 +249,19 @@ function montarSystemPrompt(cfg: any, carteira: any, prop: any, conhecimento: st
        "responda pelas regras acima e nunca invente):", ...conhecimento.map((c) => `- ${interp(c)}`)]
     : [];
 
+  // Com roteiro ativo, a etapa substitui o "fluxo ideal" genérico: vira instrução do momento, não
+  // uma sequência que o modelo tenta lembrar sozinho.
+  const blocoEtapa = blocoRoteiro(etapa, interp);
+  const fluxo = blocoEtapa.length
+    ? blocoEtapa
+    : ["", "FLUXO IDEAL: confirmar identidade -> contextualizar -> consultar_divida -> apresentar proposta (valor, desconto, validade) -> tratar objeções -> gerar_pix -> orientar pagamento -> avisar que após o pagamento envia o termo de quitação."];
+
   return [
     interp(persona), interp(contexto), "",
     "REGRAS INEGOCIÁVEIS (violar qualquer uma é falha grave):",
     ...regras.map((r, i) => `${i + 1}. ${interp(r)}`),
-    ...blocoConhecimento, "",
-    "FLUXO IDEAL: confirmar identidade -> contextualizar -> consultar_divida -> apresentar proposta (valor, desconto, validade) -> tratar objeções -> gerar_pix -> orientar pagamento -> avisar que após o pagamento envia o termo de quitação.", "",
+    ...blocoConhecimento,
+    ...fluxo, "",
     `ESTILO: ${interp(tom)}. Não soe robótica.`,
   ].join("\n");
 }
@@ -262,7 +296,7 @@ Deno.serve(async (req) => {
   const b = await req.json();
   const convId = b.chatwoot_conversation_id;
 
-  let { data: conv } = await sb.from("conversas").select("id, devedor_id, carteira_id, estado, chip_id, simulacao, telefone_id").eq("chatwoot_conversation_id", convId).maybeSingle();
+  let { data: conv } = await sb.from("conversas").select("id, devedor_id, carteira_id, estado, chip_id, simulacao, telefone_id, etapa_roteiro").eq("chatwoot_conversation_id", convId).maybeSingle();
   if (!conv) {
     conv = await resolverConversaPorEntrada(sb, cfg, seg, convId);
     if (!conv) return json({ ok: false, erro: "conversa_desconhecida" }, 404);
@@ -293,7 +327,8 @@ Deno.serve(async (req) => {
   const { data: histRaw } = await sb.from("mensagens").select("origem, direcao, conteudo").in("conversa_id", convIds.length ? convIds : [conv.id]).order("criado_em", { ascending: false }).limit(20);
   const hist = (histRaw ?? []).reverse();
   const conhecimento = await carregarConhecimento(sb, carteiraId ?? null);
-  const messages: any[] = [{ role: "system", content: montarSystemPrompt(cfg, carteira, prop, conhecimento) }];
+  const etapaAtual = etapaDoRoteiro(carteira, conv.etapa_roteiro ?? null);
+  const messages: any[] = [{ role: "system", content: montarSystemPrompt(cfg, carteira, prop, conhecimento, etapaAtual) }];
   for (const m of hist) messages.push({ role: m.direcao === "entrada" ? "user" : "assistant", content: m.conteudo ?? "" });
   messages.push({ role: "user", content: b.mensagem ?? "" });
 
@@ -428,6 +463,26 @@ Deno.serve(async (req) => {
   if (enviarDireto && conv.chip_id) {
     const { data } = await sb.from("chips_credenciais").select("zapi_instance_id, zapi_token, zapi_client_token").eq("chip_id", conv.chip_id).maybeSingle();
     creds = data;
+  }
+
+  // Avanço do roteiro (§33): o modelo marca o caminho com uma última linha `PROXIMA_ETAPA: <id>`.
+  // A linha é removida antes de qualquer envio — a pessoa nunca vê a mecânica — e o id só é aceito se
+  // existir mesmo no roteiro (modelo inventando etapa não move a conversa).
+  if (etapaAtual) {
+    const idsValidos = new Set((carteira?.roteiro?.etapas ?? []).map((e: any) => e.id));
+    let proxima: string | null = null;
+    for (let i = 0; i < respostas.length; i++) {
+      respostas[i] = respostas[i].replace(/^\s*PROXIMA_ETAPA:\s*([a-z0-9_\-]+)\s*$/gim, (_m, id) => {
+        if (idsValidos.has(id)) proxima = id;
+        return "";
+      }).trim();
+    }
+    for (let i = respostas.length - 1; i >= 0; i--) if (!respostas[i]) respostas.splice(i, 1);
+    if (proxima && proxima !== conv.etapa_roteiro) {
+      await sb.from("conversas").update({ etapa_roteiro: proxima }).eq("id", conv.id);
+    } else if (!conv.etapa_roteiro) {
+      await sb.from("conversas").update({ etapa_roteiro: etapaAtual.id }).eq("id", conv.id);
+    }
   }
 
   for (const txt of respostas) {
