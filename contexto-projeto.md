@@ -118,7 +118,7 @@ MaurelioV2/                        # repo Git público (ver §13). [gi] = gitign
 ├── README.md                      # apresentação do projeto (em inglês)
 ├── contexto-projeto.md            # este arquivo
 ├── .gitignore                     # exclui segredos, PII e bloat do repo
-├── .env.example                   # template das vars dos scripts (formato "chave: valor")
+├── .env.example                   # template das vars dos scripts (formato KEY=valor)
 ├── conversa_com_claude.md         # [gi] histórico das decisões (planejamento)
 ├── dividas_savan.xlsx             # [gi] planilha-fonte REAL (PII LGPD) — NUNCA versionar
 ├── .env                           # [gi] TODAS as credenciais (Supabase, Chatwoot, Asaas, Z-API, n8n)

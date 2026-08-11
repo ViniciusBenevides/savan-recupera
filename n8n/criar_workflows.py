@@ -14,16 +14,20 @@ RAIZ = Path(__file__).resolve().parent.parent
 
 
 def env(chave):
-    for l in (RAIZ / ".env").read_text(encoding="utf-8").splitlines():
-        if l.lower().startswith(chave.lower()):
-            return l.split(":", 1)[1].strip()
+    for linha in (RAIZ / ".env").read_text(encoding="utf-8").splitlines():
+        linha = linha.strip()
+        if not linha or linha.startswith("#") or "=" not in linha:
+            continue
+        nome, valor = linha.split("=", 1)
+        if nome.strip() == chave:
+            return valor.strip().strip('"').strip("'")
     raise SystemExit(f"{chave} não encontrado no .env")
 
 
-N8N = env("url n8n").rstrip("/")
-SUPA = env("supabase api url").rstrip("/")
-N8N_KEY = env("n8n api key")
-SRK = env("service_role supabase")
+N8N = env("N8N_URL").rstrip("/")
+SUPA = env("SUPABASE_API_URL").rstrip("/")
+N8N_KEY = env("N8N_API_KEY")
+SRK = env("SUPABASE_SERVICE_ROLE_KEY")
 HDR = {"X-N8N-API-KEY": N8N_KEY, "Content-Type": "application/json"}
 AUTH = f"Bearer {SRK}"
 TAG_PRODUTO = "SAVAN"   # todos os workflows ganham esta tag (organização na instância)
@@ -73,7 +77,7 @@ def http_chatwoot(name, pos, url_expr, body_expr):
         "url": url_expr,
         "sendHeaders": True,
         "headerParameters": {"parameters": [
-            {"name": "api_access_token", "value": env("token chatwoot")},
+            {"name": "api_access_token", "value": env("CHATWOOT_TOKEN")},
             {"name": "Content-Type", "value": "application/json"},
         ]},
         "sendBody": True,
@@ -90,7 +94,7 @@ def http_chatwoot_get(name, pos, url_expr):
         "url": url_expr,
         "sendHeaders": True,
         "headerParameters": {"parameters": [
-            {"name": "api_access_token", "value": env("token chatwoot")},
+            {"name": "api_access_token", "value": env("CHATWOOT_TOKEN")},
         ]},
         "options": {"response": {"response": {"neverError": True}}},
     })
@@ -163,7 +167,7 @@ def w01():
             {"leftValue": "={{ $('Loop').item.json.simulacao }}", "rightValue": True,
              "operator": {"type": "boolean", "operation": "true", "singleValue": True}}]}})
     envia = http_chatwoot("Enviar msg", [1780, 360],
-        f"={env('chatwoot url').rstrip('/')}/api/v1/accounts/1/conversations/{{{{ $json.conversation_id }}}}/messages",
+        f"={env('CHATWOOT_URL').rstrip('/')}/api/v1/accounts/1/conversations/{{{{ $json.conversation_id }}}}/messages",
         '={ "content": {{ JSON.stringify($(\'Loop\').item.json.mensagem) }}, "message_type": "outgoing", '
         '"content_attributes": { "zapi_args": { "delayTyping": {{ $(\'Loop\').item.json.delay_typing }} } } }')
     reg_ok = http_edge("Registrar enviado", "campanha-registrar", [2000, 300],
@@ -268,7 +272,7 @@ def w02():
     loop = node("Loop msgs", "n8n-nodes-base.splitInBatches", 3, [1120, 300],
                 {"batchSize": 1, "options": {}})
     envia = http_chatwoot("Enviar resposta", [1340, 360],
-        f"={env('chatwoot url').rstrip('/')}/api/v1/accounts/1/conversations/{{{{ $json.conv }}}}/messages",
+        f"={env('CHATWOOT_URL').rstrip('/')}/api/v1/accounts/1/conversations/{{{{ $json.conv }}}}/messages",
         '={ "content": {{ JSON.stringify($json.texto) }}, "message_type": "outgoing", '
         '"content_attributes": { "zapi_args": { "delayTyping": 8 } } }')
     espera = node("Aguardar", "n8n-nodes-base.wait", 1.1, [1560, 360],

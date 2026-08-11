@@ -21,14 +21,18 @@ PREFIXO = "SAVAN"  # todos os workflows do produto começam com isso
 
 
 def env(chave):
-    for l in (RAIZ / ".env").read_text(encoding="utf-8").splitlines():
-        if l.lower().startswith(chave.lower()):
-            return l.split(":", 1)[1].strip()
+    for linha in (RAIZ / ".env").read_text(encoding="utf-8").splitlines():
+        linha = linha.strip()
+        if not linha or linha.startswith("#") or "=" not in linha:
+            continue
+        nome, valor = linha.split("=", 1)
+        if nome.strip() == chave:
+            return valor.strip().strip('"').strip("'")
     raise SystemExit(f"{chave} não encontrado no .env")
 
 
-N8N = env("url n8n").rstrip("/")
-HDR = {"X-N8N-API-KEY": env("n8n api key"), "Content-Type": "application/json"}
+N8N = env("N8N_URL").rstrip("/")
+HDR = {"X-N8N-API-KEY": env("N8N_API_KEY"), "Content-Type": "application/json"}
 
 
 def tag_id(nome):

@@ -22,8 +22,8 @@ import requests
 RAIZ = Path(__file__).resolve().parent.parent
 PLANILHA = RAIZ / "dividas_savan.xlsx"
 
-SUPABASE_URL = ""  # preenchido via .env (chave "supabase api url")
-SERVICE_KEY = ""   # preenchido via .env (chave "service_role supabase")
+SUPABASE_URL = ""  # preenchido via .env (chave "SUPABASE_API_URL")
+SERVICE_KEY = ""   # preenchido via .env (chave "SUPABASE_SERVICE_ROLE_KEY")
 
 BATCH = 500
 
@@ -34,19 +34,27 @@ DDDs_VALIDOS = set(
 )
 
 
+def env(chave):
+    """Lê uma variável do .env da raiz (formato KEY=valor)."""
+    for linha in (RAIZ / ".env").read_text(encoding="utf-8").splitlines():
+        linha = linha.strip()
+        if not linha or linha.startswith("#") or "=" not in linha:
+            continue
+        nome, valor = linha.split("=", 1)
+        if nome.strip() == chave:
+            return valor.strip().strip('"').strip("'")
+    return None
+
+
 def carregar_service_key():
     global SERVICE_KEY, SUPABASE_URL
-    env = RAIZ / ".env"
-    for linha in env.read_text(encoding="utf-8").splitlines():
-        if "service_role supabase" in linha:
-            SERVICE_KEY = linha.split(":", 1)[1].strip()
-        elif linha.lower().startswith("supabase api url"):
-            SUPABASE_URL = linha.split(":", 1)[1].strip()
+    SERVICE_KEY = env("SUPABASE_SERVICE_ROLE_KEY") or ""
+    SUPABASE_URL = env("SUPABASE_API_URL") or ""
     if not SERVICE_KEY:
-        print("ERRO: service_role não encontrada no .env")
+        print("ERRO: SUPABASE_SERVICE_ROLE_KEY não encontrada no .env")
         sys.exit(1)
     if not SUPABASE_URL:
-        print('ERRO: "supabase api url" não encontrada no .env')
+        print("ERRO: SUPABASE_API_URL não encontrada no .env")
         sys.exit(1)
 
 
