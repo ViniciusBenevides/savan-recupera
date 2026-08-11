@@ -107,7 +107,7 @@ export function NovoChipFlow() {
     const d = await r.json();
     if (!r.ok) { setErro(d.erro ?? "Falha ao cadastrar."); return; }
     // escalador humano só registrado: não tem QR nem Chatwoot — volta para a lista
-    if (equipe) { router.push("/chips"); router.refresh(); return; }
+    if (equipe) { router.push("/ajustes?aba=chips"); router.refresh(); return; }
     setChipId(String(d.chip_id));
     // Meta oficial: número já conectado (sem QR) — vai para a tela de confirmação
     if (meta) {
@@ -317,7 +317,7 @@ export function NovoChipFlow() {
             </div>
             {!m.chatwoot.ok && m.chatwoot.mensagem && <p className="text-rose">{m.chatwoot.mensagem}</p>}
           </div>
-          <Button onClick={() => { router.push("/chips"); router.refresh(); }}>Voltar para chips</Button>
+          <Button onClick={() => { router.push("/ajustes?aba=chips"); router.refresh(); }}>Voltar para chips</Button>
         </Card>
 
         {/* Etapa manual única: apontar o webhook do app da Meta para o Chatwoot */}
@@ -381,7 +381,7 @@ export function NovoChipFlow() {
                 )}
               </div>
             )}
-            <Button onClick={() => router.push("/chips")}>Voltar para chips</Button>
+            <Button onClick={() => router.push("/ajustes?aba=chips")}>Voltar para chips</Button>
           </>
         ) : motivo === "assinatura" ? (
           <>
