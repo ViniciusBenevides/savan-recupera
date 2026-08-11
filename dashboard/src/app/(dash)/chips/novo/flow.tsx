@@ -14,6 +14,7 @@ type MetaResultado = {
   callback_url: string | null;
   verify_token: string | null;
   waba_assinada: boolean;
+  webhook: { ok: boolean; motivo: string; mensagem: string };
 };
 
 // Campo somente-leitura com botão de copiar (URL de callback / verify token da Meta).
@@ -46,6 +47,7 @@ export function NovoChipFlow() {
   const [metaPhone, setMetaPhone] = useState("");
   const [metaWaba, setMetaWaba] = useState("");
   const [metaToken, setMetaToken] = useState("");
+  const [metaAppId, setMetaAppId] = useState("");
   const [metaAppSecret, setMetaAppSecret] = useState("");
   const [metaResultado, setMetaResultado] = useState<MetaResultado | null>(null);
   const [papel, setPapel] = useState<"bot" | "equipe">("bot");
@@ -62,7 +64,8 @@ export function NovoChipFlow() {
       ? { nome, papel: "equipe", agente_nome: agente, numero_e164: numeroEquipe }
       : {
           nome, papel: "bot",
-          meta_phone_number_id: metaPhone, meta_waba_id: metaWaba, meta_token: metaToken, meta_app_secret: metaAppSecret,
+          meta_phone_number_id: metaPhone, meta_waba_id: metaWaba, meta_token: metaToken,
+          meta_app_id: metaAppId, meta_app_secret: metaAppSecret,
           maturidade: maturidade.maturidade, limite_dia_override: maturidade.limite_dia_override,
           limite_hora_override: maturidade.limite_hora_override,
         };
@@ -79,6 +82,7 @@ export function NovoChipFlow() {
       numero: d.numero ?? null, saude: d.saude ?? null,
       chatwoot: d.chatwoot ?? { ok: false }, callback_url: d.callback_url ?? null,
       verify_token: d.verify_token ?? null, waba_assinada: !!d.waba_assinada,
+      webhook: d.webhook ?? { ok: false, motivo: "indisponivel", mensagem: "" },
     });
     setEtapa("meta_ok");
   }
@@ -112,7 +116,9 @@ export function NovoChipFlow() {
                 <span>
                   Antes: crie um app no <b>Meta Business</b> com o produto <b>WhatsApp</b>, adicione o número e
                   gere um <b>token permanente de usuário do sistema</b> (Etapa 5 da doc da Meta). Cole abaixo
-                  o <b>ID do número</b>, o <b>ID da WABA</b> e o <b>token</b>.
+                  o <b>ID do número</b>, o <b>ID da WABA</b> e o <b>token</b> — mais o <b>App ID</b> e o{" "}
+                  <b>App Secret</b> (Configurações do app → Básico), que deixam o SAVAN configurar o webhook
+                  sozinho, sem você voltar ao painel da Meta.
                 </span>
               </div>
               <div>
@@ -131,12 +137,19 @@ export function NovoChipFlow() {
                        placeholder="EAAG… (token do usuário do sistema)" required className="font-mono text-xs" />
               </div>
               <div>
-                <Label>App Secret (opcional)</Label>
+                <Label>App ID</Label>
+                <Input value={metaAppId} onChange={(e) => setMetaAppId(e.target.value)}
+                       placeholder="1234567890123456" className="font-mono text-xs" />
+              </div>
+              <div>
+                <Label>App Secret</Label>
                 <Input type="password" value={metaAppSecret} onChange={(e) => setMetaAppSecret(e.target.value)}
-                       placeholder="só se for usar alertas em tempo real" className="font-mono text-xs" />
+                       placeholder="chave secreta do app" className="font-mono text-xs" />
                 <p className="mt-1.5 text-xs text-mist">
-                  Validamos o token na Meta na hora — se estiver certo, o número conecta e já aparece a
-                  <b className="text-chalk"> qualidade</b> dele.
+                  Com <b className="text-chalk">App ID + App Secret</b> o SAVAN aponta o webhook do seu app para o
+                  Chatwoot na hora — é o que faz as respostas dos contatos chegarem. Sem eles o número conecta
+                  igual, mas você terá que colar a URL de callback no painel da Meta à mão. Validamos o token na
+                  Meta na hora: se estiver certo, o número conecta e já aparece a <b className="text-chalk">qualidade</b> dele.
                 </p>
               </div>
               <MaturidadeField value={maturidade} onChange={setMaturidade} />
@@ -200,25 +213,41 @@ export function NovoChipFlow() {
             {m.waba_assinada ? <CheckCircle2 className="h-4 w-4 text-emerald" /> : <AlertTriangle className="h-4 w-4 text-amber" />}
             <span className="text-mist">WABA {m.waba_assinada ? "assinada ao app" : "não assinada (verifique permissões do token)"}</span>
           </div>
+          <div className="flex items-center gap-2">
+            {m.webhook.ok ? <CheckCircle2 className="h-4 w-4 text-emerald" /> : <AlertTriangle className="h-4 w-4 text-amber" />}
+            <span className="text-mist">Webhook {m.webhook.ok ? "configurado no app da Meta" : "pendente (configure abaixo)"}</span>
+          </div>
           {!m.chatwoot.ok && m.chatwoot.mensagem && <p className="text-rose">{m.chatwoot.mensagem}</p>}
         </div>
         <Button onClick={() => { router.push("/ajustes?aba=chips"); router.refresh(); }}>Voltar para chips</Button>
       </Card>
 
-      {/* Etapa manual única: apontar o webhook do app da Meta para o Chatwoot */}
-      {m.callback_url && (
-        <Card className="flex flex-col gap-2.5 py-4">
-          <div className="flex items-center gap-2 text-sm text-chalk">
-            <Webhook className="h-4 w-4 text-blue" /> Configure o webhook no app da Meta
+      {/* Webhook do app da Meta: o SAVAN configura sozinho quando tem App ID + App Secret.
+          Se não deu, o passo manual continua disponível como plano B. */}
+      {m.webhook.ok ? (
+        <Card className="flex gap-2.5 border-emerald/30 bg-emerald/5 py-4">
+          <Webhook className="mt-0.5 h-4 w-4 shrink-0 text-emerald" />
+          <div className="text-xs leading-relaxed text-mist">
+            <b className="text-emerald">Webhook configurado automaticamente.</b> Apontamos o app da Meta para o
+            Chatwoot e a Meta validou a URL — as respostas dos contatos já chegam. Nada a fazer no painel da Meta.
           </div>
+        </Card>
+      ) : m.callback_url ? (
+        <Card className="flex flex-col gap-2.5 border-amber/30 py-4">
+          <div className="flex items-center gap-2 text-sm text-chalk">
+            <Webhook className="h-4 w-4 text-amber" /> Falta configurar o webhook no app da Meta
+          </div>
+          {m.webhook.mensagem && <p className="text-xs text-amber">{m.webhook.mensagem}</p>}
           <p className="text-xs text-mist">
-            No painel da Meta (seu app → WhatsApp → Configuração), cole a <b className="text-chalk">URL de callback</b> e
-            o <b className="text-chalk">token de verificação</b> abaixo. É o que faz as respostas dos contatos chegarem.
+            Você pode informar o <b className="text-chalk">App ID</b> e o <b className="text-chalk">App Secret</b> na
+            edição do chip e clicar em <b className="text-chalk">Configurar webhook</b> — ou fazer à mão: no painel da
+            Meta (seu app → WhatsApp → Configuração), cole a <b className="text-chalk">URL de callback</b> e o{" "}
+            <b className="text-chalk">token de verificação</b> abaixo. É o que faz as respostas dos contatos chegarem.
           </p>
           <CampoCopiavel rotulo="URL de callback" valor={m.callback_url} onCopiar={copiar} />
           {m.verify_token && <CampoCopiavel rotulo="Token de verificação" valor={m.verify_token} onCopiar={copiar} />}
         </Card>
-      )}
+      ) : null}
 
       {/* Lembrete do regime: template aprovado para o 1º contato frio */}
       <Card className="flex gap-2.5 border-amber/30 bg-amber/5 py-4">

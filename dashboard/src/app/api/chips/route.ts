@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase-server";
 import { exigirCobrador } from "@/lib/auth";
 import { criarInboxMeta } from "@/lib/chatwoot";
 import { verificarNumero, subscribarWaba } from "@/lib/meta";
+import { configurarWebhookDoChip } from "@/lib/meta-webhook";
 import { normalizarTelefone } from "@/lib/import/normalizar";
 
 // Cria chip + credenciais + (best-effort) inbox no Chatwoot. Dois caminhos:
@@ -43,6 +44,7 @@ export async function POST(req: Request) {
   const phoneNumberId = String(body.meta_phone_number_id ?? "").trim();
   const wabaId = String(body.meta_waba_id ?? "").trim();
   const metaToken = String(body.meta_token ?? "").trim();
+  const appId = String(body.meta_app_id ?? "").trim() || null;
   const appSecret = String(body.meta_app_secret ?? "").trim() || null;
   if (!phoneNumberId || !wabaId || !metaToken) {
     return NextResponse.json({ erro: "Informe phone_number_id, WABA id e o token de acesso da Meta." }, { status: 400 });
@@ -64,7 +66,8 @@ export async function POST(req: Request) {
   if (errM) return NextResponse.json({ erro: errM.message }, { status: 400 });
 
   await admin.from("chips_credenciais_meta").insert({
-    chip_id: chipM.id, phone_number_id: phoneNumberId, waba_id: wabaId, access_token: metaToken, app_secret: appSecret,
+    chip_id: chipM.id, phone_number_id: phoneNumberId, waba_id: wabaId, access_token: metaToken,
+    app_id: appId, app_secret: appSecret,
   });
 
   // assina a WABA ao app (best-effort) e cria o inbox cloud no Chatwoot
@@ -73,11 +76,20 @@ export async function POST(req: Request) {
     ? await criarInboxMeta({ chipId: chipM.id, nome, phoneNumber: v.saude.numero, apiKey: metaToken, phoneNumberId, wabaId })
     : { ok: false as const, motivo: "falha" as const, mensagem: "Número não retornado pela Meta." };
 
+  // e aponta o webhook do app da Meta para esse inbox — a etapa que antes era manual no painel.
+  // Falha aqui não invalida o cadastro: a UI cai no plano B (colar URL/token à mão).
+  const wh = await configurarWebhookDoChip({
+    chipId: chipM.id, appId, appSecret,
+    callbackUrl: cw.ok ? (cw as any).callback_url ?? null : null,
+    verifyToken: cw.ok ? (cw as any).verify_token ?? null : null,
+  });
+
   return NextResponse.json({
     ok: true, chip_id: chipM.id, numero: v.saude.numero, saude: v.saude,
     waba_assinada: sub.ok,
     chatwoot: cw.ok ? { ok: true } : { ok: false, mensagem: cw.mensagem },
-    callback_url: cw.ok ? (cw as any).callback_url : null,
-    verify_token: cw.ok ? (cw as any).verify_token : null,
+    callback_url: wh.callback_url,
+    verify_token: wh.verify_token,
+    webhook: { ok: wh.ok, motivo: wh.motivo, mensagem: wh.mensagem },
   });
 }

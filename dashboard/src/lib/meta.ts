@@ -8,7 +8,10 @@
 
 export const GRAPH = "https://graph.facebook.com/v21.0";
 
-export type MotivoMeta = "token" | "permissao" | "nao_encontrado" | "config" | "indisponivel";
+export type MotivoMeta =
+  | "token" | "permissao" | "nao_encontrado" | "config" | "indisponivel"
+  | "webhook"   // a Meta chamou a URL de callback e a verificação falhou
+  | "conflito"; // o app já aponta para outra URL (outro número no mesmo app)
 
 export type SaudeNumero = {
   numero: string | null;        // display_phone_number em E.164
@@ -38,14 +41,35 @@ export function tetoDoTier(tier: string): number | null {
 }
 
 // Traduz o erro da Graph para um motivo/mensagem amigável mostrado no cadastro do número.
-function classificar(corpo: any, status: number): { motivo: MotivoMeta; mensagem: string } {
+// `contexto` muda só o texto: nas chamadas de app o culpado costuma ser o par app_id/app_secret,
+// não o token permanente do usuário do sistema.
+function classificar(corpo: any, status: number, contexto: "numero" | "app" = "numero"): { motivo: MotivoMeta; mensagem: string } {
   const e = corpo?.error;
   const code = e?.code;
   const sub = e?.error_subcode;
   const msg = e?.message || `A Meta respondeu ${status}.`;
-  if (code === 190) return { motivo: "token", mensagem: "Token de acesso inválido ou expirado. Gere um novo token permanente de usuário do sistema no Meta Business." };
-  if (code === 10 || code === 200 || code === 299 || sub === 33) return { motivo: "permissao", mensagem: "O token não tem permissão (whatsapp_business_management / whatsapp_business_messaging) ou não está ligado a esta conta/WABA." };
-  if (status === 404 || code === 803) return { motivo: "nao_encontrado", mensagem: "Número (phone_number_id) ou WABA não encontrado. Confira os ids colados." };
+  // 2200 = a Meta chamou a URL de callback e não recebeu o eco do challenge.
+  if (code === 2200) {
+    return {
+      motivo: "webhook",
+      mensagem: `A Meta não conseguiu validar a URL de callback. Confira se o Chatwoot está no ar e acessível pela internet (HTTPS público). Resposta da Meta: ${msg}`,
+    };
+  }
+  if (code === 190) {
+    return contexto === "app"
+      ? { motivo: "token", mensagem: "App ID ou App Secret inválidos. Copie os dois em Configurações do app → Básico, no painel da Meta." }
+      : { motivo: "token", mensagem: "Token de acesso inválido ou expirado. Gere um novo token permanente de usuário do sistema no Meta Business." };
+  }
+  if (code === 10 || code === 200 || code === 299 || sub === 33) {
+    return contexto === "app"
+      ? { motivo: "permissao", mensagem: "Este App Secret não tem permissão de gerir o app informado. Confira se o App ID é o mesmo app onde o produto WhatsApp está configurado." }
+      : { motivo: "permissao", mensagem: "O token não tem permissão (whatsapp_business_management / whatsapp_business_messaging) ou não está ligado a esta conta/WABA." };
+  }
+  if (status === 404 || code === 803) {
+    return contexto === "app"
+      ? { motivo: "nao_encontrado", mensagem: "App não encontrado na Meta. Confira o App ID colado." }
+      : { motivo: "nao_encontrado", mensagem: "Número (phone_number_id) ou WABA não encontrado. Confira os ids colados." };
+  }
   if (code === 100) return { motivo: "config", mensagem: `Parâmetro inválido: ${msg}` };
   return { motivo: "indisponivel", mensagem: String(msg) };
 }
@@ -89,6 +113,100 @@ export async function subscribarWaba(opts: { wabaId: string; token: string }): P
     const { r, corpo } = await graph(`${encodeURIComponent(opts.wabaId)}/subscribed_apps`, opts.token, { method: "POST" });
     if (!r.ok) return { ok: false, ...classificar(corpo, r.status) };
     return { ok: true };
+  } catch (e) {
+    return { ok: false, motivo: "indisponivel", mensagem: String(e) };
+  }
+}
+
+// ── Webhook do app (o que antes era a etapa manual no painel da Meta) ───────────────────────
+// Assinar a WABA ao app (acima) é só metade: a outra metade é dizer ao APP para onde mandar os
+// eventos — a URL de callback + o token de verificação. No painel isso é "app → WhatsApp →
+// Configuração"; na API é POST /{app-id}/subscriptions, autenticado com o **app access token**
+// ("{app_id}|{app_secret}"), que é o único lugar onde o App Secret é obrigatório.
+
+export const OBJETO_WEBHOOK = "whatsapp_business_account";
+// Só `messages`: é o que o Chatwoot consome. Qualidade e status de template o SAVAN já lê por
+// polling (chips-monitor / sync de templates), e mandá-los ao Chatwoot só geraria ruído.
+export const CAMPOS_WEBHOOK = ["messages"];
+
+export type AssinaturaApp = { object: string; callback_url: string; active: boolean; fields: string[] };
+
+function tokenDeApp(appId: string, appSecret: string): string {
+  return `${appId}|${appSecret}`;
+}
+
+// Lê as assinaturas de webhook já configuradas no app.
+export async function listarAssinaturasApp(opts: { appId: string; appSecret: string }): Promise<ResultadoMeta<{ assinaturas: AssinaturaApp[] }>> {
+  try {
+    const { r, corpo } = await graph(`${encodeURIComponent(opts.appId)}/subscriptions`, tokenDeApp(opts.appId, opts.appSecret));
+    if (!r.ok) return { ok: false, ...classificar(corpo, r.status, "app") };
+    const assinaturas: AssinaturaApp[] = (corpo?.data ?? []).map((a: any) => ({
+      object: a.object,
+      callback_url: a.callback_url ?? "",
+      active: a.active !== false,
+      // a Graph devolve fields como [{ name, version }] (ou, em apps antigos, como string[])
+      fields: (a.fields ?? []).map((f: any) => (typeof f === "string" ? f : f?.name)).filter(Boolean),
+    }));
+    return { ok: true, assinaturas };
+  } catch (e) {
+    return { ok: false, motivo: "indisponivel", mensagem: String(e) };
+  }
+}
+
+// Aponta o webhook do app para a URL de callback do Chatwoot. A Meta valida a URL na hora
+// (GET com hub.challenge) — se o Chatwoot não responder, a chamada falha com motivo "webhook".
+//
+// Guarda de conflito: um app tem UMA URL de callback por objeto. Se dois números do mesmo app
+// forem cadastrados, o segundo sobrescreveria o webhook do primeiro e o calaria em silêncio.
+// Por isso, se já existe assinatura apontando para outro lugar, paramos com motivo "conflito"
+// e só seguimos com `forcar`.
+export async function assinarWebhookApp(opts: {
+  appId: string; appSecret: string; callbackUrl: string; verifyToken: string;
+  campos?: string[]; forcar?: boolean;
+}): Promise<ResultadoMeta<{ callback_anterior: string | null; ja_estava: boolean }>> {
+  const campos = opts.campos?.length ? opts.campos : CAMPOS_WEBHOOK;
+
+  const atuais = await listarAssinaturasApp({ appId: opts.appId, appSecret: opts.appSecret });
+  if (!atuais.ok) return atuais;
+  const atual = atuais.assinaturas.find((a) => a.object === OBJETO_WEBHOOK) ?? null;
+  const anterior = atual?.callback_url || null;
+
+  if (atual && anterior && anterior !== opts.callbackUrl && !opts.forcar) {
+    return {
+      ok: false,
+      motivo: "conflito",
+      mensagem: `Este app da Meta já envia os eventos de WhatsApp para outra URL (${anterior}) — provavelmente outro número cadastrado no mesmo app. Trocar agora calaria aquele número. Use um app por número, ou confirme a substituição.`,
+    };
+  }
+
+  // já está como queremos (mesma URL e todos os campos): não re-dispara a verificação à toa
+  if (atual && anterior === opts.callbackUrl && atual.active && campos.every((c) => atual.fields.includes(c))) {
+    return { ok: true, callback_anterior: anterior, ja_estava: true };
+  }
+
+  // o POST SUBSTITUI a lista de campos do app, não soma. Apps configurados à mão costumam ter
+  // vários campos assinados (qualidade, status de template…); mandar só `messages` os apagaria
+  // em silêncio. Então unimos com o que já existe — o que precisamos entra, o resto fica.
+  const camposFinais = [...new Set([...(atual?.fields ?? []), ...campos])];
+
+  try {
+    const qs = new URLSearchParams({
+      object: OBJETO_WEBHOOK,
+      callback_url: opts.callbackUrl,
+      verify_token: opts.verifyToken,
+      fields: camposFinais.join(","),
+      include_values: "true",
+    });
+    const { r, corpo } = await graph(
+      `${encodeURIComponent(opts.appId)}/subscriptions?${qs.toString()}`,
+      tokenDeApp(opts.appId, opts.appSecret),
+      { method: "POST" },
+    );
+    if (!r.ok) return { ok: false, ...classificar(corpo, r.status, "app") };
+    if (corpo?.success === false) {
+      return { ok: false, motivo: "indisponivel", mensagem: "A Meta recusou a assinatura do webhook sem detalhar o motivo." };
+    }
+    return { ok: true, callback_anterior: anterior, ja_estava: false };
   } catch (e) {
     return { ok: false, motivo: "indisponivel", mensagem: String(e) };
   }

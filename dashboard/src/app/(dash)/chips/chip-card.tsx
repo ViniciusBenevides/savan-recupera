@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { Card, Badge, Button, Input, Label } from "@/components/ui/primitives";
 import { MaturidadeField, type MaturidadeValor } from "@/components/MaturidadeField";
 import { num } from "@/lib/utils";
-import { Play, Pause, Smartphone, MoreVertical, Pencil, Trash2, X, Eye, EyeOff, Loader2, Cloud, Activity, RotateCw, Gauge, PauseCircle } from "lucide-react";
+import { Play, Pause, Smartphone, MoreVertical, Pencil, Trash2, X, Eye, EyeOff, Loader2, Cloud, Activity, RotateCw, Gauge, PauseCircle, Webhook } from "lucide-react";
 
 // Semáforo da qualidade do número na Meta (saber se está perto de banir).
 const QUALIDADE: Record<string, { tone: any; label: string }> = {
@@ -77,10 +77,37 @@ export function ChipCard({ chip, metrica, donoNome, ritmoHora }: {
   const [eMetaPhone, setEMetaPhone] = useState("");
   const [eMetaWaba, setEMetaWaba] = useState("");
   const [eMetaToken, setEMetaToken] = useState("");
+  const [eMetaAppId, setEMetaAppId] = useState("");
   const [eMetaAppSecret, setEMetaAppSecret] = useState("");
-  const [origMeta, setOrigMeta] = useState({ phone: "", waba: "", token: "", appSecret: "" });
+  const [origMeta, setOrigMeta] = useState({ phone: "", waba: "", token: "", appId: "", appSecret: "" });
   const [saude, setSaude] = useState<any>(chip.saude ?? null);
   const [atualizandoSaude, setAtualizandoSaude] = useState(false);
+
+  // webhook do app da Meta (o passo que o SAVAN fecha sozinho com App ID + App Secret)
+  const [webhookEm, setWebhookEm] = useState<string | null>(null);
+  const [webhookMsg, setWebhookMsg] = useState<{ tom: "ok" | "erro"; texto: string } | null>(null);
+  const [webhookConflito, setWebhookConflito] = useState(false);
+  const [configurandoWebhook, setConfigurandoWebhook] = useState(false);
+
+  // Aponta o webhook do app da Meta para o inbox deste chip. `forcar` substitui uma assinatura
+  // que hoje aponta para outra URL — só depois do aviso de conflito.
+  async function configurarWebhook(forcar = false) {
+    setConfigurandoWebhook(true); setWebhookMsg(null); setWebhookConflito(false);
+    try {
+      const r = await fetch(`/api/chips/${chip.id}/webhook`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ forcar }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (r.ok) {
+        setWebhookEm(new Date().toISOString());
+        setWebhookMsg({ tom: "ok", texto: d.mensagem ?? "Webhook configurado." });
+      } else {
+        if (r.status === 409) setWebhookConflito(true);
+        setWebhookMsg({ tom: "erro", texto: d.erro ?? "Falha ao configurar o webhook." });
+      }
+    } catch { setWebhookMsg({ tom: "erro", texto: "Falha ao configurar o webhook." }); }
+    setConfigurandoWebhook(false);
+  }
 
   async function atualizarSaude() {
     setAtualizandoSaude(true);
@@ -122,8 +149,12 @@ export function ChipCard({ chip, metrica, donoNome, ritmoHora }: {
         setEPapel(d.papel ?? "bot"); setEAgente(d.agente_nome ?? ""); setENumero(d.numero_e164 ?? "");
         setOrigPapel({ papel: d.papel ?? "bot", agente: d.agente_nome ?? "", numero: d.numero_e164 ?? "" });
         setEMetaPhone(d.meta_phone_number_id ?? ""); setEMetaWaba(d.meta_waba_id ?? ""); setEMetaToken(d.meta_token ?? "");
-        setEMetaAppSecret(d.meta_app_secret ?? "");
-        setOrigMeta({ phone: d.meta_phone_number_id ?? "", waba: d.meta_waba_id ?? "", token: d.meta_token ?? "", appSecret: d.meta_app_secret ?? "" });
+        setEMetaAppId(d.meta_app_id ?? ""); setEMetaAppSecret(d.meta_app_secret ?? "");
+        setOrigMeta({
+          phone: d.meta_phone_number_id ?? "", waba: d.meta_waba_id ?? "", token: d.meta_token ?? "",
+          appId: d.meta_app_id ?? "", appSecret: d.meta_app_secret ?? "",
+        });
+        setWebhookEm(d.webhook_configurado_em ?? null); setWebhookMsg(null); setWebhookConflito(false);
       })
       .catch(() => setErro("Falha ao carregar os dados do chip."))
       .finally(() => setCarregando(false));
@@ -146,6 +177,7 @@ export function ChipCard({ chip, metrica, donoNome, ritmoHora }: {
     if (eMetaPhone.trim() !== origMeta.phone) body.meta_phone_number_id = eMetaPhone.trim();
     if (eMetaWaba.trim() !== origMeta.waba) body.meta_waba_id = eMetaWaba.trim();
     if (eMetaToken.trim() !== origMeta.token) body.meta_token = eMetaToken.trim();
+    if (eMetaAppId.trim() !== origMeta.appId) body.meta_app_id = eMetaAppId.trim();
     if (eMetaAppSecret.trim() !== origMeta.appSecret) body.meta_app_secret = eMetaAppSecret.trim();
     if (Object.keys(body).length === 0) { setEditando(false); return; }
     start(async () => {
@@ -223,13 +255,49 @@ export function ChipCard({ chip, metrica, donoNome, ritmoHora }: {
                 </div>
                 <CampoToken label="Token de acesso (Meta)" value={eMetaToken} onChange={setEMetaToken} />
                 <div>
-                  <CampoToken label="App Secret (opcional)" value={eMetaAppSecret} onChange={setEMetaAppSecret} />
+                  <Label>App ID</Label>
+                  <Input value={eMetaAppId} onChange={(e) => setEMetaAppId(e.target.value)}
+                         placeholder="1234567890123456" className="font-mono text-xs" />
+                </div>
+                <div>
+                  <CampoToken label="App Secret" value={eMetaAppSecret} onChange={setEMetaAppSecret} />
                   <p className="mt-1.5 text-xs text-mist">
-                    <b className="text-chalk">Não é necessário.</b> Fica guardado para o dia em que o
-                    SAVAN receber os webhooks da Meta direto (validação X-Hub-Signature-256). Hoje quem
-                    recebe é o Chatwoot, com o token de verificação dele — deixar em branco não muda nada.
+                    App ID + App Secret (Configurações do app → Básico, no painel da Meta) deixam o SAVAN
+                    apontar o <b className="text-chalk">webhook do app</b> para o Chatwoot sozinho — é o que faz as
+                    respostas dos contatos chegarem. Salve-os e use o botão abaixo.
                   </p>
                 </div>
+
+                {/* Webhook do app da Meta — estado + reparo */}
+                <div className="rounded-xl border border-line bg-ink-850 p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 text-xs">
+                      <Webhook className={`h-4 w-4 ${webhookEm ? "text-emerald" : "text-amber"}`} />
+                      <span className="text-mist">
+                        Webhook {webhookEm ? "configurado" : "não configurado pelo SAVAN"}
+                      </span>
+                    </div>
+                    <Button variant="outline" size="sm"
+                            onClick={() => configurarWebhook(false)}
+                            disabled={configurandoWebhook || !eMetaAppId.trim() || !eMetaAppSecret.trim()}>
+                      {configurandoWebhook ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCw className="h-3.5 w-3.5" />}
+                      {webhookEm ? "Reconfigurar" : "Configurar webhook"}
+                    </Button>
+                  </div>
+                  {(!eMetaAppId.trim() || !eMetaAppSecret.trim()) && (
+                    <p className="mt-2 text-xs text-mist">Preencha e <b className="text-chalk">salve</b> o App ID e o App Secret para liberar o botão.</p>
+                  )}
+                  {webhookMsg && (
+                    <p className={`mt-2 text-xs ${webhookMsg.tom === "ok" ? "text-emerald" : "text-rose"}`}>{webhookMsg.texto}</p>
+                  )}
+                  {webhookConflito && (
+                    <Button variant="outline" size="sm" className="mt-2 w-full border-rose/40 text-rose"
+                            onClick={() => configurarWebhook(true)} disabled={configurandoWebhook}>
+                      Substituir mesmo assim
+                    </Button>
+                  )}
+                </div>
+
                 <MaturidadeField value={eMaturidade} onChange={setEMaturidade} />
               </>
             )}

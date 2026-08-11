@@ -15,7 +15,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const admin = supabaseAdmin();
   const [{ data: chip }, { data: credMeta }] = await Promise.all([
     admin.from("chips").select("nome, maturidade, aquecimento_perfil, limite_dia_override, limite_hora_override, papel, agente_nome, tipo, numero_e164, chatwoot_inbox_id, saude").eq("id", Number(id)).maybeSingle(),
-    admin.from("chips_credenciais_meta").select("phone_number_id, waba_id, access_token, app_secret").eq("chip_id", Number(id)).maybeSingle(),
+    admin.from("chips_credenciais_meta").select("phone_number_id, waba_id, access_token, app_id, app_secret, webhook_callback_url, webhook_configurado_em").eq("chip_id", Number(id)).maybeSingle(),
   ]);
   if (!chip) return NextResponse.json({ erro: "chip_nao_encontrado" }, { status: 404 });
 
@@ -36,7 +36,11 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     meta_phone_number_id: credMeta?.phone_number_id ?? "",
     meta_waba_id: credMeta?.waba_id ?? "",
     meta_token: credMeta?.access_token ?? "",
+    meta_app_id: credMeta?.app_id ?? "",
     meta_app_secret: credMeta?.app_secret ?? "",
+    // estado do webhook do app (o passo que o SAVAN configura sozinho quando tem app_id+secret)
+    webhook_configurado_em: credMeta?.webhook_configurado_em ?? null,
+    webhook_callback_url: credMeta?.webhook_callback_url ?? null,
   });
 }
 
@@ -48,7 +52,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (!(await podeEditarChip(g.sessao, Number(id)))) return erroDono();
 
   const { nome, maturidade, aquecimento_perfil, limite_dia_override, limite_hora_override, papel, agente_nome, numero_e164,
-    meta_phone_number_id, meta_waba_id, meta_token, meta_app_secret } = await req.json();
+    meta_phone_number_id, meta_waba_id, meta_token, meta_app_id, meta_app_secret } = await req.json();
   const admin = supabaseAdmin();
 
   const chipPatch: Record<string, unknown> = {};
@@ -80,6 +84,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (typeof meta_phone_number_id === "string" && meta_phone_number_id.trim()) patchMeta.phone_number_id = meta_phone_number_id.trim();
   if (typeof meta_waba_id === "string" && meta_waba_id.trim()) patchMeta.waba_id = meta_waba_id.trim();
   if (typeof meta_token === "string" && meta_token.trim()) patchMeta.access_token = meta_token.trim();
+  if (meta_app_id !== undefined) patchMeta.app_id = (typeof meta_app_id === "string" && meta_app_id.trim()) ? meta_app_id.trim() : null;
   if (meta_app_secret !== undefined) patchMeta.app_secret = (typeof meta_app_secret === "string" && meta_app_secret.trim()) ? meta_app_secret.trim() : null;
   if (Object.keys(patchMeta).length > 0) {
     patchMeta.atualizado_em = new Date().toISOString();

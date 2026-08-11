@@ -60,6 +60,28 @@ export async function criarInboxMeta(opts: {
   }
 }
 
+// Relê do inbox cloud a URL de callback + o verify token que a Meta precisa conhecer.
+// Usado para (re)configurar o webhook de um chip já cadastrado, quando esses dados não foram
+// guardados no cadastro — o verify token é gerado pelo Chatwoot e só ele sabe qual é.
+export async function dadosWebhookInbox(inboxId: number): Promise<{ callback_url: string; verify_token: string | null } | null> {
+  const { url, token, accountId } = cfgCw();
+  if (!url || !token) return null;
+  try {
+    const r = await fetch(`${url}/api/v1/accounts/${accountId}/inboxes/${inboxId}`, {
+      headers: { api_access_token: token },
+    });
+    if (!r.ok) return null;
+    const corpo = await r.json().catch(() => null);
+    const inbox = corpo?.payload ?? corpo;
+    const phone: string | undefined = inbox?.phone_number;
+    if (!phone) return null;
+    return {
+      callback_url: `${url.replace(/\/$/, "")}/webhooks/whatsapp/${phone}`,
+      verify_token: inbox?.provider_config?.webhook_verify_token ?? null,
+    };
+  } catch { return null; }
+}
+
 export async function deletarInbox(inboxId: number): Promise<boolean> {
   const { url, token, accountId } = cfgCw();
   if (!url || !token) return false;
