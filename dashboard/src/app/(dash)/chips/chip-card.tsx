@@ -225,8 +225,9 @@ export function ChipCard({ chip, metrica, donoNome, ritmoHora }: {
                 <div>
                   <CampoToken label="App Secret (opcional)" value={eMetaAppSecret} onChange={setEMetaAppSecret} />
                   <p className="mt-1.5 text-xs text-mist">
-                    Só é usado para validar a assinatura dos webhooks da Meta (X-Hub-Signature-256).
-                    Deixar em branco não impede o número de enviar nem de receber.
+                    <b className="text-chalk">Não é necessário.</b> Fica guardado para o dia em que o
+                    SAVAN receber os webhooks da Meta direto (validação X-Hub-Signature-256). Hoje quem
+                    recebe é o Chatwoot, com o token de verificação dele — deixar em branco não muda nada.
                   </p>
                 </div>
                 <MaturidadeField value={eMaturidade} onChange={setEMaturidade} />
