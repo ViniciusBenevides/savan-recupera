@@ -1,9 +1,9 @@
 import { redirect } from "next/navigation";
 import { SectionTitle } from "@/components/ui/primitives";
 import { SeletorConta } from "@/components/SeletorConta";
-import { Abas, resolverAba } from "@/components/Abas";
+import { Abas } from "@/components/Abas";
+import { resolverAba, type Aba } from "@/lib/abas";
 import { getSessao, resolverEscopoConta, listarCobradores } from "@/lib/auth";
-import { MessageSquareText, Bot, BookOpen } from "lucide-react";
 import { Mensagens } from "./_secoes/mensagens";
 import { Comportamento } from "./_secoes/comportamento";
 import { Conhecimento } from "./_secoes/conhecimento";
@@ -13,10 +13,10 @@ export const dynamic = "force-dynamic";
 // Robô = "como ele fala?". Reúne cinco entradas de menu que respondiam à mesma pergunta:
 // Mensagens, Templates Meta, Descontos, o card de comportamento que morava em Configurações
 // e a Base de conhecimento.
-const ABAS = [
-  { k: "mensagens", t: "Mensagens", icon: MessageSquareText },
-  { k: "comportamento", t: "Comportamento", icon: Bot },
-  { k: "conhecimento", t: "Conhecimento", icon: BookOpen },
+const ABAS : Aba[] = [
+  { k: "mensagens", t: "Mensagens", icon: "MessageSquareText" },
+  { k: "comportamento", t: "Comportamento", icon: "Bot" },
+  { k: "conhecimento", t: "Conhecimento", icon: "BookOpen" },
 ];
 
 export default async function RoboPage({ searchParams }: {

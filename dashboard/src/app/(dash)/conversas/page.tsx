@@ -1,7 +1,7 @@
 import { SectionTitle } from "@/components/ui/primitives";
-import { Abas, resolverAba } from "@/components/Abas";
+import { Abas } from "@/components/Abas";
+import { resolverAba, type Aba } from "@/lib/abas";
 import { getSessao } from "@/lib/auth";
-import { MessagesSquare, Headset } from "lucide-react";
 import { Dialogos } from "./_secoes/dialogos";
 import { Escaladas, contarEscalacoesAbertas } from "./_secoes/escaladas";
 
@@ -15,10 +15,10 @@ export default async function ConversasPage({ searchParams }: { searchParams: Pr
   const podeAtender = !!sessao && ["admin", "cobrador"].includes(sessao.role);
 
   const abertas = podeAtender ? await contarEscalacoesAbertas() : 0;
-  const abas = [
-    { k: "todas", t: "Todas", icon: MessagesSquare },
+  const abas : Aba[] = [
+    { k: "todas", t: "Todas", icon: "MessagesSquare" },
     ...(podeAtender
-      ? [{ k: "escaladas", t: abertas > 0 ? `Precisam de você (${abertas})` : "Precisam de você", icon: Headset }]
+      ? [{ k: "escaladas", t: abertas > 0 ? `Precisam de você (${abertas})` : "Precisam de você", icon: "Headset" }]
       : []),
   ];
   const aba = resolverAba(abas, pedida);

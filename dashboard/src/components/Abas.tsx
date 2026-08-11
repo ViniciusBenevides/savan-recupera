@@ -1,9 +1,18 @@
 "use client";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
+import {
+  Gauge, HandCoins, LineChart, FolderUp, Users, MessagesSquare, Headset,
+  MessageSquareText, Bot, BookOpen, Send, Smartphone, Plug, UserCog, LifeBuoy,
+} from "lucide-react";
+import type { Aba, NomeIcone } from "@/lib/abas";
 import { cn } from "@/lib/utils";
 
-export type Aba = { k: string; t: string; icon?: any };
+// Os ícones vivem do lado do cliente e as pages escolhem por nome (ver src/lib/abas.ts).
+const ICONES: Record<NomeIcone, any> = {
+  Gauge, HandCoins, LineChart, FolderUp, Users, MessagesSquare, Headset,
+  MessageSquareText, Bot, BookOpen, Send, Smartphone, Plug, UserCog, LifeBuoy,
+};
 
 /**
  * Barra de abas dirigida pela URL (`?aba=`). Substitui a antiga sopa de itens de menu:
@@ -27,8 +36,9 @@ export function Abas({ abas, atual, className }: { abas: Aba[]; atual: string; c
   return (
     <div className={cn("mb-5 -mx-1 overflow-x-auto", className)}>
       <div className="flex w-max min-w-full gap-1 border-b border-line px-1">
-        {abas.map(({ k, t, icon: Icon }) => {
+        {abas.map(({ k, t, icon }) => {
           const ativo = k === atual;
+          const Icone = icon ? ICONES[icon] : null;
           return (
             <Link
               key={k}
@@ -41,7 +51,7 @@ export function Abas({ abas, atual, className }: { abas: Aba[]; atual: string; c
                   : "border-transparent text-mist hover:text-chalk",
               )}
             >
-              {Icon && <Icon className={cn("h-4 w-4", ativo ? "text-emerald" : "")} />}
+              {Icone && <Icone className={cn("h-4 w-4", ativo && "text-emerald")} />}
               {t}
             </Link>
           );
@@ -49,9 +59,4 @@ export function Abas({ abas, atual, className }: { abas: Aba[]; atual: string; c
       </div>
     </div>
   );
-}
-
-/** Resolve a aba pedida na URL contra as abas que o papel do usuário realmente pode ver. */
-export function resolverAba<T extends { k: string }>(abas: T[], pedida?: string): string {
-  return abas.some((a) => a.k === pedida) ? pedida! : abas[0].k;
 }

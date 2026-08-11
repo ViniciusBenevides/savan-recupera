@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { SectionTitle, Button } from "@/components/ui/primitives";
-import { Abas, resolverAba } from "@/components/Abas";
+import { Abas } from "@/components/Abas";
+import { resolverAba, type Aba } from "@/lib/abas";
 import { getSessao } from "@/lib/auth";
-import { FolderUp, Users, Plus } from "lucide-react";
+import { Plus } from "lucide-react";
 import { ListaCarteiras } from "./_secoes/lista";
 import { ListaDevedores } from "./_secoes/devedores";
 
@@ -10,9 +11,9 @@ export const dynamic = "force-dynamic";
 
 // Carteiras = "quem eu estou cobrando?". Devedores deixou de ser um item de menu à parte
 // porque devedor sempre pertence a uma carteira — agora é a visão plana da mesma área.
-const ABAS = [
-  { k: "carteiras", t: "Carteiras", icon: FolderUp },
-  { k: "devedores", t: "Devedores", icon: Users },
+const ABAS : Aba[] = [
+  { k: "carteiras", t: "Carteiras", icon: "FolderUp" },
+  { k: "devedores", t: "Devedores", icon: "Users" },
 ];
 
 export default async function CarteirasPage({ searchParams }: {

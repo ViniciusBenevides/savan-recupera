@@ -1,9 +1,9 @@
 import { redirect } from "next/navigation";
 import { SectionTitle } from "@/components/ui/primitives";
 import { SeletorConta } from "@/components/SeletorConta";
-import { Abas, resolverAba } from "@/components/Abas";
+import { Abas } from "@/components/Abas";
+import { resolverAba, type Aba } from "@/lib/abas";
 import { getSessao, resolverEscopoConta, listarCobradores } from "@/lib/auth";
-import { Send, Smartphone, Plug, Users, UserCog, LifeBuoy } from "lucide-react";
 import { Envio } from "./_secoes/envio";
 import { Chips } from "./_secoes/chips";
 import { Integracoes } from "./_secoes/integracoes";
@@ -26,15 +26,15 @@ export default async function AjustesPage({ searchParams }: {
   const ehAdmin = sessao.role === "admin";
 
   // credor/visualizador só têm conta e ajuda — o resto é infraestrutura de quem opera.
-  const abas = [
+  const abas : Aba[] = [
     ...(podeOperar ? [
-      { k: "envio", t: "Envio", icon: Send },
-      { k: "chips", t: "Chips", icon: Smartphone },
-      { k: "integracoes", t: "Integrações", icon: Plug },
-      { k: "equipe", t: "Equipe", icon: Users },
+      { k: "envio", t: "Envio", icon: "Send" },
+      { k: "chips", t: "Chips", icon: "Smartphone" },
+      { k: "integracoes", t: "Integrações", icon: "Plug" },
+      { k: "equipe", t: "Equipe", icon: "Users" },
     ] : []),
-    { k: "conta", t: "Minha conta", icon: UserCog },
-    { k: "ajuda", t: "Ajuda", icon: LifeBuoy },
+    { k: "conta", t: "Minha conta", icon: "UserCog" },
+    { k: "ajuda", t: "Ajuda", icon: "LifeBuoy" },
   ];
   const aba = resolverAba(abas, pedida);
 
