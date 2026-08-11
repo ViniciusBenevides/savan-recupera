@@ -7,6 +7,7 @@ import { getSessao, resolverEscopoConta, listarCobradores } from "@/lib/auth";
 import { Envio } from "./_secoes/envio";
 import { Chips } from "./_secoes/chips";
 import { Integracoes } from "./_secoes/integracoes";
+import { Modelos } from "./_secoes/modelos";
 import { Equipe } from "./_secoes/equipe";
 import { Conta } from "./_secoes/conta";
 import { Ajuda } from "./_secoes/ajuda";
@@ -30,6 +31,7 @@ export default async function AjustesPage({ searchParams }: {
     ...(podeOperar ? [
       { k: "envio", t: "Envio", icon: "Send" },
       { k: "chips", t: "Chips", icon: "Smartphone" },
+      { k: "modelos", t: "Modelos", icon: "FileBadge" },
       { k: "integracoes", t: "Integrações", icon: "Plug" },
       { k: "equipe", t: "Equipe", icon: "Users" },
     ] satisfies Aba[] : []),
@@ -41,6 +43,7 @@ export default async function AjustesPage({ searchParams }: {
   const sub: Record<string, string> = {
     envio: "Quando e em que ritmo o robô envia.",
     chips: "Os números de WhatsApp por onde ele conversa.",
+    modelos: "Os textos que a Meta precisa aprovar para o robô abrir conversa.",
     integracoes: "Asaas, chaves de API e serviços externos.",
     equipe: "Quem entra no painel e com que permissão.",
     conta: "Altere seu nome e sua senha de acesso.",
@@ -59,6 +62,7 @@ export default async function AjustesPage({ searchParams }: {
 
       {aba === "envio" && escopo && <Envio escopo={escopo} conta={conta} />}
       {aba === "chips" && <Chips sessao={sessao} />}
+      {aba === "modelos" && <Modelos sessao={sessao} />}
       {aba === "integracoes" && <Integracoes sessao={sessao} />}
       {aba === "equipe" && <Equipe sessao={sessao} />}
       {aba === "conta" && <Conta />}

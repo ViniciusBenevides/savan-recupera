@@ -77,7 +77,8 @@ export function ChipCard({ chip, metrica, donoNome, ritmoHora }: {
   const [eMetaPhone, setEMetaPhone] = useState("");
   const [eMetaWaba, setEMetaWaba] = useState("");
   const [eMetaToken, setEMetaToken] = useState("");
-  const [origMeta, setOrigMeta] = useState({ phone: "", waba: "", token: "" });
+  const [eMetaAppSecret, setEMetaAppSecret] = useState("");
+  const [origMeta, setOrigMeta] = useState({ phone: "", waba: "", token: "", appSecret: "" });
   const [saude, setSaude] = useState<any>(chip.saude ?? null);
   const [atualizandoSaude, setAtualizandoSaude] = useState(false);
 
@@ -121,7 +122,8 @@ export function ChipCard({ chip, metrica, donoNome, ritmoHora }: {
         setEPapel(d.papel ?? "bot"); setEAgente(d.agente_nome ?? ""); setENumero(d.numero_e164 ?? "");
         setOrigPapel({ papel: d.papel ?? "bot", agente: d.agente_nome ?? "", numero: d.numero_e164 ?? "" });
         setEMetaPhone(d.meta_phone_number_id ?? ""); setEMetaWaba(d.meta_waba_id ?? ""); setEMetaToken(d.meta_token ?? "");
-        setOrigMeta({ phone: d.meta_phone_number_id ?? "", waba: d.meta_waba_id ?? "", token: d.meta_token ?? "" });
+        setEMetaAppSecret(d.meta_app_secret ?? "");
+        setOrigMeta({ phone: d.meta_phone_number_id ?? "", waba: d.meta_waba_id ?? "", token: d.meta_token ?? "", appSecret: d.meta_app_secret ?? "" });
       })
       .catch(() => setErro("Falha ao carregar os dados do chip."))
       .finally(() => setCarregando(false));
@@ -144,6 +146,7 @@ export function ChipCard({ chip, metrica, donoNome, ritmoHora }: {
     if (eMetaPhone.trim() !== origMeta.phone) body.meta_phone_number_id = eMetaPhone.trim();
     if (eMetaWaba.trim() !== origMeta.waba) body.meta_waba_id = eMetaWaba.trim();
     if (eMetaToken.trim() !== origMeta.token) body.meta_token = eMetaToken.trim();
+    if (eMetaAppSecret.trim() !== origMeta.appSecret) body.meta_app_secret = eMetaAppSecret.trim();
     if (Object.keys(body).length === 0) { setEditando(false); return; }
     start(async () => {
       const r = await fetch(`/api/chips/${chip.id}`, {
@@ -219,6 +222,13 @@ export function ChipCard({ chip, metrica, donoNome, ritmoHora }: {
                   <Input value={eMetaWaba} onChange={(e) => setEMetaWaba(e.target.value)} className="font-mono text-xs" />
                 </div>
                 <CampoToken label="Token de acesso (Meta)" value={eMetaToken} onChange={setEMetaToken} />
+                <div>
+                  <CampoToken label="App Secret (opcional)" value={eMetaAppSecret} onChange={setEMetaAppSecret} />
+                  <p className="mt-1.5 text-xs text-mist">
+                    Só é usado para validar a assinatura dos webhooks da Meta (X-Hub-Signature-256).
+                    Deixar em branco não impede o número de enviar nem de receber.
+                  </p>
+                </div>
                 <MaturidadeField value={eMaturidade} onChange={setEMaturidade} />
               </>
             )}

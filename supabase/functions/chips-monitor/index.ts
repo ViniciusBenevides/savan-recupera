@@ -28,14 +28,17 @@ Deno.serve(async (req) => {
   const { data: cfgRitmo } = await sb.from("configuracoes").select("valor").eq("chave", "ritmo").is("cobrador_id", null).maybeSingle();
   const ritmoCfg: Record<string, any> = cfgRitmo?.valor ?? {};
 
-  const { data: chips } = await sb.from("chips").select("id, nome, status").not("status", "in", "(cadastrado,banido)");
+  const { data: chips } = await sb.from("chips").select("id, nome, status, cobrador_id").not("status", "in", "(cadastrado,banido)");
   const resultados: any[] = [];
   const hoje = new Date().toISOString().slice(0, 10);
+  // WABAs vistas no loop -> sincronizacao do cache de templates no fim (ver abaixo)
+  const wabas = new Map<string, { waba: string; token: string; cobrador: string }>();
   for (const chip of chips ?? []) {
     // Saude do numero na Meta: qualidade, tier de limite e status — e o que diz se ele esta perto
     // de ser restringido. O painel mostra isso no card do chip.
-    const { data: credM } = await sb.from("chips_credenciais_meta").select("phone_number_id, access_token").eq("chip_id", chip.id).maybeSingle();
+    const { data: credM } = await sb.from("chips_credenciais_meta").select("phone_number_id, access_token, waba_id").eq("chip_id", chip.id).maybeSingle();
     if (!credM) continue;
+    if (credM.waba_id) wabas.set(`${chip.cobrador_id}|${credM.waba_id}`, { waba: credM.waba_id, token: credM.access_token, cobrador: chip.cobrador_id });
     let saude: any = null, ok = false;
     try {
       const r = await fetch(`https://graph.facebook.com/v21.0/${credM.phone_number_id}?fields=display_phone_number,verified_name,quality_rating,messaging_limit_tier,status,name_status`, { headers: { Authorization: `Bearer ${credM.access_token}` } });
@@ -80,5 +83,28 @@ Deno.serve(async (req) => {
     await sb.from("chips").update({ saude, status: novoStatus, ...(travarAte ? { abordagem_travada_ate: travarAte } : {}) }).eq("id", chip.id);
     resultados.push({ chip: chip.id, quality: saude?.quality_rating, status: novoStatus });
   }
-  return json({ ok: true, chips: resultados });
+  // Cache de templates (§32): a campanha so dispara com modelo APROVADO, e quem decide isso e a
+  // Meta — o status muda de PENDING para APPROVED/REJECTED sozinho, horas depois de submeter.
+  // Sem esta sincronizacao periodica o painel (e o campanha-lote) ficariam olhando um retrato
+  // velho e a campanha nao destravaria sozinha quando a aprovacao saisse.
+  let templatesSincronizados = 0;
+  for (const w of wabas.values()) {
+    try {
+      const r = await fetch(`https://graph.facebook.com/v21.0/${w.waba}/message_templates?fields=id,name,status,category,language,components,quality_score,rejected_reason&limit=200`, { headers: { Authorization: `Bearer ${w.token}` } });
+      const d = await r.json();
+      if (!r.ok) continue;
+      for (const t of d?.data ?? []) {
+        await sb.from("meta_templates").upsert({
+          cobrador_id: w.cobrador, waba_id: w.waba, meta_template_id: t.id ?? null,
+          name: t.name, language: t.language, category: t.category, status: t.status,
+          components: t.components ?? null, rejection_reason: t.rejected_reason ?? null,
+          quality_score: t.quality_score?.score ?? t.quality_score ?? null,
+          sincronizado_em: new Date().toISOString(),
+        }, { onConflict: "cobrador_id,waba_id,name,language" });
+        templatesSincronizados++;
+      }
+    } catch (_e) { /* nao derruba o monitor de chips */ }
+  }
+
+  return json({ ok: true, chips: resultados, templates: templatesSincronizados });
 });

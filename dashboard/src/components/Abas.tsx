@@ -3,7 +3,7 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import {
   Gauge, HandCoins, LineChart, FolderUp, Users, MessagesSquare, Headset,
-  MessageSquareText, Bot, BookOpen, Send, Smartphone, Plug, UserCog, LifeBuoy,
+  MessageSquareText, Bot, BookOpen, Send, Smartphone, Plug, UserCog, LifeBuoy, FileBadge,
 } from "lucide-react";
 import type { Aba, NomeIcone } from "@/lib/abas";
 import { cn } from "@/lib/utils";
@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils";
 // Os ícones vivem do lado do cliente e as pages escolhem por nome (ver src/lib/abas.ts).
 const ICONES: Record<NomeIcone, any> = {
   Gauge, HandCoins, LineChart, FolderUp, Users, MessagesSquare, Headset,
-  MessageSquareText, Bot, BookOpen, Send, Smartphone, Plug, UserCog, LifeBuoy,
+  MessageSquareText, Bot, BookOpen, Send, Smartphone, Plug, UserCog, LifeBuoy, FileBadge,
 };
 
 /**

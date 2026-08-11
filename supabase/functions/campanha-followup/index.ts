@@ -102,6 +102,57 @@ function dentroJanela(j: any): boolean {
   return faixasDoDia(j, dow).some(([ini, fim]) => min >= ini && min < fim);
 }
 
+// ─── Templates aprovados da Meta (§32) ────────────────────────────────────────────────────────
+// Fora da janela de 24h a Cloud API recusa texto livre: só sai MODELO APROVADO. Estas funcoes
+// resolvem o template no cache local (meta_templates), rendem o corpo com as variaveis e montam
+// o payload do Chatwoot. O `content` vai com o texto ja renderizado — assim o historico do painel
+// e do atendente mostra exatamente o que a pessoa recebeu, e nao um placeholder.
+type TplMeta = { name: string; language: string; category: string; params: string[]; texto: string };
+
+function corpoDoTemplate(components: unknown): string {
+  const lista = Array.isArray(components) ? components : [];
+  const body = lista.find((c: any) => c?.type === "BODY");
+  return String((body as any)?.text ?? "");
+}
+
+async function montarTemplate(
+  sb: SupabaseClient, cobradorId: string | null, ref: any, vars: Record<string, string>,
+): Promise<TplMeta | null> {
+  const name = String(ref?.name ?? "").trim();
+  if (!name) return null;
+  const language = String(ref?.language ?? "pt_BR");
+  let q = sb.from("meta_templates").select("name, language, category, components")
+    .eq("name", name).eq("language", language).eq("status", "APPROVED");
+  if (cobradorId) q = q.eq("cobrador_id", cobradorId);
+  const { data } = await q.maybeSingle();
+  if (!data) return null;
+
+  const nomes: string[] = Array.isArray(ref?.variaveis) ? ref.variaveis : [];
+  const params = nomes.map((v) => String(vars[v] ?? "").trim());
+  // A Meta recusa parametro vazio; sem valor para uma posicao, o template nao pode ser usado.
+  if (params.some((p) => !p)) return null;
+  let texto = corpoDoTemplate(data.components);
+  params.forEach((p, i) => { texto = texto.replaceAll(`{{${i + 1}}}`, p); });
+  return {
+    name: data.name, language: data.language,
+    category: String(data.category ?? "UTILITY").toLowerCase(), params, texto,
+  };
+}
+
+// Payload de mensagem do Chatwoot para um canal WhatsApp Cloud enviando modelo aprovado.
+function chatwootTemplateBody(tpl: TplMeta) {
+  return {
+    content: tpl.texto,
+    message_type: "outgoing",
+    template_params: {
+      name: tpl.name,
+      category: tpl.category,
+      language: tpl.language,
+      processed_params: Object.fromEntries(tpl.params.map((p, i) => [String(i + 1), p])),
+    },
+  };
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   // A1: somente o service_role (n8n) pode chamar. A anon key pública é recusada.
@@ -137,7 +188,7 @@ Deno.serve(async (req) => {
     .lte("proximo_followup_em", new Date().toISOString())
     .order("proximo_followup_em").limit(30);
 
-  let enviados = 0, encerrados = 0, gated = 0;
+  let enviados = 0, encerrados = 0, gated = 0, semTemplate = 0;
   for (const c of convs ?? []) {
     const cart = cartMap.get(c.carteira_id) ?? { credor: null, cobrador_id: null, blocos: [] };
     const cfg = resolverCfg(cart.cobrador_id);
@@ -156,16 +207,22 @@ Deno.serve(async (req) => {
     const { data: dev } = await sb.from("devedores").select("nome").eq("id", c.devedor_id).single();
     const pn = (dev?.nome ?? "").split(" ")[0];
     const credor = cart.credor ?? "";
-    const doFluxo = blocos[n] ? sortear(blocos[n].textos) : null;
-    const tplConteudo = doFluxo ?? await templateFollowup(sb, `followup_${n + 1}`, cart.cobrador_id);
-    const texto = tplConteudo
-      ? render(tplConteudo, { primeiro_nome: pn.charAt(0) + pn.slice(1).toLowerCase(), nome_bot: cfg.ia?.nome_bot ?? "Ana", credor })
-      : `Olá ${pn}, tudo bem? Ainda dá tempo de aproveitar a condição especial${credor ? ` da ${credor}` : ""}.`;
+
+    // O reenvio vai para quem NUNCA respondeu — a janela de 24h nunca abriu, então também só sai
+    // como modelo aprovado da Meta. O bloco de follow-up do fluxo da carteira (§35) segue mandando
+    // no RITMO (quantos e de quanto em quanto tempo); o TEXTO é o do modelo aprovado.
+    const refs: any[] = Array.isArray(cfg.meta_followup_templates?.lista) ? cfg.meta_followup_templates.lista : [];
+    const tplMeta = await montarTemplate(sb, cart.cobrador_id, refs[n], {
+      primeiro_nome: pn.charAt(0) + pn.slice(1).toLowerCase(), nome: dev?.nome ?? "",
+      credor, nome_bot: cfg.ia?.nome_bot ?? "Ana",
+    });
+    if (!tplMeta) { semTemplate++; continue; }
+    const texto = tplMeta.texto;
 
     if (!simulacao) {
       await fetch(`${cwUrl}/api/v1/accounts/${acc}/conversations/${c.chatwoot_conversation_id}/messages`, {
         method: "POST", headers: { "api_access_token": seg.CHATWOOT_TOKEN, "Content-Type": "application/json" },
-        body: JSON.stringify({ content: texto, message_type: "outgoing" }),
+        body: JSON.stringify(chatwootTemplateBody(tplMeta)),
       });
     }
     // o próximo reenvio é agendado pela espera do PRÓXIMO bloco do fluxo (ou pela config global)
@@ -176,5 +233,6 @@ Deno.serve(async (req) => {
     await sb.from("eventos_campanha").insert({ tipo: "followup", devedor_id: c.devedor_id, carteira_id: c.carteira_id, payload: { n: n + 1, simulacao } });
     enviados++;
   }
-  return json({ ok: true, enviados, encerrados, gated });
+  // sem_template = reenvio adiado por falta de modelo aprovado (nao consome a vez)
+  return json({ ok: true, enviados, encerrados, gated, sem_template: semTemplate });
 });

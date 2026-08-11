@@ -23,9 +23,56 @@ async function carregarSegredos(sb: SupabaseClient): Promise<Record<string, stri
   for (const r of data ?? []) if (r.valor) m[r.chave] = r.valor;
   return m;
 }
-// §32 — o envio da abordagem fria por TEMPLATE da Meta ainda não foi implementado (o W01 posta
-// texto livre, que a Meta recusa fora da janela de 24h). Vire para true junto com esse envio.
-const ENVIO_TEMPLATE_META_PRONTO: boolean = false;
+// ─── Templates aprovados da Meta (§32) ────────────────────────────────────────────────────────
+// Fora da janela de 24h a Cloud API recusa texto livre: só sai MODELO APROVADO. Estas funcoes
+// resolvem o template no cache local (meta_templates), rendem o corpo com as variaveis e montam
+// o payload do Chatwoot. O `content` vai com o texto ja renderizado — assim o historico do painel
+// e do atendente mostra exatamente o que a pessoa recebeu, e nao um placeholder.
+type TplMeta = { name: string; language: string; category: string; params: string[]; texto: string };
+
+function corpoDoTemplate(components: unknown): string {
+  const lista = Array.isArray(components) ? components : [];
+  const body = lista.find((c: any) => c?.type === "BODY");
+  return String((body as any)?.text ?? "");
+}
+
+async function montarTemplate(
+  sb: SupabaseClient, cobradorId: string | null, ref: any, vars: Record<string, string>,
+): Promise<TplMeta | null> {
+  const name = String(ref?.name ?? "").trim();
+  if (!name) return null;
+  const language = String(ref?.language ?? "pt_BR");
+  let q = sb.from("meta_templates").select("name, language, category, components")
+    .eq("name", name).eq("language", language).eq("status", "APPROVED");
+  if (cobradorId) q = q.eq("cobrador_id", cobradorId);
+  const { data } = await q.maybeSingle();
+  if (!data) return null;
+
+  const nomes: string[] = Array.isArray(ref?.variaveis) ? ref.variaveis : [];
+  const params = nomes.map((v) => String(vars[v] ?? "").trim());
+  // A Meta recusa parametro vazio; sem valor para uma posicao, o template nao pode ser usado.
+  if (params.some((p) => !p)) return null;
+  let texto = corpoDoTemplate(data.components);
+  params.forEach((p, i) => { texto = texto.replaceAll(`{{${i + 1}}}`, p); });
+  return {
+    name: data.name, language: data.language,
+    category: String(data.category ?? "UTILITY").toLowerCase(), params, texto,
+  };
+}
+
+// Payload de mensagem do Chatwoot para um canal WhatsApp Cloud enviando modelo aprovado.
+function chatwootTemplateBody(tpl: TplMeta) {
+  return {
+    content: tpl.texto,
+    message_type: "outgoing",
+    template_params: {
+      name: tpl.name,
+      category: tpl.category,
+      language: tpl.language,
+      processed_params: Object.fromEntries(tpl.params.map((p, i) => [String(i + 1), p])),
+    },
+  };
+}
 
 // Chaves de config que existem "por cobrador" (o resto é só global/infra).
 const CHAVES_POR_COBRADOR = new Set([
@@ -222,16 +269,14 @@ Deno.serve(async (req) => {
     // NÃO pode ser texto livre — tem que ser um TEMPLATE aprovado pela Meta. Enquanto o envio por
     // template não existir, nenhum lote sai daqui: é melhor devolver lote vazio com o motivo do que
     // gerar envio fantasma (marcado como "enviado" sem nada chegar) ou texto livre que a Meta recusa.
-    const nomeTpl = (cfg.meta_abordagem_template?.name ?? "").trim();
-    if (!nomeTpl) { pulados.meta_template_ausente = (pulados.meta_template_ausente ?? 0) + 1; continue; }
+    // A abordagem ABRE a conversa, então está sempre fora da janela de 24h: a Cloud API só aceita
+    // modelo aprovado. Sem template configurado (ou ainda em análise na Meta) o chip é pulado com o
+    // motivo — melhor lote vazio explicado do que envio fantasma marcado como "enviado".
+    const refTpl = cfg.meta_abordagem_template;
+    if (!String(refTpl?.name ?? "").trim()) { pulados.meta_template_ausente = (pulados.meta_template_ausente ?? 0) + 1; continue; }
     const { data: aprov } = await sb.from("meta_templates").select("status")
-      .eq("cobrador_id", chip.cobrador_id).eq("name", nomeTpl).eq("status", "APPROVED").maybeSingle();
+      .eq("cobrador_id", chip.cobrador_id).eq("name", refTpl.name).eq("status", "APPROVED").maybeSingle();
     if (!aprov) { pulados.meta_template_nao_aprovado = (pulados.meta_template_nao_aprovado ?? 0) + 1; continue; }
-    // Falta a última peça: mandar o template (POST /{phone_number_id}/messages ou o Chatwoot com
-    // template_params) em vez do texto livre que o W01 posta hoje. Enquanto a flag for false o lote
-    // sai vazio de propósito — todo o resto do loop (tetos de dia/hora, ritmo, sorteio anti-ban)
-    // continua valendo e volta a rodar assim que o envio por template existir.
-    if (!ENVIO_TEMPLATE_META_PRONTO) { pulados.meta_envio_template_pendente = (pulados.meta_envio_template_pendente ?? 0) + 1; continue; }
 
     // Intervalo ALEATÓRIO entre mensagens (anti-ban): cada envio aguarda um tempo sorteado em
     // [intervalo_min_segundos, intervalo_max_segundos]. Compatível com config antiga (só o mín).
@@ -284,18 +329,25 @@ Deno.serve(async (req) => {
       if (!tel) { await sb.from("fila_envios").update({ status: "sem_whatsapp", erro: "sem_telefone" }).eq("id", item.id); continue; }
 
       const credor = await credorDaCarteira(item.carteira_id);
-      // §35: o texto da abordagem é o bloco de DISPARO do fluxo da carteira. Carteira sem fluxo cai
-      // nos templates_mensagem (que perderam a tela mas seguem valendo como padrão do sistema).
-      const doFluxo = await textoDeDisparo(item.carteira_id);
-      const tpl = doFluxo ? null : await escolherTemplate(sb, "abordagem_inicial", chip.cobrador_id ?? null);
-      const bruto = doFluxo ?? tpl?.conteudo ?? null;
       const primeiroNome = (dev?.nome ?? "").split(" ")[0];
       const primeiroNomeCap = primeiroNome.charAt(0) + primeiroNome.slice(1).toLowerCase();
-      const conteudo = bruto
-        ? renderTemplate(bruto, { primeiro_nome: primeiroNomeCap, nome_bot: nomeBot, nome: dev?.nome, credor: credor ?? "" })
-        : `Olá ${primeiroNomeCap}, aqui é a ${nomeBot}${credor ? ` da ${credor}` : ""}.`;
+      // ATENÇÃO (§32 x §35): a 1ª mensagem NÃO é o bloco de disparo do fluxo da carteira — a Meta
+      // exige modelo aprovado por ela, palavra por palavra. O fluxo volta a mandar assim que a
+      // pessoa responde e a janela de 24h abre. `conteudo` = o modelo já renderizado, para que o
+      // histórico do painel e do atendente mostre exatamente o que a pessoa recebeu.
+      const tplMeta = await montarTemplate(sb, chip.cobrador_id ?? null, refTpl, {
+        primeiro_nome: primeiroNomeCap, nome: dev?.nome ?? "", credor: credor ?? "", nome_bot: nomeBot,
+      });
+      if (!tplMeta) {
+        // sumiu do cache ou faltou valor para alguma variável: devolve à fila em vez de virar
+        // texto livre que a Meta recusaria
+        await sb.from("fila_envios").update({ status: "pendente" }).eq("id", item.id);
+        pulados.meta_template_nao_montou = (pulados.meta_template_nao_montou ?? 0) + 1;
+        continue;
+      }
+      const conteudo = tplMeta.texto;
 
-      await sb.from("fila_envios").update({ template_id: tpl?.id ?? null, mensagem_renderizada: conteudo }).eq("id", item.id);
+      await sb.from("fila_envios").update({ mensagem_renderizada: conteudo }).eq("id", item.id);
 
       // "digitando" curto e proporcional ao texto (parece humano); espera até o próximo envio = sorteio anti-ban
       const delayTyping = Math.min(8, 3 + Math.floor(conteudo.length / 60) + Math.floor(Math.random() * 3));
@@ -306,6 +358,8 @@ Deno.serve(async (req) => {
         devedor_id: dev?.id, devedor_nome: dev?.nome, processo: dev?.processo, valor_divida: dev?.saldo,
         telefone_id: tel.id, telefone_e164: tel.telefone_e164, contato_existente: dev?.chatwoot_contact_id ?? null,
         mensagem: conteudo, delay_typing: delayTyping, delay_proximo: delayProximo, simulacao,
+        // o W01 repassa isto como `template_params` ao Chatwoot (canal whatsapp_cloud)
+        template: chatwootTemplateBody(tplMeta).template_params,
       });
     }
   }

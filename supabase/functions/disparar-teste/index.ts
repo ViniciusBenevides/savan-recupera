@@ -40,6 +40,57 @@ function render(tpl: string, vars: Record<string, unknown>): string {
   return txt;
 }
 
+// ─── Templates aprovados da Meta (§32) ────────────────────────────────────────────────────────
+// Fora da janela de 24h a Cloud API recusa texto livre: só sai MODELO APROVADO. Estas funcoes
+// resolvem o template no cache local (meta_templates), rendem o corpo com as variaveis e montam
+// o payload do Chatwoot. O `content` vai com o texto ja renderizado — assim o historico do painel
+// e do atendente mostra exatamente o que a pessoa recebeu, e nao um placeholder.
+type TplMeta = { name: string; language: string; category: string; params: string[]; texto: string };
+
+function corpoDoTemplate(components: unknown): string {
+  const lista = Array.isArray(components) ? components : [];
+  const body = lista.find((c: any) => c?.type === "BODY");
+  return String((body as any)?.text ?? "");
+}
+
+async function montarTemplate(
+  sb: SupabaseClient, cobradorId: string | null, ref: any, vars: Record<string, string>,
+): Promise<TplMeta | null> {
+  const name = String(ref?.name ?? "").trim();
+  if (!name) return null;
+  const language = String(ref?.language ?? "pt_BR");
+  let q = sb.from("meta_templates").select("name, language, category, components")
+    .eq("name", name).eq("language", language).eq("status", "APPROVED");
+  if (cobradorId) q = q.eq("cobrador_id", cobradorId);
+  const { data } = await q.maybeSingle();
+  if (!data) return null;
+
+  const nomes: string[] = Array.isArray(ref?.variaveis) ? ref.variaveis : [];
+  const params = nomes.map((v) => String(vars[v] ?? "").trim());
+  // A Meta recusa parametro vazio; sem valor para uma posicao, o template nao pode ser usado.
+  if (params.some((p) => !p)) return null;
+  let texto = corpoDoTemplate(data.components);
+  params.forEach((p, i) => { texto = texto.replaceAll(`{{${i + 1}}}`, p); });
+  return {
+    name: data.name, language: data.language,
+    category: String(data.category ?? "UTILITY").toLowerCase(), params, texto,
+  };
+}
+
+// Payload de mensagem do Chatwoot para um canal WhatsApp Cloud enviando modelo aprovado.
+function chatwootTemplateBody(tpl: TplMeta) {
+  return {
+    content: tpl.texto,
+    message_type: "outgoing",
+    template_params: {
+      name: tpl.name,
+      category: tpl.category,
+      language: tpl.language,
+      processed_params: Object.fromEntries(tpl.params.map((p, i) => [String(i + 1), p])),
+    },
+  };
+}
+
 const CPF_TESTE = "00000000191";
 
 Deno.serve(async (req) => {
@@ -79,7 +130,7 @@ Deno.serve(async (req) => {
   const { data: chip } = await sb.from("chips").select("id, nome, chatwoot_inbox_id, status").eq("id", b.chip_id).maybeSingle();
   if (!chip) return json({ ok: false, erro: "chip_nao_encontrado" }, 404);
   if (!chip.chatwoot_inbox_id) return json({ ok: false, erro: "chip_sem_inbox", detalhe: "Este chip ainda não está vinculado ao Chatwoot." }, 400);
-  if (!["conectado", "aquecendo", "ativo"].includes(chip.status)) return json({ ok: false, erro: "chip_offline", detalhe: "Conecte o chip (QR) antes de testar." }, 400);
+  if (!["conectado", "aquecendo", "ativo"].includes(chip.status)) return json({ ok: false, erro: "chip_offline", detalhe: "Este numero nao esta conectado na Meta. Confira as credenciais em Ajustes > Chips." }, 400);
 
   // Carteira do teste: a que o painel pedir (para testar o fluxo DELA) ou a carteira interna de
   // teste. A interna nasce com o fluxo-modelo — assim o teste mostra o mesmo texto que uma carteira
@@ -145,13 +196,31 @@ Deno.serve(async (req) => {
     ? render(bruto, { primeiro_nome: primeiroNome, nome_bot: nomeBot, nome: dev!.nome, credor: cart!.credor ?? "" })
     : `Olá ${primeiroNome}, aqui é a ${nomeBot}. [MENSAGEM DE TESTE] Podemos falar rapidinho sobre uma pendência antiga?`;
 
+  // A 1a mensagem abre a conversa: fora da janela de 24h a Cloud API so aceita modelo aprovado.
+  // O teste usa o MESMO caminho da campanha de verdade — se ele chegar, a campanha chega.
+  const { data: chipDono } = await sb.from("chips").select("cobrador_id").eq("id", chip.id).maybeSingle();
+  const tplMeta = await montarTemplate(sb, chipDono?.cobrador_id ?? null, cfg.meta_abordagem_template, {
+    primeiro_nome: primeiroNome, nome: dev!.nome ?? "", credor: cart!.credor ?? "", nome_bot: nomeBot,
+  });
+  if (!tplMeta) {
+    return json({
+      ok: false, erro: "template_indisponivel",
+      detalhe: "A 1a mensagem precisa de um modelo APROVADO pela Meta. Confira em Ajustes > Integracoes se o template da abordagem ja saiu de 'em analise'.",
+    }, 400);
+  }
+  const conteudoFinal = tplMeta.texto;
+
   const cwUrl = cfg.chatwoot?.url ?? "https://chatwoot.example.com";
   const acc = cfg.chatwoot?.account_id ?? 1;
-  await fetch(`${cwUrl}/api/v1/accounts/${acc}/conversations/${conversationId}/messages`, {
+  const envio = await fetch(`${cwUrl}/api/v1/accounts/${acc}/conversations/${conversationId}/messages`, {
     method: "POST",
     headers: { "api_access_token": seg.CHATWOOT_TOKEN, "Content-Type": "application/json" },
-    body: JSON.stringify({ content: conteudo, message_type: "outgoing" }),
+    body: JSON.stringify(chatwootTemplateBody(tplMeta)),
   });
+  if (!envio.ok) {
+    const det = await envio.text().catch(() => "");
+    return json({ ok: false, erro: "falha_envio", detalhe: `O Chatwoot recusou o envio do modelo (${envio.status}). ${det.slice(0, 300)}` }, 400);
+  }
 
   // cria/atualiza a conversa marcada como teste
   await sb.from("conversas").upsert({
@@ -161,7 +230,7 @@ Deno.serve(async (req) => {
     simulacao: true,
   }, { onConflict: "chatwoot_conversation_id" });
   const { data: convRow } = await sb.from("conversas").select("id").eq("chatwoot_conversation_id", conversationId).maybeSingle();
-  if (convRow) await sb.from("mensagens").insert({ conversa_id: convRow.id, direcao: "saida", origem: "bot", conteudo, simulacao: true });
+  if (convRow) await sb.from("mensagens").insert({ conversa_id: convRow.id, direcao: "saida", origem: "bot", conteudo: conteudoFinal, simulacao: true });
 
-  return json({ ok: true, conversation_id: conversationId, numero_teste: numeroTeste, mensagem: conteudo });
+  return json({ ok: true, conversation_id: conversationId, numero_teste: numeroTeste, mensagem: conteudoFinal, template: tplMeta.name });
 });

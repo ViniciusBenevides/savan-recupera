@@ -14,7 +14,7 @@
 export type NomeIcone =
   | "Gauge" | "HandCoins" | "LineChart" | "FolderUp" | "Users" | "MessagesSquare"
   | "Headset" | "MessageSquareText" | "Bot" | "BookOpen" | "Send" | "Smartphone"
-  | "Plug" | "UserCog" | "LifeBuoy";
+  | "Plug" | "UserCog" | "LifeBuoy" | "FileBadge";
 
 export type Aba = { k: string; t: string; icon?: NomeIcone };
 

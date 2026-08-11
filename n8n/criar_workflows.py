@@ -168,7 +168,10 @@ def w01():
              "operator": {"type": "boolean", "operation": "true", "singleValue": True}}]}})
     envia = http_chatwoot("Enviar msg", [1780, 360],
         f"={env('CHATWOOT_URL').rstrip('/')}/api/v1/accounts/1/conversations/{{{{ $json.conversation_id }}}}/messages",
-        '={ "content": {{ JSON.stringify($(\'Loop\').item.json.mensagem) }}, "message_type": "outgoing" }')
+        # A 1a mensagem abre a conversa: fora da janela de 24h a Cloud API so aceita modelo
+        # aprovado. O campanha-lote ja manda o descritor pronto em `template`.
+        '={ "content": {{ JSON.stringify($(\'Loop\').item.json.mensagem) }}, "message_type": "outgoing", '
+        '"template_params": {{ JSON.stringify($(\'Loop\').item.json.template) }} }')
     reg_ok = http_edge("Registrar enviado", "campanha-registrar", [2000, 300],
         '={ "fila_id": {{ $(\'Loop\').item.json.fila_id }}, "chip_id": {{ $(\'Loop\').item.json.chip_id }}, '
         '"devedor_id": {{ $(\'Loop\').item.json.devedor_id }}, "telefone_id": {{ $(\'Loop\').item.json.telefone_id }}, '
