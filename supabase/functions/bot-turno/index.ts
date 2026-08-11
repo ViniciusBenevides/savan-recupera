@@ -198,10 +198,23 @@ async function carregarConhecimento(sb: SupabaseClient, carteiraId: number | nul
 // o modelo continua livre para conversar, mas sabe em que etapa está, o que precisa acontecer nela e
 // para onde ir. O ganho concreto é a confirmação de identidade virar ETAPA (com o resto do roteiro
 // bloqueado atrás dela), em vez de uma frase de prompt que o modelo pode atropelar.
+//
+// Desde a §35 o mesmo fluxo carrega os blocos de MENSAGEM (disparo/follow-up/pós-pagamento), que são
+// texto pronto de outras funções. Aqui eles não entram: o bot-turno só conhece etapas de conversa —
+// se o disparo entrasse como etapa, o modelo receberia "mande a 1ª mensagem" no meio do diálogo.
+const ehConversa = (e: any) => (e?.tipo ?? "conversa") === "conversa";
+
 function etapaDoRoteiro(carteira: any, etapaAtual: string | null): any | null {
   const r = carteira?.roteiro;
   if (!r?.ativo || !Array.isArray(r.etapas) || r.etapas.length === 0) return null;
-  return r.etapas.find((e: any) => e.id === etapaAtual) ?? r.etapas[0];
+  const conversas = r.etapas.filter(ehConversa);
+  if (conversas.length === 0) return null;
+  const atual = conversas.find((e: any) => e.id === etapaAtual);
+  if (atual) return atual;
+  // sem etapa marcada, começa por onde o disparo aponta ("a pessoa respondeu → …")
+  const disparo = r.etapas.find((e: any) => e?.tipo === "disparo");
+  const entrada = (disparo?.casos ?? []).find((c: any) => c?.vai_para)?.vai_para;
+  return conversas.find((e: any) => e.id === entrada) ?? conversas[0];
 }
 
 function blocoRoteiro(etapa: any, interp: (t: unknown) => string): string[] {
@@ -405,21 +418,16 @@ Deno.serve(async (req) => {
           await sb.from("escalacoes").insert({ conversa_id: conv.id, devedor_id: conv.devedor_id, carteira_id: carteiraId, chip_id: conv.chip_id ?? null, motivo: escalarMotivo, contexto_snapshot: { historico: hist, mensagem: b.mensagem }, resumo: resumoTxt, equipe_chip_id: equipe?.chip_id ?? null, atendente_numero: equipe?.numero ?? null, status: "aberta" });
         }
         if (!simulacao && novaEscalacao) {
-          if (equipe?.numero && conv.chip_id) {
-            try {
-              const { data: cred } = await sb.from("chips_credenciais").select("zapi_instance_id, zapi_token, zapi_client_token").eq("chip_id", conv.chip_id).maybeSingle();
-              if (cred?.zapi_instance_id && cred?.zapi_token) {
-                const fone = String(equipe.numero).replace(/\D/g, "");
-                const aviso = `Novo caso para voce${equipe.nome ? ", " + equipe.nome : ""}:\n${resumoTxt}\n\nO cliente foi orientado a falar com voce e pode chamar a qualquer momento.`;
-                await fetch(`https://api.z-api.io/instances/${cred.zapi_instance_id}/token/${cred.zapi_token}/send-text`, { method: "POST", headers: { "Content-Type": "application/json", "Client-Token": cred.zapi_client_token ?? "" }, body: JSON.stringify({ phone: fone, message: aviso }) });
-              }
-            } catch (_e) { /* nao bloqueia a escalacao */ }
-          }
+          // Nao ha ping no WhatsApp do cobrador (saia pela instancia nao-oficial, e a API oficial
+          // nao manda texto livre a um numero fora da janela de 24h). Nem precisa: quem passa o
+          // contato e o proprio bot, na conversa aberta com o devedor — a instrucao da ferramenta
+          // escalar manda dizer "fale com <nome> no WhatsApp <numero>". Aqui fica so o rastro
+          // interno: nota privada no Chatwoot + linha em escalacoes p/ a aba "Precisam de voce".
           try {
             const cwUrl = cfg.chatwoot?.url ?? "https://chatwoot.example.com";
             const cwAcc = cfg.chatwoot?.account_id ?? 1;
             const cwH = { "api_access_token": seg.CHATWOOT_TOKEN, "Content-Type": "application/json" };
-            await fetch(`${cwUrl}/api/v1/accounts/${cwAcc}/conversations/${convId}/messages`, { method: "POST", headers: cwH, body: JSON.stringify({ content: `Escalado pelo robo. ${resumoTxt}${equipe?.numero ? " | Cobrador avisado no WhatsApp " + equipe.numero : ""}`, message_type: "outgoing", private: true }) });
+            await fetch(`${cwUrl}/api/v1/accounts/${cwAcc}/conversations/${convId}/messages`, { method: "POST", headers: cwH, body: JSON.stringify({ content: `Escalado pelo robo. ${resumoTxt}${equipe?.numero ? " | Cobrador responsavel: " + equipe.numero : ""}`, message_type: "outgoing", private: true }) });
             const lr = await fetch(`${cwUrl}/api/v1/accounts/${cwAcc}/conversations/${convId}/labels`, { headers: cwH });
             const ld = await lr.json().catch(() => ({}));
             const atuais = Array.isArray(ld?.payload) ? ld.payload : [];
@@ -454,22 +462,18 @@ Deno.serve(async (req) => {
   if (remetente?.lid && conv.telefone_id) {
     await sb.from("telefones_devedor").update({ chat_lid: remetente.lid }).eq("id", conv.telefone_id).is("chat_lid", null);
   }
-  // O envio direto via @lid é EXCLUSIVO do Z-API (privacidade do WhatsApp Web). Um chip Meta
-  // Cloud API endereça por telefone (não há @lid) e não tem linha em chips_credenciais → creds
-  // fica null e o bloco abaixo no-opa, caindo no caminho normal Chatwoot→canal (texto livre vale
-  // dentro da janela de 24h da Cloud API). Logo, nada a gatear: meta já segue pelo Chatwoot.
-  const enviarDireto = !!remetente?.lid;
-  let creds: any = null;
-  if (enviarDireto && conv.chip_id) {
-    const { data } = await sb.from("chips_credenciais").select("zapi_instance_id, zapi_token, zapi_client_token").eq("chip_id", conv.chip_id).maybeSingle();
-    creds = data;
-  }
+  // O @lid era do protocolo do WhatsApp Web (privacidade). A Cloud API endereca por telefone e nao
+  // tem @lid — guardamos o identificador se o Chatwoot mandar um, mas toda resposta do bot sai pelo
+  // caminho normal Chatwoot -> canal oficial (texto livre vale dentro da janela de 24h).
 
   // Avanço do roteiro (§33): o modelo marca o caminho com uma última linha `PROXIMA_ETAPA: <id>`.
   // A linha é removida antes de qualquer envio — a pessoa nunca vê a mecânica — e o id só é aceito se
   // existir mesmo no roteiro (modelo inventando etapa não move a conversa).
   if (etapaAtual) {
-    const idsValidos = new Set((carteira?.roteiro?.etapas ?? []).map((e: any) => e.id));
+    // só etapas de CONVERSA são destino válido: o modelo não pode mandar a conversa "voltar" para
+    // um bloco de disparo ou de pós-pagamento, que nem são executados aqui (§35)
+    const idsValidos = new Set(
+      (carteira?.roteiro?.etapas ?? []).filter(ehConversa).map((e: any) => e.id));
     let proxima: string | null = null;
     for (let i = 0; i < respostas.length; i++) {
       respostas[i] = respostas[i].replace(/^\s*PROXIMA_ETAPA:\s*([a-z0-9_\-]+)\s*$/gim, (_m, id) => {
@@ -487,26 +491,9 @@ Deno.serve(async (req) => {
 
   for (const txt of respostas) {
     await sb.from("mensagens").insert({ conversa_id: conv.id, direcao: "saida", origem: "bot", conteudo: txt, simulacao });
-    if (enviarDireto && creds?.zapi_instance_id && creds?.zapi_token) {
-      try {
-        await fetch(`https://api.z-api.io/instances/${creds.zapi_instance_id}/token/${creds.zapi_token}/send-text`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "Client-Token": creds.zapi_client_token ?? "" },
-          body: JSON.stringify({ phone: remetente!.lid, message: txt }),
-        });
-      } catch (_e) { /* nao bloqueia */ }
-      try {
-        const cwUrl = cfg.chatwoot?.url; const cwAcc = cfg.chatwoot?.account_id ?? 1;
-        await fetch(`${cwUrl}/api/v1/accounts/${cwAcc}/conversations/${convId}/messages`, {
-          method: "POST",
-          headers: { "api_access_token": seg.CHATWOOT_TOKEN, "Content-Type": "application/json" },
-          body: JSON.stringify({ content: `🤖 (enviado via WhatsApp/lid): ${txt}`, message_type: "outgoing", private: true }),
-        });
-      } catch (_e) { /* nao bloqueia */ }
-    }
   }
   if (respostas.length) await sb.from("conversas").update({ ultima_msg_em: new Date().toISOString(), ultima_msg_de: "bot" }).eq("id", conv.id);
   await sb.from("devedores").update({ status_cobranca: "em_negociacao" }).eq("id", conv.devedor_id).in("status_cobranca", ["contatado"]);
 
-  return json({ ok: true, acao, escalar: escalarMotivo, resumo: escalarResumo, equipe: acao === "escalar" ? equipe : undefined, encerrar, simulacao, enviado_direto: enviarDireto, mensagens: enviarDireto ? [] : respostas });
+  return json({ ok: true, acao, escalar: escalarMotivo, resumo: escalarResumo, equipe: acao === "escalar" ? equipe : undefined, encerrar, simulacao, enviado_direto: false, mensagens: respostas });
 });

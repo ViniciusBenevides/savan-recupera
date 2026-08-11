@@ -57,14 +57,21 @@ Deno.serve(async (req) => {
       chatwoot_conversation_id: b.chatwoot_conversation_id ?? null, simulacao: sim,
     }).eq("id", b.fila_id);
 
-    const horas = (cfg.followup?.intervalos_horas ?? [24, 72, 168])[0];
-    const prox = new Date(Date.now() + horas * 3600 * 1000).toISOString();
-
     let carteiraId = b.carteira_id ?? null;
     if (!carteiraId) {
       const { data: d } = await sb.from("devedores").select("carteira_id").eq("id", b.devedor_id).maybeSingle();
       carteiraId = d?.carteira_id ?? null;
     }
+
+    // Quando o 1º reenvio sai: pelo bloco de follow-up do fluxo da carteira (§35), que é onde o
+    // operador enxerga o tempo de espera. Carteira sem fluxo cai no intervalo global de sempre.
+    let horas = (cfg.followup?.intervalos_horas ?? [24, 72, 168])[0];
+    if (carteiraId) {
+      const { data: cart } = await sb.from("carteiras").select("roteiro").eq("id", carteiraId).maybeSingle();
+      const primeiro = (cart?.roteiro?.etapas ?? []).find((e: any) => e?.tipo === "followup");
+      if (Number(primeiro?.espera_horas) > 0) horas = Number(primeiro.espera_horas);
+    }
+    const prox = new Date(Date.now() + horas * 3600 * 1000).toISOString();
 
     if (b.chatwoot_conversation_id) {
       const { data: convUp } = await sb.from("conversas").upsert({

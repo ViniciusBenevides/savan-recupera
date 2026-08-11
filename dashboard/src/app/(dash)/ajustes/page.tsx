@@ -32,7 +32,7 @@ export default async function AjustesPage({ searchParams }: {
       { k: "chips", t: "Chips", icon: "Smartphone" },
       { k: "integracoes", t: "Integrações", icon: "Plug" },
       { k: "equipe", t: "Equipe", icon: "Users" },
-    ] : []),
+    ] satisfies Aba[] : []),
     { k: "conta", t: "Minha conta", icon: "UserCog" },
     { k: "ajuda", t: "Ajuda", icon: "LifeBuoy" },
   ];

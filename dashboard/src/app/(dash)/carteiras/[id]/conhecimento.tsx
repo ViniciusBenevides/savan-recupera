@@ -1,7 +1,7 @@
 "use client";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Card, Button, Input, Label, Badge, Switch } from "@/components/ui/primitives";
+import { Card, Button, Input, Label, Badge } from "@/components/ui/primitives";
 import { BookOpen, Plus, Save, Trash2, Check, X, CircleAlert, Loader2 } from "lucide-react";
 
 type Entrada = {
@@ -10,20 +10,21 @@ type Entrada = {
 };
 
 /**
- * Base de conhecimento do bot (§33).
+ * Base de conhecimento DA CARTEIRA (§33 · §35).
  *
- * O ponto da tela é o gate de aprovação: uma resposta cadastrada NÃO chega ao devedor até alguém
- * aprovar, e qualquer edição derruba a aprovação de volta. Em cobrança, com as restrições jurídicas
- * da §1, texto que vai ao devedor não pode entrar em produção só porque foi digitado.
+ * Saiu da tela global do Robô e veio para cá porque a dúvida que aparece na conversa é sempre da
+ * carteira: o que responder sobre a loja X não serve para o credor Y. Entradas antigas sem carteira
+ * (valem para todas) continuam aparecendo, marcadas, para não sumirem do radar do operador.
+ *
+ * O que a tela protege é o gate de aprovação: uma resposta cadastrada NÃO chega ao devedor até
+ * alguém aprovar, e qualquer edição derruba a aprovação de volta.
  */
-export function ConhecimentoManager({ entradas, carteiras, conta }: {
-  entradas: Entrada[]; carteiras: { id: number; nome: string }[]; conta: string;
-}) {
+export function ConhecimentoCarteira({ carteiraId, entradas }: { carteiraId: number; entradas: Entrada[] }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [erro, setErro] = useState("");
   const [criando, setCriando] = useState(false);
-  const [nova, setNova] = useState({ pergunta: "", resposta: "", carteira_id: "" as string });
+  const [nova, setNova] = useState({ pergunta: "", resposta: "" });
   const [editando, setEditando] = useState<number | null>(null);
   const [rascunho, setRascunho] = useState<{ pergunta: string; resposta: string }>({ pergunta: "", resposta: "" });
 
@@ -31,7 +32,7 @@ export function ConhecimentoManager({ entradas, carteiras, conta }: {
     setErro("");
     const r = await fetch("/api/conhecimento", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...corpo, conta }),
+      body: JSON.stringify({ ...corpo, carteira_id: carteiraId }),
     });
     const d = await r.json().catch(() => ({}));
     if (!r.ok) { setErro(d.erro ?? "Falha ao salvar"); return false; }
@@ -43,7 +44,6 @@ export function ConhecimentoManager({ entradas, carteiras, conta }: {
   });
 
   const pendentes = entradas.filter((e) => !e.aprovado).length;
-  const nomeCarteira = (id: number | null) => carteiras.find((c) => c.id === id)?.nome ?? null;
 
   return (
     <div className="flex flex-col gap-4">
@@ -53,11 +53,11 @@ export function ConhecimentoManager({ entradas, carteiras, conta }: {
             <BookOpen className="h-4 w-4" />
           </span>
           <div>
-            <h4 className="font-display text-base font-600 text-chalk">Como funciona</h4>
+            <h4 className="font-display text-base font-600 text-chalk">Respostas prontas desta carteira</h4>
             <p className="mt-0.5 max-w-2xl text-xs text-mist">
-              Cadastre a dúvida que aparece com frequência e a resposta certa. O robô só usa o que está
-              <b className="text-chalk"> aprovado</b> — e, se você editar o texto depois, a aprovação cai
-              e ele para de usar até alguém revisar de novo.
+              Cadastre a dúvida que aparece com frequência e a resposta certa. Durante a conversa, o robô
+              usa só o que está <b className="text-chalk">aprovado</b> — e, se você editar o texto depois,
+              a aprovação cai e ele para de usar até alguém revisar de novo.
             </p>
           </div>
         </div>
@@ -93,23 +93,11 @@ export function ConhecimentoManager({ entradas, carteiras, conta }: {
               className="w-full rounded-xl border border-line bg-ink-850 px-3 py-2 text-sm text-chalk outline-none placeholder:text-mist focus:border-emerald"
             />
           </div>
-          <div>
-            <Label>Vale para</Label>
-            <select
-              value={nova.carteira_id}
-              onChange={(e) => setNova({ ...nova, carteira_id: e.target.value })}
-              className="w-full rounded-xl border border-line bg-ink-850 px-3 py-2 text-sm text-chalk outline-none focus:border-emerald"
-            >
-              <option value="">Todas as carteiras</option>
-              {carteiras.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
-            </select>
-          </div>
           <div className="flex gap-2">
             <Button
               disabled={pending || !nova.pergunta.trim() || !nova.resposta.trim()}
-              onClick={() => agir(
-                { acao: "criar", entrada: { ...nova, carteira_id: nova.carteira_id ? Number(nova.carteira_id) : null } },
-                () => { setCriando(false); setNova({ pergunta: "", resposta: "", carteira_id: "" }); })}
+              onClick={() => agir({ acao: "criar", entrada: nova },
+                () => { setCriando(false); setNova({ pergunta: "", resposta: "" }); })}
             >
               {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Salvar
             </Button>
@@ -136,7 +124,7 @@ export function ConhecimentoManager({ entradas, carteiras, conta }: {
               {e.aprovado
                 ? <Badge tone="green">Em uso</Badge>
                 : <Badge tone="amber">Aguardando aprovação</Badge>}
-              {nomeCarteira(e.carteira_id) && <Badge tone="neutral">{nomeCarteira(e.carteira_id)}</Badge>}
+              {e.carteira_id === null && <Badge tone="neutral">todas as carteiras</Badge>}
             </div>
           </div>
 

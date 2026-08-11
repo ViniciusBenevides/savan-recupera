@@ -81,11 +81,27 @@ Deno.serve(async (req) => {
   if (!chip.chatwoot_inbox_id) return json({ ok: false, erro: "chip_sem_inbox", detalhe: "Este chip ainda não está vinculado ao Chatwoot." }, 400);
   if (!["conectado", "aquecendo", "ativo"].includes(chip.status)) return json({ ok: false, erro: "chip_offline", detalhe: "Conecte o chip (QR) antes de testar." }, 400);
 
-  // carteira de teste (find-or-create)
-  let { data: cart } = await sb.from("carteiras").select("id, credor").eq("nome", "🧪 Carteira de teste").maybeSingle();
+  // Carteira do teste: a que o painel pedir (para testar o fluxo DELA) ou a carteira interna de
+  // teste. A interna nasce com o fluxo-modelo — assim o teste mostra o mesmo texto que uma carteira
+  // recém-configurada mandaria, em vez de um texto que não existe em lugar nenhum (§35).
+  let cart: { id: number; credor: string | null; roteiro: any } | null = null;
+  if (b.carteira_id) {
+    const { data } = await sb.from("carteiras").select("id, credor, roteiro").eq("id", b.carteira_id).maybeSingle();
+    cart = data;
+  }
   if (!cart) {
-    const ins = await sb.from("carteiras").insert({ nome: "🧪 Carteira de teste", credor: "Teste", status: "ativa", descricao: "Carteira interna para testar o bot (modo teste)." }).select("id, credor").single();
-    cart = ins.data;
+    const { data } = await sb.from("carteiras").select("id, credor, roteiro").eq("nome", "🧪 Carteira de teste").maybeSingle();
+    cart = data;
+    if (!cart) {
+      const { data: modelo } = await sb.from("configuracoes").select("valor")
+        .eq("chave", "roteiro_modelo").is("cobrador_id", null).maybeSingle();
+      const ins = await sb.from("carteiras").insert({
+        nome: "🧪 Carteira de teste", credor: "Teste", status: "ativa",
+        descricao: "Carteira interna para testar o bot (modo teste).",
+        roteiro: modelo?.valor ?? null,
+      }).select("id, credor, roteiro").single();
+      cart = ins.data;
+    }
   }
   const carteiraId = cart!.id;
 
@@ -115,12 +131,18 @@ Deno.serve(async (req) => {
   }
   const conversationId = cc.conversation_id;
 
-  // mensagem de abertura (template real, se houver)
-  const { data: tpls } = await sb.from("templates_mensagem").select("id, conteudo").eq("tipo", "abordagem_inicial").eq("ativo", true).limit(1);
+  // mensagem de abertura: o bloco de disparo do fluxo desta carteira (§35); sem fluxo, o template
+  const blocoDisparo = (cart!.roteiro?.etapas ?? []).find((e: any) => e?.tipo === "disparo");
+  const variacoes: string[] = (blocoDisparo?.textos ?? []).map((t: unknown) => String(t ?? "").trim()).filter(Boolean);
+  let bruto: string | null = variacoes.length ? variacoes[Math.floor(Math.random() * variacoes.length)] : null;
+  if (!bruto) {
+    const { data: tpls } = await sb.from("templates_mensagem").select("id, conteudo").eq("tipo", "abordagem_inicial").eq("ativo", true).limit(1);
+    bruto = tpls && tpls.length ? tpls[0].conteudo : null;
+  }
   const nomeBot = cfg.ia?.nome_bot ?? "Ana";
   const primeiroNome = String(dev!.nome ?? "").split(" ")[0];
-  const conteudo = tpls && tpls.length
-    ? render(tpls[0].conteudo, { primeiro_nome: primeiroNome, nome_bot: nomeBot, nome: dev!.nome, credor: cart!.credor ?? "" })
+  const conteudo = bruto
+    ? render(bruto, { primeiro_nome: primeiroNome, nome_bot: nomeBot, nome: dev!.nome, credor: cart!.credor ?? "" })
     : `Olá ${primeiroNome}, aqui é a ${nomeBot}. [MENSAGEM DE TESTE] Podemos falar rapidinho sobre uma pendência antiga?`;
 
   const cwUrl = cfg.chatwoot?.url ?? "https://chatwoot.example.com";

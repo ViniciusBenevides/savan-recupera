@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 export default function NovoChipPage() {
   return (
     <>
-      <SectionTitle title="Adicionar chip" sub="Cole as credenciais da Z-API e conecte o WhatsApp pelo QR code." />
+      <SectionTitle title="Adicionar chip" sub="Cole as credenciais da API oficial da Meta — o número conecta na hora, sem QR." />
       <Suspense fallback={<div className="text-sm text-mist">Carregando…</div>}>
         <NovoChipFlow />
       </Suspense>

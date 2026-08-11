@@ -1573,3 +1573,99 @@ o layout visual não interfere no prompt. "Reorganizar" limpa as posições e o 
 **Verificado:** 19 testes da lógica de layout/validação passando; `npm run build` OK (18 páginas).
 **Não verificado visualmente por mim:** a renderização do canvas depende de sessão autenticada no
 painel, e eu não tenho credencial do dashboard — o dono precisa abrir a aba e conferir.
+
+---
+
+## 35. O robô se configura num lugar só: o FLUXO da carteira — adicionado nesta sessão
+
+**O problema (levantado pelo dono):** a tela **Robô** tinha três abas — Mensagens, Comportamento e
+Conhecimento — e o dono não conseguia dizer para que serviam, porque a divisão não era do produto: era
+da implementação. `templates_mensagem` alimentava a campanha (texto fixo, sem IA) e `carteiras.roteiro`
+alimentava o `bot-turno` (a conversa). Duas telas para a mesma pergunta ("o que o robô fala?"), e a
+resposta só fazia sentido para quem conhecia o backend. Pior: **Comportamento e Descontos eram globais**,
+mas cada carteira é de um credor diferente, com dívida de natureza diferente — não existe persona nem
+teto de desconto que sirva para as duas.
+
+**A decisão:** a carteira passa a ser o **único** lugar onde o robô se configura. A área Robô sumiu do
+menu (5 áreas → 4) e o **fluxo virou a linha do tempo inteira**, não só a conversa.
+
+### 35.1 — O fluxo ganhou blocos de mensagem
+
+`carteiras.roteiro.etapas[]` ganhou o campo **`tipo`** (ausente = `conversa`, então nada antigo quebra):
+
+| `tipo` | quem executa | o que carrega |
+|---|---|---|
+| `disparo` | `campanha-lote` | `textos[]` — a 1ª mensagem, texto pronto, variação sorteada por envio |
+| `followup` | `campanha-followup` | `textos[]` + `espera_horas` — reenvios, **na ordem** em que aparecem |
+| `conversa` | `bot-turno` | `instrucao` + `casos[]` — as etapas guiadas por IA (formato de sempre) |
+| `pos_pagamento` | `webhook-asaas` | `textos[]` — confirmação e termo de quitação, na ordem |
+
+**Por que o disparo continua texto fixo e não IA:** o contato frio é onde o WhatsApp julga se você é
+robô (§28/§31) e onde o enquadramento jurídico é mais sensível (§1). Texto previsível com spintax
+`{a|b}` e variações sorteadas é *remédio*, não limitação — e é o mesmo texto que precisa casar com o
+template aprovado pela Meta (§32). O que mudou foi só **onde ele se edita**: dentro do bloco, no
+desenho, em vez de numa tela separada que ninguém ligava à conversa.
+
+A corrente `disparo → follow-up 1 → 2 → 3` é **derivada da ordem dos blocos**, não gravada em `casos`:
+guardá-la deixaria montar um grafo que o backend não sabe executar (um follow-up apontando de volta
+para o disparo). No canvas ela aparece tracejada e não se arrasta; o que se edita é o `espera_horas` de
+cada bloco. Já a **entrada da conversa** ("quando a pessoa responder, comece em…") é um `caso` de
+verdade no bloco de disparo, porque isso o operador precisa escolher.
+
+### 35.2 — Onde cada coisa foi parar
+
+| Antes | Agora | Por quê |
+|---|---|---|
+| Robô → Mensagens (modelos) | blocos do fluxo de cada carteira | é a mesma decisão da conversa, no mesmo desenho |
+| Robô → Comportamento (persona/guardrails/descontos) | card recolhível **"Ajustes do robô nesta carteira"**, no Fluxo | cada credor negocia diferente; global não servia |
+| Robô → Comportamento (modelo de IA + nome do bot) | Ajustes → Integrações | é contrato com fornecedor (custa por token), não "como ele fala" |
+| Robô → Mensagens (templates da Meta) | Ajustes → Integrações | aprovação é por conta/número Meta, não por carteira |
+| Robô → Conhecimento | aba **Conhecimento** dentro da carteira | a dúvida que aparece é sempre da carteira |
+
+Abas da carteira: **Visão geral · Fluxo do robô · Conhecimento · Recebimento**.
+
+### 35.3 — Nada para de enviar durante a transição
+
+`templates_mensagem` **continua no banco** e continua sendo o fallback de toda função — só perdeu a
+tela. Carteira sem bloco de disparo dispara o texto padrão do sistema exatamente como antes, e o canvas
+avisa isso em amarelo. A migration **030** faz a mudança de lugar sem inventar conteúdo:
+
+- reescreve o `roteiro_modelo` global (ponto de partida de carteira nova) já com disparo + 3 reenvios +
+  pós-pagamento, montados **a partir dos templates que a conta já usa**;
+- faz o mesmo backfill nas carteiras **que já tinham fluxo** (quem desenhou um fluxo escolheu configurar
+  o robô ali, então é ali que os textos precisam aparecer);
+- não toca em carteira sem fluxo: ela segue no fallback até alguém abrir a tela e começar pelo modelo.
+
+### 35.4 — Arquivos
+
+- **`supabase/migrations/030_fluxo_unico.sql`** — formato novo documentado no `comment on column` +
+  backfill acima. **Ainda não aplicada** (sem Postgres local nesta máquina; o projeto SAVAN não está no
+  MCP do Supabase desta sessão) — rodar com `supabase db push` ou colar no SQL Editor.
+- **`carteiras/[id]/roteiro-layout.ts`** — `tipoDe`/`ehMensagem`, `etapaDeEntrada` (mesma regra do
+  `bot-turno`, senão o desenho mentiria), `cadeiaDeDisparo`, `followups`, layout em duas regiões
+  (mensagens numa coluna à esquerda, conversa em camadas por BFS, pós-pagamento na direita), `validar`
+  por tipo e `avisos` (o que não bloqueia salvar mas muda o que o robô faz).
+- **`carteiras/[id]/roteiro.tsx`** — nó com ícone/selo por tipo, handles verticais para a corrente de
+  reenvio e horizontais para a conversa, painel lateral que troca de formulário conforme o tipo
+  (variações de texto × instrução + caminhos), barra com um botão por tipo de bloco.
+- **`carteiras/[id]/painel.tsx`** — 4 abas, card "Ajustes do robô" recolhível, persona/descontos sem o
+  switch "usar o padrão global" (agora é sempre da carteira, pré-preenchido com o que era global).
+- **`carteiras/[id]/conhecimento.tsx`** + `api/conhecimento/route.ts` — base por carteira; autorização
+  por `podeEditarCarteira` quando a entrada tem carteira, caindo no escopo por conta nas entradas
+  antigas "valem para todas" (que continuam aparecendo, marcadas).
+- **`ajustes/_secoes/integracoes.tsx`** + `modelo-ia.tsx` + `meta-templates.tsx` (movidos de `robo/`).
+- **Edge Functions:** `campanha-lote` (disparo do fluxo, variação sorteada), `campanha-followup`
+  (texto **e** intervalo do bloco; nº de reenvios = nº de blocos), `campanha-registrar` (1º reenvio
+  agendado pelo `espera_horas` do fluxo), `webhook-asaas` (blocos `pos_pagamento` em ordem),
+  `disparar-teste` (usa o fluxo; a carteira interna de teste nasce com o modelo),
+  `bot-turno` (**só** etapas de conversa entram como etapa — e `PROXIMA_ETAPA` não pode apontar para
+  um bloco de mensagem).
+- **Apagados:** `app/(dash)/robo/**` e `app/api/templates/route.ts`. Redirects antigos de
+  `/robo`, `/templates`, `/descontos`, `/conhecimento` agora caem em `/carteiras`.
+
+**Verificado:** 28 testes da lógica de layout/validação passando (incluindo compatibilidade com fluxo
+antigo sem `tipo`) — pegaram um bug real de `Object.values()` num `Map`; `npx tsc --noEmit` limpo e
+`npm run build` OK (`/robo` sumiu da lista de rotas).
+**Não verificado:** a migration 030 não rodou em banco nenhum, e o canvas não foi aberto no navegador
+(precisa de sessão autenticada). O dono precisa aplicar a migration, redeployar as 6 Edge Functions e
+conferir a tela.

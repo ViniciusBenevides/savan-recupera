@@ -37,6 +37,22 @@ async function templateFollowup(sb: SupabaseClient, tipo: string, cob: string | 
   }
   return (cob ? await buscar(cob) : null) ?? await buscar(null);
 }
+
+// §35: os reenvios são os blocos `tipo: "followup"` do fluxo da carteira, NA ORDEM em que aparecem.
+// Cada um traz o próprio texto (variações sorteadas) e o próprio tempo de espera — antes o texto vinha
+// de `templates_mensagem` e o intervalo de uma config global, e as duas metades da mesma decisão
+// moravam em telas diferentes.
+type BlocoFollowup = { textos: string[]; espera_horas: number };
+function followupsDoFluxo(roteiro: any): BlocoFollowup[] {
+  return (roteiro?.etapas ?? [])
+    .filter((e: any) => e?.tipo === "followup")
+    .map((e: any) => ({
+      textos: (e.textos ?? []).map((t: unknown) => String(t ?? "").trim()).filter(Boolean),
+      espera_horas: Number(e.espera_horas) > 0 ? Number(e.espera_horas) : 24,
+    }))
+    .filter((b: BlocoFollowup) => b.textos.length > 0);
+}
+const sortear = (xs: string[]): string => xs[Math.floor(Math.random() * xs.length)];
 // Feriados nacionais (base bancária/ANBIMA: fixos + móveis via Páscoa) p/ "pular feriado".
 function feriadosNacionais(ano: number): Set<string> {
   const pad = (n: number) => String(n).padStart(2, "0");
@@ -108,11 +124,12 @@ Deno.serve(async (req) => {
   const maxFu = Number(cfgG.followup?.max ?? 3);
   const intervalos: number[] = cfgG.followup?.intervalos_horas ?? [24, 72, 168];
 
-  // carteiras ativas + dono (cobrador) p/ resolver o gate/template
-  const { data: ativas } = await sb.from("carteiras").select("id, credor, cobrador_id").eq("status", "ativa");
+  // carteiras ativas + dono (cobrador) p/ resolver o gate e o fluxo
+  const { data: ativas } = await sb.from("carteiras").select("id, credor, cobrador_id, roteiro").eq("status", "ativa");
   const idsAtivas = (ativas ?? []).map((c) => c.id);
   if (idsAtivas.length === 0) return json({ ok: true, motivo: "sem_carteira_ativa", enviados: 0 });
-  const cartMap = new Map<number, { credor: string | null; cobrador_id: string | null }>((ativas ?? []).map((c) => [c.id, { credor: c.credor, cobrador_id: c.cobrador_id }]));
+  const cartMap = new Map<number, { credor: string | null; cobrador_id: string | null; blocos: BlocoFollowup[] }>(
+    (ativas ?? []).map((c) => [c.id, { credor: c.credor, cobrador_id: c.cobrador_id, blocos: followupsDoFluxo(c.roteiro) }]));
 
   const { data: convs } = await sb.from("conversas")
     .select("id, devedor_id, carteira_id, chatwoot_conversation_id, followups_enviados")
@@ -122,22 +139,25 @@ Deno.serve(async (req) => {
 
   let enviados = 0, encerrados = 0, gated = 0;
   for (const c of convs ?? []) {
-    const cart = cartMap.get(c.carteira_id) ?? { credor: null, cobrador_id: null };
+    const cart = cartMap.get(c.carteira_id) ?? { credor: null, cobrador_id: null, blocos: [] };
     const cfg = resolverCfg(cart.cobrador_id);
     // gate por cobrador: se a campanha dele estiver desligada ou fora da janela, não reengaja agora
     if (!(cfg.campanha_ativa === true || cfg.campanha_ativa === "true") || !dentroJanela(cfg.janela_envio)) { gated++; continue; }
     const simulacao = cfg.modo_simulacao === true || cfg.modo_simulacao === "true";
 
+    // Com fluxo, quem manda no número de reenvios é o desenho da carteira (3 blocos = 3 reenvios);
+    // sem fluxo, continua o teto global.
+    const blocos = cart.blocos;
     const n = c.followups_enviados ?? 0;
-    if (n >= maxFu) {
+    if (n >= (blocos.length || maxFu)) {
       await sb.from("conversas").update({ estado: "encerrada", proximo_followup_em: null }).eq("id", c.id);
       encerrados++; continue;
     }
     const { data: dev } = await sb.from("devedores").select("nome").eq("id", c.devedor_id).single();
     const pn = (dev?.nome ?? "").split(" ")[0];
     const credor = cart.credor ?? "";
-    const tipo = `followup_${n + 1}`;
-    const tplConteudo = await templateFollowup(sb, tipo, cart.cobrador_id);
+    const doFluxo = blocos[n] ? sortear(blocos[n].textos) : null;
+    const tplConteudo = doFluxo ?? await templateFollowup(sb, `followup_${n + 1}`, cart.cobrador_id);
     const texto = tplConteudo
       ? render(tplConteudo, { primeiro_nome: pn.charAt(0) + pn.slice(1).toLowerCase(), nome_bot: cfg.ia?.nome_bot ?? "Ana", credor })
       : `Olá ${pn}, tudo bem? Ainda dá tempo de aproveitar a condição especial${credor ? ` da ${credor}` : ""}.`;
@@ -145,11 +165,12 @@ Deno.serve(async (req) => {
     if (!simulacao) {
       await fetch(`${cwUrl}/api/v1/accounts/${acc}/conversations/${c.chatwoot_conversation_id}/messages`, {
         method: "POST", headers: { "api_access_token": seg.CHATWOOT_TOKEN, "Content-Type": "application/json" },
-        body: JSON.stringify({ content: texto, message_type: "outgoing", content_attributes: { zapi_args: { delayTyping: 8 } } }),
+        body: JSON.stringify({ content: texto, message_type: "outgoing" }),
       });
     }
-    const proxIdx = Math.min(n + 1, intervalos.length - 1);
-    const prox = new Date(Date.now() + intervalos[proxIdx] * 3600000).toISOString();
+    // o próximo reenvio é agendado pela espera do PRÓXIMO bloco do fluxo (ou pela config global)
+    const horasProx = blocos[n + 1]?.espera_horas ?? intervalos[Math.min(n + 1, intervalos.length - 1)];
+    const prox = new Date(Date.now() + horasProx * 3600000).toISOString();
     await sb.from("conversas").update({ followups_enviados: n + 1, proximo_followup_em: prox, ultima_msg_em: new Date().toISOString(), ultima_msg_de: "bot" }).eq("id", c.id);
     await sb.from("mensagens").insert({ conversa_id: c.id, direcao: "saida", origem: "bot", conteudo: texto, simulacao });
     await sb.from("eventos_campanha").insert({ tipo: "followup", devedor_id: c.devedor_id, carteira_id: c.carteira_id, payload: { n: n + 1, simulacao } });

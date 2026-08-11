@@ -72,7 +72,6 @@ export function TesteCard({ numerosIniciais, chips }: {
     setEnviando(false);
     if (!r.ok || !d.ok) { setErro(d.erro ?? "Falha ao disparar o teste."); return; }
     setResultado(`Mensagem de teste enviada para ${d.numero_teste}. Responda no WhatsApp desse número para conversar com o bot (modo teste).`);
-    if (d.webhook_aviso) setAviso(d.webhook_aviso);
     router.refresh();
   }
 
@@ -138,7 +137,7 @@ export function TesteCard({ numerosIniciais, chips }: {
       <div className="border-t border-line pt-3">
         {disponiveis.length === 0 ? (
           <p className="flex items-center gap-1.5 text-xs text-mist">
-            <AlertTriangle className="h-3.5 w-3.5" /> Conecte um chip do bot (QR) para poder disparar o teste.
+            <AlertTriangle className="h-3.5 w-3.5" /> Cadastre um número oficial do bot para poder disparar o teste.
           </p>
         ) : salvosAtivos.length === 0 ? (
           <p className="flex items-center gap-1.5 text-xs text-mist">

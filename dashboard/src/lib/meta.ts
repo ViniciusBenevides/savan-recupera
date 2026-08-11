@@ -1,4 +1,4 @@
-// Camada da Graph API da Meta (WhatsApp Cloud API) — espelha lib/zapi.ts.
+// Camada da Graph API da Meta (WhatsApp Cloud API) — o único conector de WhatsApp do sistema.
 // Usada pelas rotas do dashboard (Node runtime). O envio de conversa normalmente vai pelo
 // Chatwoot (canal whatsapp_cloud); aqui ficam as coisas que o Chatwoot não entrega:
 // verificar número + QUALIDADE/LIMITE (saber se está perto de banir) e GESTÃO de templates.
@@ -37,7 +37,7 @@ export function tetoDoTier(tier: string): number | null {
   }
 }
 
-// Traduz o erro da Graph para um motivo/mensagem amigável (padrão do proxy de QR do Z-API).
+// Traduz o erro da Graph para um motivo/mensagem amigável mostrado no cadastro do número.
 function classificar(corpo: any, status: number): { motivo: MotivoMeta; mensagem: string } {
   const e = corpo?.error;
   const code = e?.code;
@@ -60,7 +60,7 @@ async function graph(path: string, token: string, init?: RequestInit): Promise<{
 }
 
 // Confirma que o token funciona e devolve o número real + saúde (qualidade/limite/status).
-// É o "conectou" do conector Meta (não há QR).
+// É o "conectou" do número: não há QR nem celular envolvido.
 export async function verificarNumero(opts: { phoneNumberId: string; token: string }): Promise<ResultadoMeta<{ saude: SaudeNumero }>> {
   try {
     const fields = "display_phone_number,verified_name,quality_rating,messaging_limit_tier,status,name_status,code_verification_status";

@@ -7,19 +7,19 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import { cn } from "@/lib/utils";
 
-// Cinco áreas, uma por pergunta que o operador faz:
+// Quatro áreas, uma por pergunta que o operador faz:
 //   Início    → "como está indo?"      (resultado, dinheiro, histórico)
-//   Carteiras → "quem eu estou cobrando?" (carteiras e devedores)
+//   Carteiras → "quem eu estou cobrando?" (carteiras, devedores e o robô de cada carteira)
 //   Conversas → "o que está acontecendo agora?" (diálogos + o que precisa de humano)
-//   Robô      → "como ele fala?"       (mensagens, comportamento, conhecimento)
 //   Ajustes   → "como a máquina roda?" (envio, chips, integrações, equipe, ajuda)
-// Tudo o que antes era um item de menu virou uma ABA dentro de uma dessas cinco.
+// A área "Robô" existiu até a §35 e foi absorvida: como o robô fala é o FLUXO de cada carteira
+// (não havia resposta global que servisse para dois credores diferentes), e o que sobrava era
+// contrato com fornecedor (modelo de IA, templates da Meta), que foi para Ajustes → Integrações.
 const TODOS = ["admin", "cobrador", "credor", "visualizador"];
 const nav = [
   { href: "/", label: "Início", icon: LayoutDashboard, roles: TODOS },
   { href: "/carteiras", label: "Carteiras", icon: FolderUp, roles: TODOS },
   { href: "/conversas", label: "Conversas", icon: MessagesSquare, roles: ["admin", "cobrador", "credor"] },
-  { href: "/robo", label: "Robô", icon: Bot, roles: ["admin", "cobrador"] },
   { href: "/ajustes", label: "Ajustes", icon: Settings2, roles: TODOS },
 ];
 

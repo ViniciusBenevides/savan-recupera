@@ -285,7 +285,7 @@ export class Chatwoot {
 
   async enviarMensagem(conversationId: number, conteudo: string, delayTyping = 0) {
     const body: any = { content: conteudo, message_type: "outgoing" };
-    if (delayTyping > 0) body.content_attributes = { zapi_args: { delayTyping } };
+    // O "digitando" era um atributo do canal nao-oficial; o canal oficial da Meta nao expoe isso.
     const r = await fetch(
       `${this.url}/api/v1/accounts/${this.accountId}/conversations/${conversationId}/messages`,
       { method: "POST", headers: this.h(), body: JSON.stringify(body) },

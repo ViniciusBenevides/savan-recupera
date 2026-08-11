@@ -51,7 +51,7 @@ async function cwEnviar(cfg: any, token: string, convId: number, conteudo: strin
   const acc = cfg.chatwoot?.account_id ?? 1;
   await fetch(`${url}/api/v1/accounts/${acc}/conversations/${convId}/messages`, {
     method: "POST", headers: { "api_access_token": token, "Content-Type": "application/json" },
-    body: JSON.stringify({ content: conteudo, message_type: "outgoing", content_attributes: { zapi_args: { delayTyping: delay } } }),
+    body: JSON.stringify({ content: conteudo, message_type: "outgoing" }),
   });
 }
 async function cwLabels(cfg: any, token: string, convId: number, labels: string[]) {
@@ -93,20 +93,34 @@ Deno.serve(async (req) => {
 
     if ((novoStatus === "recebido" || novoStatus === "confirmado") && !pg.simulacao && !jaConfirmado) {
       const { data: dev } = await sb.from("devedores").select("id, nome, cpf_cnpj, processo, carteira_id").eq("id", pg.devedor_id).single();
-      // cobrador dono da carteira -> usa os templates dele (cai no global)
+      // a carteira decide o que sai depois do pagamento: os blocos `pos_pagamento` do fluxo dela (§35).
+      // Sem fluxo, cai nos templates do cobrador dono (que caem no global).
       let cob: string | null = null;
+      let posPagamento: string[] = [];
       if (dev?.carteira_id) {
-        const { data: cart } = await sb.from("carteiras").select("cobrador_id").eq("id", dev.carteira_id).maybeSingle();
+        const { data: cart } = await sb.from("carteiras").select("cobrador_id, roteiro").eq("id", dev.carteira_id).maybeSingle();
         cob = cart?.cobrador_id ?? null;
+        posPagamento = (cart?.roteiro?.etapas ?? [])
+          .filter((e: any) => e?.tipo === "pos_pagamento")
+          .map((e: any) => {
+            const t = (e.textos ?? []).map((x: unknown) => String(x ?? "").trim()).filter(Boolean);
+            return t.length ? t[Math.floor(Math.random() * t.length)] : "";
+          })
+          .filter(Boolean);
       }
       const { data: conv } = await sb.from("conversas").select("chatwoot_conversation_id").eq("devedor_id", pg.devedor_id).order("criado_em", { ascending: false }).limit(1).maybeSingle();
       const pn = (dev?.nome ?? "").split(" ")[0];
       const vars = { primeiro_nome: pn.charAt(0) + pn.slice(1).toLowerCase(), nome: dev?.nome, cpf: dev?.cpf_cnpj, processo: dev?.processo, valor_pago: pg.valor, data_pagamento: new Date().toLocaleDateString("pt-BR") };
       if (conv?.chatwoot_conversation_id) {
-        const tConf = await templateConteudo(sb, "confirmacao_pagamento", cob);
-        const tQuit = await templateConteudo(sb, "quitacao", cob);
-        if (tConf) await cwEnviar(cfg, seg.CHATWOOT_TOKEN, conv.chatwoot_conversation_id, renderTemplate(tConf, vars));
-        if (tQuit) await cwEnviar(cfg, seg.CHATWOOT_TOKEN, conv.chatwoot_conversation_id, renderTemplate(tQuit, vars));
+        if (posPagamento.length === 0) {
+          const tConf = await templateConteudo(sb, "confirmacao_pagamento", cob);
+          const tQuit = await templateConteudo(sb, "quitacao", cob);
+          posPagamento = [tConf, tQuit].filter(Boolean) as string[];
+        }
+        // saem na ordem do fluxo: confirmação primeiro, termo de quitação depois
+        for (const texto of posPagamento) {
+          await cwEnviar(cfg, seg.CHATWOOT_TOKEN, conv.chatwoot_conversation_id, renderTemplate(texto, vars));
+        }
         await cwLabels(cfg, seg.CHATWOOT_TOKEN, conv.chatwoot_conversation_id, ["pix-pago", "acordo"]);
       }
     }

@@ -2,8 +2,8 @@ import { supabaseAdmin } from "@/lib/supabase-server";
 
 // Chaves que cada cobrador pode ter as suas (caem no global/infra do admin se vazias).
 // São exatamente as lidas pelas Edge Functions bot-turno (OpenAI) e gerar-pix (Asaas).
-// Z-API é por chip (chips_credenciais) e o token de webhook do Asaas é infra do admin —
-// por isso não entram aqui (evita sobrescrever a chave global de outras funções).
+// As credenciais da Meta são por chip (chips_credenciais_meta) e o token de webhook do Asaas
+// é infra do admin — por isso não entram aqui (evita sobrescrever a chave global).
 export const SEGREDOS_POR_COBRADOR = [
   "OPENAI_API_KEY",
   "ASAAS_API_KEY_SANDBOX",

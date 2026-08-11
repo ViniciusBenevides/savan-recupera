@@ -12,7 +12,7 @@ function corpoDoTemplate(components: any): string {
   return body?.text ?? "";
 }
 
-export function TemplatesManager({ conta }: { conta?: string | null }) {
+export function MetaTemplates({ conta }: { conta?: string | null }) {
   const [lista, setLista] = useState<T[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [semWaba, setSemWaba] = useState(false);

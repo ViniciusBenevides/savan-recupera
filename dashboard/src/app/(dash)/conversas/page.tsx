@@ -18,7 +18,7 @@ export default async function ConversasPage({ searchParams }: { searchParams: Pr
   const abas : Aba[] = [
     { k: "todas", t: "Todas", icon: "MessagesSquare" },
     ...(podeAtender
-      ? [{ k: "escaladas", t: abertas > 0 ? `Precisam de você (${abertas})` : "Precisam de você", icon: "Headset" }]
+      ? [{ k: "escaladas", t: abertas > 0 ? `Precisam de você (${abertas})` : "Precisam de você", icon: "Headset" } as Aba]
       : []),
   ];
   const aba = resolverAba(abas, pedida);
@@ -29,7 +29,7 @@ export default async function ConversasPage({ searchParams }: { searchParams: Pr
         title="Conversas"
         sub={aba === "escaladas"
           ? "Casos que o robô passou para atendimento humano — com histórico, status e desfecho."
-          : "Leia o histórico completo de cada contato."}
+          : "A operação real do número oficial. Conversas de teste ficam ocultas até você pedir."}
       />
 
       <Abas abas={abas} atual={aba} />

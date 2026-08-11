@@ -168,8 +168,7 @@ def w01():
              "operator": {"type": "boolean", "operation": "true", "singleValue": True}}]}})
     envia = http_chatwoot("Enviar msg", [1780, 360],
         f"={env('CHATWOOT_URL').rstrip('/')}/api/v1/accounts/1/conversations/{{{{ $json.conversation_id }}}}/messages",
-        '={ "content": {{ JSON.stringify($(\'Loop\').item.json.mensagem) }}, "message_type": "outgoing", '
-        '"content_attributes": { "zapi_args": { "delayTyping": {{ $(\'Loop\').item.json.delay_typing }} } } }')
+        '={ "content": {{ JSON.stringify($(\'Loop\').item.json.mensagem) }}, "message_type": "outgoing" }')
     reg_ok = http_edge("Registrar enviado", "campanha-registrar", [2000, 300],
         '={ "fila_id": {{ $(\'Loop\').item.json.fila_id }}, "chip_id": {{ $(\'Loop\').item.json.chip_id }}, '
         '"devedor_id": {{ $(\'Loop\').item.json.devedor_id }}, "telefone_id": {{ $(\'Loop\').item.json.telefone_id }}, '
@@ -273,8 +272,7 @@ def w02():
                 {"batchSize": 1, "options": {}})
     envia = http_chatwoot("Enviar resposta", [1340, 360],
         f"={env('CHATWOOT_URL').rstrip('/')}/api/v1/accounts/1/conversations/{{{{ $json.conv }}}}/messages",
-        '={ "content": {{ JSON.stringify($json.texto) }}, "message_type": "outgoing", '
-        '"content_attributes": { "zapi_args": { "delayTyping": 8 } } }')
+        '={ "content": {{ JSON.stringify($json.texto) }}, "message_type": "outgoing" }')
     espera = node("Aguardar", "n8n-nodes-base.wait", 1.1, [1560, 360],
                   {"amount": 3, "unit": "seconds"}, {"webhookId": "savan-w02-wait"})
 

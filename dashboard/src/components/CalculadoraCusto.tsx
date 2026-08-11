@@ -1,9 +1,9 @@
 "use client";
 import { useState } from "react";
 import { Card, Label, Input } from "@/components/ui/primitives";
-import { calcularCusto, META_TARIFAS_BRL, ZAPI_CUSTOS_BRL, type CenarioCusto } from "@/lib/meta/precos";
+import { calcularCusto, META_TARIFAS_BRL, type CenarioCusto } from "@/lib/meta/precos";
 import { brl } from "@/lib/utils";
-import { QrCode, BadgeCheck, ArrowRight, Info } from "lucide-react";
+import { BadgeCheck, Info } from "lucide-react";
 
 function CampoNumero({ label, valor, onChange, sufixo }: { label: string; valor: number; onChange: (v: number) => void; sufixo?: string }) {
   return (
@@ -18,22 +18,17 @@ function CampoNumero({ label, valor, onChange, sufixo }: { label: string; valor:
   );
 }
 
-// Calculadora viva: compara o custo mensal Z-API+Salvy (flat por número) × Meta Cloud API
-// (por mensagem, por categoria). Tarifas de referência editáveis (lib/meta/precos.ts).
+// Calculadora viva do custo mensal na Meta Cloud API — cobrança por mensagem iniciada,
+// por categoria. Tarifas de referência editáveis (lib/meta/precos.ts).
 export function CalculadoraCusto() {
   const [c, setC] = useState<CenarioCusto>({ numeros: 3, msgsDia: 200, diasMes: 22, pctMarketing: 80, pctUtility: 10 });
   const [tarMkt, setTarMkt] = useState(META_TARIFAS_BRL.marketing);
   const [tarUtl, setTarUtl] = useState(META_TARIFAS_BRL.utility);
-  const [zInst, setZInst] = useState(ZAPI_CUSTOS_BRL.instanciaMes);
-  const [zSim, setZSim] = useState(ZAPI_CUSTOS_BRL.simSalvyMes);
   const [avancado, setAvancado] = useState(false);
 
   const set = (p: Partial<CenarioCusto>) => setC((x) => ({ ...x, ...p }));
-  const r = calcularCusto(c,
-    { marketing: tarMkt, utility: tarUtl, authentication: META_TARIFAS_BRL.authentication, service: 0 },
-    { instanciaMes: zInst, simSalvyMes: zSim });
+  const r = calcularCusto(c, { marketing: tarMkt, utility: tarUtl, authentication: META_TARIFAS_BRL.authentication, service: 0 });
   const pctSvc = Math.max(0, 100 - c.pctMarketing - c.pctUtility);
-  const metaMaisBarata = r.economiaMeta > 0;
 
   return (
     <div className="space-y-4">
@@ -56,10 +51,8 @@ export function CalculadoraCusto() {
         </button>
         {avancado && (
           <div className="grid gap-3 rounded-xl border border-line bg-ink-850 p-3 sm:grid-cols-2">
-            <CampoNumero label="Meta — marketing (R$/msg)" valor={tarMkt} onChange={setTarMkt} sufixo="R$" />
-            <CampoNumero label="Meta — utility (R$/msg)" valor={tarUtl} onChange={setTarUtl} sufixo="R$" />
-            <CampoNumero label="Z-API — instância / mês" valor={zInst} onChange={setZInst} sufixo="R$" />
-            <CampoNumero label="Salvy — chip / mês" valor={zSim} onChange={setZSim} sufixo="R$" />
+            <CampoNumero label="Marketing (R$/msg)" valor={tarMkt} onChange={setTarMkt} sufixo="R$" />
+            <CampoNumero label="Utility (R$/msg)" valor={tarUtl} onChange={setTarUtl} sufixo="R$" />
             <p className="col-span-full text-[11px] text-mist">
               Valores de referência (Brasil, jun/2026). A Meta muda a tabela com frequência — confira no painel dela antes de decidir.
             </p>
@@ -68,29 +61,22 @@ export function CalculadoraCusto() {
       </Card>
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <Card className="space-y-1.5">
-          <div className="flex items-center gap-2 text-sm text-mist"><QrCode className="h-4 w-4" /> Z-API + Salvy</div>
-          <div className="font-display text-3xl font-700 text-chalk tabnums">{brl(r.zapiMes)}<span className="text-base text-mist">/mês</span></div>
-          <p className="text-[11px] text-mist">{c.numeros} número(s) × ({brl(zInst)} instância + {brl(zSim)} chip). Fixo, não importa o volume.</p>
-        </Card>
         <Card className="space-y-1.5 border-emerald/30">
-          <div className="flex items-center gap-2 text-sm text-mist"><BadgeCheck className="h-4 w-4 text-emerald" /> Meta Cloud API</div>
+          <div className="flex items-center gap-2 text-sm text-mist"><BadgeCheck className="h-4 w-4 text-emerald" /> Custo estimado na Meta</div>
           <div className="font-display text-3xl font-700 text-chalk tabnums">{brl(r.metaMes)}<span className="text-base text-mist">/mês</span></div>
           <p className="text-[11px] text-mist">
-            {r.msgsMes.toLocaleString("pt-BR")} msgs/mês · marketing {brl(r.metaPorCategoria.marketing)} + utility {brl(r.metaPorCategoria.utility)}.
+            {r.msgsMes.toLocaleString("pt-BR")} msgs iniciadas/mês · marketing {brl(r.metaPorCategoria.marketing)} + utility {brl(r.metaPorCategoria.utility)}.
+          </p>
+        </Card>
+        <Card className="space-y-1.5">
+          <div className="text-sm text-mist">Custo médio por mensagem iniciada</div>
+          <div className="font-display text-3xl font-700 text-chalk tabnums">{brl(r.custoPorMsg)}</div>
+          <p className="text-[11px] text-mist">
+            Não há custo fixo por número: a Meta cobra por mensagem iniciada. Quem responde e continua a conversa
+            dentro das 24h não gera custo adicional.
           </p>
         </Card>
       </div>
-
-      <Card className={`flex items-center gap-3 ${metaMaisBarata ? "border-emerald/30 bg-emerald/5" : "border-amber/30 bg-amber/5"}`}>
-        <ArrowRight className={`h-5 w-5 shrink-0 ${metaMaisBarata ? "text-emerald" : "text-amber"}`} />
-        <div className="text-sm text-chalk">
-          {metaMaisBarata
-            ? <>Neste cenário a <b>Meta sai mais barata</b> em <b>{brl(r.economiaMeta)}/mês</b>.</>
-            : <>Neste cenário o <b>Z-API sai mais barato</b> em <b>{brl(-r.economiaMeta)}/mês</b> — mas lembre do risco de ban do número cru.</>}
-          <p className="mt-0.5 text-[11px] text-mist">Custo não é o único critério: a Meta é mais estável e escala melhor; o Z-API é mais barato em alto volume, mas o número cru fazendo cobrança fria tem risco maior de bloqueio.</p>
-        </div>
-      </Card>
     </div>
   );
 }

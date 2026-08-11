@@ -5,9 +5,9 @@ import {
   BookOpen, Rocket, Compass, ListChecks, LayoutGrid, Headphones, Scale,
   LifeBuoy, ShieldCheck, Search, ChevronDown, ArrowUp, Sparkles, X,
   Radio, Smartphone, MessageSquareText, Percent, Users, HandCoins, BarChart3,
-  Settings, FolderUp, LayoutDashboard, KeyRound, Clock, Send, QrCode,
+  Settings, FolderUp, LayoutDashboard, KeyRound, Clock, Send, BadgeCheck,
   AlertTriangle, CheckCircle2, ArrowRight, Flame, Network, FlaskConical,
-  MessagesSquare, Bot,
+  MessagesSquare,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -21,20 +21,20 @@ const SECTIONS: Sec[] = [
   { id: "intro", title: "O que é a plataforma", icon: BookOpen, tag: "Comece aqui", keywords: "o que é whatsapp recuperação crédito robô pix quitação desconto fluxo" },
   { id: "acesso", title: "Primeiro acesso", icon: KeyRound, keywords: "login senha tema claro escuro perfis papéis admin cobrador credor visualizador operador usuário conta seletor de conta padrão global" },
   { id: "conceitos", title: "Conceitos rápidos", icon: Compass, keywords: "carteira chip campanha simulação fila follow-up aquecimento glossário conta cobrador" },
-  { id: "golive", title: "Como colocar no ar", icon: Rocket, tag: "Passo a passo", keywords: "go-live chaves openai asaas chips qr carteira modelo planilha simulação ativar ordem importar ia modelo de ia" },
+  { id: "golive", title: "Como colocar no ar", icon: Rocket, tag: "Passo a passo", keywords: "go-live chaves openai asaas chips meta waba token carteira modelo planilha simulação ativar ordem importar ia modelo de ia" },
   { id: "teste", title: "Testar antes de disparar", icon: FlaskConical, tag: "Importante", keywords: "teste enviar teste número de teste simulação responder whatsapp validar antes do envio real sandbox pix fake ponta a ponta" },
   { id: "telas", title: "Tela por tela", icon: LayoutGrid, keywords: "visão geral carteiras campanha chips mensagens descontos devedores pagamentos relatórios configurações conta importador ia modelo de ia por conta" },
-  { id: "maturidade", title: "Chip: maturidade e tipo", icon: Flame, tag: "Importante", keywords: "chip aquecido novo maturidade aquecimento rampa bloqueio whatsapp número frio limite diário tipo físico esim voip virtual api qr" },
+  { id: "maturidade", title: "Chip: maturidade e conexão", icon: Flame, tag: "Importante", keywords: "chip aquecido novo maturidade aquecimento rampa bloqueio whatsapp número frio limite diário meta cloud api oficial waba token qualidade" },
   { id: "distribuicao", title: "Distribuição e queda de chip", icon: Network, keywords: "distribuição uf cidade estado igualitário sugestão chip caiu failover reatribuir banido escalação transparência" },
   { id: "humano", title: "Atendimento humano", icon: Headphones, keywords: "escalar humano chatwoot atendente contestação advogado label nota escalações ledger acordo transparência" },
   { id: "regras", title: "Regras jurídicas", icon: Scale, tag: "Importante", keywords: "jurídico prescrição serasa lgpd identidade janela horário contrato dpa nunca ameaça" },
-  { id: "problemas", title: "Problemas comuns", icon: LifeBuoy, keywords: "robô não responde nada enviado qr não aparece chatwoot webhook asaas pagamento" },
+  { id: "problemas", title: "Problemas comuns", icon: LifeBuoy, keywords: "robô não responde nada enviado número não conecta chatwoot webhook asaas pagamento" },
   { id: "seguranca", title: "Segurança & limites", icon: ShieldCheck, keywords: "segurança login chaves planilha simulação aquecimento usuários" },
 ];
 
 const CONCEITOS = [
   { icon: FolderUp, t: "Carteira", d: "Um conjunto de devedores (uma planilha importada). Você pode ter várias, cada uma com regras próprias." },
-  { icon: Smartphone, t: "Chip", d: "Um número de WhatsApp (Salvy + Z‑API) por onde o robô conversa." },
+  { icon: Smartphone, t: "Chip", d: "Um número de WhatsApp na API oficial da Meta por onde o robô conversa." },
   { icon: Radio, t: "Campanha", d: "A “chave geral” que liga e desliga os disparos de toda a operação." },
   { icon: Sparkles, t: "Modo simulação", d: "Roda todo o fluxo sem enviar mensagem de verdade — para testar com segurança." },
   { icon: ListChecks, t: "Fila", d: "Os devedores que ainda aguardam o primeiro contato." },
@@ -43,30 +43,29 @@ const CONCEITOS = [
 ];
 
 const GOLIVE = [
-  { icon: KeyRound, t: "Chaves", d: "Ajustes → Integrações: preencha a OPENAI_API_KEY (sem ela o robô não responde) e, no go‑live real, a chave de produção do Asaas. O modelo de IA do robô fica em Robô → Comportamento (o sistema sugere o melhor)." },
-  { icon: QrCode, t: "Chips", d: "Ajustes → Chips → Adicionar chip: leia o QR Code com o WhatsApp do número. Ao conectar, ele entra como “aquecendo” e vira “ativo” sozinho." },
+  { icon: KeyRound, t: "Chaves", d: "Ajustes → Integrações: preencha a OPENAI_API_KEY (sem ela o robô não responde) e, no go‑live real, a chave de produção do Asaas. O modelo de IA do robô fica nessa mesma aba (o sistema sugere o melhor)." },
+  { icon: BadgeCheck, t: "Chips", d: "Ajustes → Chips → Adicionar chip: cole o ID do número, o ID da WABA e o token do Meta Business. O número valida na hora, entra como “aquecendo” e vira “ativo” sozinho." },
   { icon: FolderUp, t: "Carteira", d: "Carteiras → Nova: baixe o modelo de planilha, preencha e suba — ou suba a sua planilha fora do padrão e deixe a IA organizar. Confira o relatório. A carteira nasce Pausada." },
-  { icon: MessageSquareText, t: "Mensagens e Descontos", d: "Robô → Mensagens (os textos) e Robô → Comportamento (as faixas de desconto). Valem por conta, e ainda dá para sobrescrever por carteira." },
+  { icon: MessageSquareText, t: "Mensagens e Descontos", d: "Carteiras → abra a carteira → Fluxo do robô: os textos do disparo e dos reenvios são blocos do fluxo, e as faixas de desconto ficam em “Ajustes do robô nesta carteira”. Cada carteira tem os seus." },
   { icon: Sparkles, t: "Simulação", d: "Início → ligue a campanha com o Modo simulação LIGADO e confira o fluxo sem enviar nada. Para validar no seu próprio WhatsApp, use o “Enviar teste” em Ajustes → Chips (veja “Testar antes de disparar”)." },
   { icon: Send, t: "Ativar de verdade", d: "Ative a carteira e, quando estiver tudo certo, desligue o Modo simulação no Início. A partir daí é envio real (8h–20h, só em dias úteis e pulando feriados nacionais)." },
 ];
 
-// O painel tem CINCO áreas, cada uma respondendo a uma pergunta. Tudo o que antes era um
-// item de menu virou uma aba dentro de uma delas.
+// O painel tem QUATRO áreas, cada uma respondendo a uma pergunta. Tudo o que antes era um
+// item de menu virou uma aba dentro de uma delas (a área Robô foi absorvida pela carteira na §35).
 const TELAS = [
   { icon: LayoutDashboard, n: "Início", d: "“Como está indo?”. Na aba Resumo ficam a chave que liga/desliga a campanha, o Modo simulação, a Fila de hoje (quanto ainda cabe e até que horas), os cartões de resultado e o funil. A aba Dinheiro lista os Pix gerados e pagos com a sua comissão (os totais reais não contam os disparos de teste). A aba Histórico traz o dia a dia, o melhor horário para abordar e o desempenho de cada modelo de mensagem." },
-  { icon: FolderUp, n: "Carteiras", d: "“Quem eu estou cobrando?”. A aba Carteiras lista suas planilhas importadas com status (Importando / Ativa / Pausada / Arquivada) — só as Ativas disparam. A aba Devedores é a busca em todos eles, com filtro por carteira. Ao abrir uma carteira você tem quatro abas: Visão geral (status, distribuição, subir planilha e histórico de importações), Robô desta carteira (prompt e descontos próprios), Fluxo da conversa e Recebimento (Wallet do credor e escaladores)." },
+  { icon: FolderUp, n: "Carteiras", d: "“Quem eu estou cobrando?”. A aba Carteiras lista suas planilhas importadas com status (Importando / Ativa / Pausada / Arquivada) — só as Ativas disparam. A aba Devedores é a busca em todos eles, com filtro por carteira. Ao abrir uma carteira você tem quatro abas: Visão geral (status, distribuição, subir planilha e histórico de importações), Fluxo do robô (a linha do tempo inteira — primeira mensagem, reenvios, a conversa e o termo de quitação — mais os ajustes de persona e desconto), Conhecimento (respostas prontas desta carteira) e Recebimento (Wallet do credor e escaladores)." },
   { icon: MessagesSquare, n: "Conversas", d: "“O que está acontecendo agora?”. A aba Todas é a caixa de entrada com o histórico completo de cada contato. A aba Precisam de você mostra os casos que o robô entregou a um humano, com contador no título, contexto e desfecho — antes isso era a tela “Escalações”." },
-  { icon: Bot, n: "Robô", d: "“Como ele fala?”. Mensagens: os textos que ele dispara (abordagem, follow‑ups, proposta, Pix) mais os templates aprovados pela Meta, com um mapa explicando qual serve para quê. Comportamento: persona, tom, regras inegociáveis, o modelo de IA e as faixas de desconto. Conhecimento: respostas prontas que só entram em uso depois de aprovadas." },
-  { icon: Settings, n: "Ajustes", d: "“Como a máquina roda?”. Envio: horário, ritmo, dias, feriados e aquecimento. Chips: os números de WhatsApp (QR, maturidade, teste) e a calculadora de custo Z‑API × Meta. Integrações: Asaas e chaves de API. Equipe: quem entra no painel e com que papel. Minha conta e Ajuda." },
+  { icon: Settings, n: "Ajustes", d: "“Como a máquina roda?”. Envio: horário, ritmo, dias, feriados e aquecimento. Chips: os números de WhatsApp (credenciais da Meta, maturidade, teste) e a calculadora de custo. Integrações: Asaas, chaves de API, o modelo de IA que o robô usa e os templates aprovados pela Meta. Equipe: quem entra no painel e com que papel. Minha conta e Ajuda." },
 ];
 
 const PROBLEMAS = [
   { s: "O robô não responde as mensagens", c: "Falta a OPENAI_API_KEY em Ajustes → Integrações." },
   { s: "Nada é enviado", c: "Campanha desligada no Início, carteira não‑Ativa, Modo simulação ligado, fora da janela (Ajustes → Envio: horário 8h–20h, fim de semana ou feriado nacional), ou chip sem limite (aquecimento)." },
-  { s: "O QR Code não aparece", c: "A tela do chip mostra o motivo (ex.: assinatura Z‑API vencida). Resolva e clique em “tentar de novo”." },
+  { s: "O número não conecta na Meta", c: "A tela do chip mostra o motivo (token inválido/expirado, sem permissão, ou ID errado). Gere um novo token permanente no Meta Business e tente de novo." },
   { s: "“Chatwoot não vinculado” no chip", c: "Use a opção de revincular o número no cartão do chip." },
-  { s: "Respondi o teste e o robô não continuou", c: "Use “Revincular Chatwoot” no cartão do chip — garante o caminho de volta da mensagem (webhook de entrada da Z‑API)." },
+  { s: "Respondi o teste e o robô não continuou", c: "O webhook do app da Meta precisa apontar para o Chatwoot (URL de callback + token de verificação mostrados no cadastro do número)." },
   { s: "Mensagens recebidas não chegam ao robô", c: "O webhook do Chatwoot precisa apontar para o n8n (/webhook/savan-bot)." },
   { s: "Pagamento não confirma", c: "O webhook do Asaas precisa apontar para a função webhook‑asaas." },
 ];
@@ -214,7 +213,7 @@ export function Ajuda() {
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Buscar no manual… (ex.: QR, simulação, desconto)"
+              placeholder="Buscar no manual… (ex.: chip, simulação, desconto)"
               className="h-11 w-full rounded-xl border border-line bg-ink-850 pl-10 pr-10 text-sm text-chalk placeholder:text-mist/60 outline-none transition-colors focus:border-emerald/60 focus:ring-2 focus:ring-emerald/15"
             />
             {query && (
@@ -477,21 +476,24 @@ export function Ajuda() {
               </div>
               <div className="mt-6 border-t border-line pt-5">
                 <div className="mb-3 flex items-center gap-2 font-display text-sm font-700 text-chalk">
-                  <Smartphone className="h-4 w-4 text-emerald" /> Tipo do chip (e o que conecta por QR)
+                  <Smartphone className="h-4 w-4 text-emerald" /> Como o número conecta
                 </div>
                 <p className="text-sm leading-relaxed text-chalk/90">
-                  Ao cadastrar o chip você também marca o <strong className="text-chalk">tipo</strong> do número. É informativo,
-                  mas muda o risco e o que dá para conectar:
+                  Todo número do robô usa a <strong className="text-chalk">API oficial do WhatsApp (Meta Cloud API)</strong>.
+                  Não há QR Code nem celular ligado: você cola as credenciais do Meta Business e o número valida na hora.
                 </p>
                 <div className="mt-3 grid gap-2.5 sm:grid-cols-2">
                   <div className="rounded-xl border border-emerald/25 bg-emerald/8 p-3 text-xs leading-relaxed text-mist">
-                    <strong className="text-chalk">Físico</strong> (SIM) e <strong className="text-chalk">eSIM</strong> — conectam normal pelo QR, <span className="text-emerald-soft">menor risco</span> de bloqueio.
+                    <strong className="text-chalk">O que você precisa</strong> — ID do número (phone_number_id), ID da WABA e um
+                    token permanente de usuário do sistema, gerados no seu app do Meta Business.
                   </div>
                   <div className="rounded-xl border border-amber/25 bg-amber/8 p-3 text-xs leading-relaxed text-mist">
-                    <strong className="text-chalk">VoIP</strong> — conecta por QR, mas com <span className="text-amber">risco maior de bloqueio</span>; prefira maturidade “novo” / aquecimento.
+                    <strong className="text-chalk">O que muda na prática</strong> — a 1ª mensagem a um contato novo precisa ser
+                    um <span className="text-amber">modelo aprovado pela Meta</span>, e cada mensagem iniciada tem custo.
                   </div>
-                  <div className="rounded-xl border border-rose/25 bg-rose/8 p-3 text-xs leading-relaxed text-mist sm:col-span-2">
-                    <strong className="text-chalk">Virtual (API)</strong> — número que não recebe ligação/SMS. <span className="text-rose">Não conecta por QR</span> (só funcionaria na API oficial do WhatsApp, que não é o conector usado aqui). Evite para o robô.
+                  <div className="rounded-xl border border-line bg-ink-850 p-3 text-xs leading-relaxed text-mist sm:col-span-2">
+                    <strong className="text-chalk">Qualidade do número</strong> — a Meta acompanha bloqueios e denúncias. Se cair
+                    para vermelho, o número é restringido. O semáforo fica no card do chip, em Ajustes → Chips.
                   </div>
                 </div>
               </div>

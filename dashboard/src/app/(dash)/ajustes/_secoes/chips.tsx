@@ -8,8 +8,8 @@ import { TesteCard } from "../../chips/teste-card";
 import { Plus, Smartphone, Calculator } from "lucide-react";
 
 /**
- * Aba "Chips" — os números de WhatsApp. A calculadora de custo Z-API × Meta, que era uma
- * página inteira só para ela (/chips/custos), virou um bloco recolhível no fim desta.
+ * Aba "Chips" — os números de WhatsApp, todos na API oficial da Meta. A calculadora de custo,
+ * que era uma página inteira só para ela (/chips/custos), virou um bloco recolhível no fim desta.
  */
 export async function Chips({ sessao }: { sessao: Sessao }) {
   const sb = await supabaseServer();
@@ -53,7 +53,7 @@ export async function Chips({ sessao }: { sessao: Sessao }) {
     <>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-mist">
-          Cada chip é um número de WhatsApp — conectado via Z-API (QR) ou pela API oficial da Meta.
+          Cada chip é um número de WhatsApp conectado pela API oficial da Meta (Cloud API).
         </p>
         <Link href="/chips/novo"><Button><Plus className="h-4 w-4" /> Adicionar chip</Button></Link>
       </div>
@@ -66,8 +66,8 @@ export async function Chips({ sessao }: { sessao: Sessao }) {
           <div>
             <h3 className="font-display text-lg font-600 text-chalk">Nenhum chip cadastrado</h3>
             <p className="mt-1 max-w-sm text-sm text-mist">
-              Compre os números na Salvy e as instâncias na Z-API, depois cadastre aqui colando
-              o instance-id e o token. Tudo já fica pronto para escanear o QR e ativar.
+              Adicione o número no seu app do Meta Business e cadastre aqui colando o ID do número,
+              o ID da WABA e o token permanente. O número valida na hora e já fica pronto para ativar.
             </p>
           </div>
           <Link href="/chips/novo"><Button><Plus className="h-4 w-4" /> Adicionar primeiro chip</Button></Link>
@@ -99,7 +99,7 @@ export async function Chips({ sessao }: { sessao: Sessao }) {
       <details className="group mt-4">
         <summary className="flex cursor-pointer list-none items-center gap-2 rounded-xl border border-line bg-ink-850 px-4 py-3 text-sm text-chalk transition-colors hover:border-ink-500">
           <Calculator className="h-4 w-4 text-emerald" />
-          Comparar custo Z-API × Meta oficial
+          Estimar o custo mensal na Meta
           <span className="ml-auto text-xs text-mist transition-transform group-open:rotate-180">▾</span>
         </summary>
         <div className="mt-3">

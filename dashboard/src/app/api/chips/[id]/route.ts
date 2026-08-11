@@ -4,7 +4,7 @@ import { exigirCobrador, podeEditarChip, erroDono } from "@/lib/auth";
 import { deletarInbox } from "@/lib/chatwoot";
 import { normalizarTelefone } from "@/lib/import/normalizar";
 
-// Devolve os dados do chip + credenciais Z-API para preencher o formulário de
+// Devolve os dados do chip + credenciais da Meta para preencher o formulário de
 // edição (admin ou cobrador dono). Os tokens chegam ao navegador apenas aqui, sob auth.
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -13,30 +13,25 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   if (!(await podeEditarChip(g.sessao, Number(id)))) return erroDono();
 
   const admin = supabaseAdmin();
-  const [{ data: chip }, { data: cred }, { data: credMeta }] = await Promise.all([
-    admin.from("chips").select("nome, maturidade, aquecimento_perfil, limite_dia_override, limite_hora_override, papel, agente_nome, tipo, numero_e164, chatwoot_inbox_id, conector, saude").eq("id", Number(id)).maybeSingle(),
-    admin.from("chips_credenciais").select("zapi_instance_id, zapi_token, zapi_client_token").eq("chip_id", Number(id)).maybeSingle(),
+  const [{ data: chip }, { data: credMeta }] = await Promise.all([
+    admin.from("chips").select("nome, maturidade, aquecimento_perfil, limite_dia_override, limite_hora_override, papel, agente_nome, tipo, numero_e164, chatwoot_inbox_id, saude").eq("id", Number(id)).maybeSingle(),
     admin.from("chips_credenciais_meta").select("phone_number_id, waba_id, access_token, app_secret").eq("chip_id", Number(id)).maybeSingle(),
   ]);
   if (!chip) return NextResponse.json({ erro: "chip_nao_encontrado" }, { status: 404 });
 
   return NextResponse.json({
     nome: chip.nome,
-    conector: chip.conector ?? "zapi",
     maturidade: chip.maturidade ?? "novo",
     aquecimento_perfil: chip.aquecimento_perfil ?? null,
     limite_dia_override: chip.limite_dia_override ?? null,
     limite_hora_override: chip.limite_hora_override ?? null,
     papel: chip.papel ?? "bot",
     agente_nome: chip.agente_nome ?? "",
-    tipo: chip.tipo ?? "fisico",
+    tipo: chip.tipo ?? "virtual_api",
     numero_e164: chip.numero_e164 ?? "",
     saude: chip.saude ?? null,
     // escalador "só registrado": papel=equipe, sem credenciais e sem inbox no Chatwoot
-    sem_zapi: (chip.papel ?? "bot") === "equipe" && !cred && !chip.chatwoot_inbox_id,
-    instance_id: cred?.zapi_instance_id ?? "",
-    token: cred?.zapi_token ?? "",
-    client_token: cred?.zapi_client_token ?? "",
+    escalador: (chip.papel ?? "bot") === "equipe" && !credMeta && !chip.chatwoot_inbox_id,
     // credenciais Meta (chegam ao navegador só aqui, sob auth — para preencher a edição)
     meta_phone_number_id: credMeta?.phone_number_id ?? "",
     meta_waba_id: credMeta?.waba_id ?? "",
@@ -45,23 +40,22 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   });
 }
 
-// Edita nome e/ou credenciais Z-API do chip.
+// Edita nome, ritmo e/ou credenciais da Meta do chip.
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const g = await exigirCobrador();
   if (g.erro) return g.erro;
   if (!(await podeEditarChip(g.sessao, Number(id)))) return erroDono();
 
-  const { nome, instance_id, token, client_token, maturidade, aquecimento_perfil, limite_dia_override, limite_hora_override, papel, agente_nome, tipo, numero_e164,
+  const { nome, maturidade, aquecimento_perfil, limite_dia_override, limite_hora_override, papel, agente_nome, numero_e164,
     meta_phone_number_id, meta_waba_id, meta_token, meta_app_secret } = await req.json();
   const admin = supabaseAdmin();
 
   const chipPatch: Record<string, unknown> = {};
   if (typeof nome === "string" && nome.trim()) chipPatch.nome = nome.trim();
-  if (["fisico", "esim", "voip", "virtual_api"].includes(tipo)) chipPatch.tipo = tipo;
   if (papel === "bot" || papel === "equipe") chipPatch.papel = papel;
   if (agente_nome !== undefined) chipPatch.agente_nome = (typeof agente_nome === "string" && agente_nome.trim()) ? agente_nome.trim() : null;
-  // número do escalador "só registrado" (sem Z-API): editável à mão. Normaliza p/ E.164.
+  // número do escalador "só registrado": editável à mão. Normaliza p/ E.164.
   if (typeof numero_e164 === "string" && numero_e164.trim()) {
     const n = normalizarTelefone(numero_e164, "movel");
     if (!n) return NextResponse.json({ erro: "Informe um número de WhatsApp válido, com DDD." }, { status: 400 });
@@ -81,16 +75,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     if (error) return NextResponse.json({ erro: error.message }, { status: 400 });
   }
 
-  const patch: Record<string, string> = {};
-  if (typeof instance_id === "string" && instance_id.trim()) patch.zapi_instance_id = instance_id.trim();
-  if (typeof token === "string" && token.trim()) patch.zapi_token = token.trim();
-  if (typeof client_token === "string" && client_token.trim()) patch.zapi_client_token = client_token.trim();
-  if (Object.keys(patch).length > 0) {
-    const { error } = await admin.from("chips_credenciais").update(patch).eq("chip_id", Number(id));
-    if (error) return NextResponse.json({ erro: error.message }, { status: 400 });
-  }
-
-  // credenciais Meta (conector meta_cloud) — atualiza só os campos enviados
+  // credenciais Meta — atualiza só os campos enviados
   const patchMeta: Record<string, string | null> = {};
   if (typeof meta_phone_number_id === "string" && meta_phone_number_id.trim()) patchMeta.phone_number_id = meta_phone_number_id.trim();
   if (typeof meta_waba_id === "string" && meta_waba_id.trim()) patchMeta.waba_id = meta_waba_id.trim();

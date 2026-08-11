@@ -23,29 +23,9 @@ async function carregarSegredos(sb: SupabaseClient): Promise<Record<string, stri
   for (const r of data ?? []) if (r.valor) m[r.chave] = r.valor;
   return m;
 }
-// Anti "enviar no vácuo": o Chatwoot aceita a mensagem (200) mesmo com o chip CAÍDO na Z-API, e o
-// fluxo marcava como "enviada" — daí "mandou pra 30" sem nada chegar. Confere a conexão real antes
-// de gastar lote. true=conectado, false=caiu, null=não deu p/ checar (erro/sem credencial → pula sem marcar).
-async function chipConectado(sb: SupabaseClient, clientGlobal: string, chipId: number): Promise<boolean | null> {
-  const { data: cred } = await sb.from("chips_credenciais").select("zapi_instance_id, zapi_token, zapi_client_token").eq("chip_id", chipId).maybeSingle();
-  if (!cred?.zapi_instance_id || !cred?.zapi_token) return null;
-  try {
-    const r = await fetch(`https://api.z-api.io/instances/${cred.zapi_instance_id}/token/${cred.zapi_token}/status`, { headers: { "Client-Token": cred.zapi_client_token ?? clientGlobal } });
-    const d = await r.json();
-    return d?.connected === true;
-  } catch { return null; }
-}
-// Marca o chip como caído e abre failover pendente (mesma lógica do chips-monitor) p/ o operador confirmar.
-async function marcarChipCaido(sb: SupabaseClient, chip: any) {
-  await sb.from("chips").update({ status: "desconectado" }).eq("id", chip.id);
-  await sb.from("eventos_campanha").insert({ tipo: "chip_status", chip_id: chip.id, payload: { status: "desconectado", nome: chip.nome, origem: "campanha-lote" } });
-  const { data: resumo } = await sb.rpc("fn_failover_resumo", { p_chip_id: chip.id });
-  const tem = ((resumo?.aguardando ?? 0) + (resumo?.conversas_ativas ?? 0) + (resumo?.escaladas ?? 0)) > 0;
-  if (tem) {
-    const { data: existe } = await sb.from("failover_eventos").select("id").eq("chip_caido_id", chip.id).eq("status", "pendente").maybeSingle();
-    if (!existe) await sb.from("failover_eventos").insert({ chip_caido_id: chip.id, resumo });
-  }
-}
+// §32 — o envio da abordagem fria por TEMPLATE da Meta ainda não foi implementado (o W01 posta
+// texto livre, que a Meta recusa fora da janela de 24h). Vire para true junto com esse envio.
+const ENVIO_TEMPLATE_META_PRONTO: boolean = false;
 
 // Chaves de config que existem "por cobrador" (o resto é só global/infra).
 const CHAVES_POR_COBRADOR = new Set([
@@ -198,7 +178,6 @@ Deno.serve(async (req) => {
   const sb = admin();
   const resolverCfg = await carregarConfigResolver(sb);
   const seg = await carregarSegredos(sb);
-  const zapiClientGlobal = seg.ZAPI_CLIENT_TOKEN ?? "";
 
   await sb.rpc("fn_resetar_presos", { p_min: 15 });
 
@@ -212,8 +191,24 @@ Deno.serve(async (req) => {
     return credor;
   }
 
+  // §35: a 1ª mensagem é o bloco `tipo: "disparo"` do fluxo da carteira. As variações dentro do
+  // bloco são sorteadas a cada envio — é o que substituiu o peso entre vários templates, e continua
+  // sendo o mesmo remédio anti-ban: dois devedores não recebem o texto idêntico.
+  const disparoCache = new Map<number, string[]>();
+  async function textoDeDisparo(cartId: number | null): Promise<string | null> {
+    if (!cartId) return null;
+    if (!disparoCache.has(cartId)) {
+      const { data } = await sb.from("carteiras").select("roteiro").eq("id", cartId).maybeSingle();
+      const bloco = (data?.roteiro?.etapas ?? []).find((e: any) => e?.tipo === "disparo");
+      const textos: string[] = (bloco?.textos ?? []).map((t: unknown) => String(t ?? "").trim()).filter(Boolean);
+      disparoCache.set(cartId, textos);
+    }
+    const textos = disparoCache.get(cartId)!;
+    return textos.length ? textos[Math.floor(Math.random() * textos.length)] : null;
+  }
+
   // chips com o dono (cobrador) p/ resolver a config/template de cada um
-  const { data: chips } = await sb.from("chips").select("id, nome, chatwoot_inbox_id, status, cobrador_id, conector").in("status", ["ativo", "aquecendo"]);
+  const { data: chips } = await sb.from("chips").select("id, nome, chatwoot_inbox_id, status, cobrador_id").in("status", ["ativo", "aquecendo"]);
   const itens: any[] = [];
   const pulados: Record<string, number> = {}; // motivo -> nº de chips
 
@@ -223,25 +218,20 @@ Deno.serve(async (req) => {
     if (!(cfg.campanha_ativa === true || cfg.campanha_ativa === "true")) { pulados.campanha_inativa = (pulados.campanha_inativa ?? 0) + 1; continue; }
     if (!dentroDaJanela(cfg.janela_envio)) { pulados.fora_da_janela = (pulados.fora_da_janela ?? 0) + 1; continue; }
 
-    // Conector Meta Cloud API: o disparo frio por número Meta NÃO sai como texto livre — a 1ª
-    // mensagem a um contato novo precisa ser um TEMPLATE aprovado pela Meta (categoria
-    // marketing/utility). Gate: sem um template de abordagem aprovado e mapeado, o chip Meta é
-    // pulado (não vira envio fantasma nem texto livre que a Meta recusaria). O envio por template
-    // é o caminho dedicado (ver §32) — este caminho free-form (Chatwoot→Z-API/W01) é só do Z-API.
-    if ((chip.conector ?? "zapi") === "meta_cloud") {
-      const nomeTpl = (cfg.meta_abordagem_template?.name ?? "").trim();
-      if (!nomeTpl) { pulados.meta_template_ausente = (pulados.meta_template_ausente ?? 0) + 1; continue; }
-      const { data: aprov } = await sb.from("meta_templates").select("status")
-        .eq("cobrador_id", chip.cobrador_id).eq("name", nomeTpl).eq("status", "APPROVED").maybeSingle();
-      if (!aprov) { pulados.meta_template_nao_aprovado = (pulados.meta_template_nao_aprovado ?? 0) + 1; continue; }
-      pulados.meta_envio_template_pendente = (pulados.meta_envio_template_pendente ?? 0) + 1; continue;
-    }
-
-    // Anti "enviar no vácuo": confirma a conexão real do chip na Z-API antes de gastar o lote.
-    // Chip caído -> marca desconectado + abre failover e pula (não vira envio fantasma).
-    const vivo = await chipConectado(sb, zapiClientGlobal, chip.id);
-    if (vivo === false) { await marcarChipCaido(sb, chip); pulados.chip_desconectado = (pulados.chip_desconectado ?? 0) + 1; continue; }
-    if (vivo === null) { pulados.chip_sem_status = (pulados.chip_sem_status ?? 0) + 1; continue; }
+    // GATE DO CONECTOR OFICIAL (§32). Todo chip é Meta Cloud API: a 1ª mensagem a um contato novo
+    // NÃO pode ser texto livre — tem que ser um TEMPLATE aprovado pela Meta. Enquanto o envio por
+    // template não existir, nenhum lote sai daqui: é melhor devolver lote vazio com o motivo do que
+    // gerar envio fantasma (marcado como "enviado" sem nada chegar) ou texto livre que a Meta recusa.
+    const nomeTpl = (cfg.meta_abordagem_template?.name ?? "").trim();
+    if (!nomeTpl) { pulados.meta_template_ausente = (pulados.meta_template_ausente ?? 0) + 1; continue; }
+    const { data: aprov } = await sb.from("meta_templates").select("status")
+      .eq("cobrador_id", chip.cobrador_id).eq("name", nomeTpl).eq("status", "APPROVED").maybeSingle();
+    if (!aprov) { pulados.meta_template_nao_aprovado = (pulados.meta_template_nao_aprovado ?? 0) + 1; continue; }
+    // Falta a última peça: mandar o template (POST /{phone_number_id}/messages ou o Chatwoot com
+    // template_params) em vez do texto livre que o W01 posta hoje. Enquanto a flag for false o lote
+    // sai vazio de propósito — todo o resto do loop (tetos de dia/hora, ritmo, sorteio anti-ban)
+    // continua valendo e volta a rodar assim que o envio por template existir.
+    if (!ENVIO_TEMPLATE_META_PRONTO) { pulados.meta_envio_template_pendente = (pulados.meta_envio_template_pendente ?? 0) + 1; continue; }
 
     // Intervalo ALEATÓRIO entre mensagens (anti-ban): cada envio aguarda um tempo sorteado em
     // [intervalo_min_segundos, intervalo_max_segundos]. Compatível com config antiga (só o mín).
@@ -294,11 +284,15 @@ Deno.serve(async (req) => {
       if (!tel) { await sb.from("fila_envios").update({ status: "sem_whatsapp", erro: "sem_telefone" }).eq("id", item.id); continue; }
 
       const credor = await credorDaCarteira(item.carteira_id);
-      const tpl = await escolherTemplate(sb, "abordagem_inicial", chip.cobrador_id ?? null);
+      // §35: o texto da abordagem é o bloco de DISPARO do fluxo da carteira. Carteira sem fluxo cai
+      // nos templates_mensagem (que perderam a tela mas seguem valendo como padrão do sistema).
+      const doFluxo = await textoDeDisparo(item.carteira_id);
+      const tpl = doFluxo ? null : await escolherTemplate(sb, "abordagem_inicial", chip.cobrador_id ?? null);
+      const bruto = doFluxo ?? tpl?.conteudo ?? null;
       const primeiroNome = (dev?.nome ?? "").split(" ")[0];
       const primeiroNomeCap = primeiroNome.charAt(0) + primeiroNome.slice(1).toLowerCase();
-      const conteudo = tpl
-        ? renderTemplate(tpl.conteudo, { primeiro_nome: primeiroNomeCap, nome_bot: nomeBot, nome: dev?.nome, credor: credor ?? "" })
+      const conteudo = bruto
+        ? renderTemplate(bruto, { primeiro_nome: primeiroNomeCap, nome_bot: nomeBot, nome: dev?.nome, credor: credor ?? "" })
         : `Olá ${primeiroNomeCap}, aqui é a ${nomeBot}${credor ? ` da ${credor}` : ""}.`;
 
       await sb.from("fila_envios").update({ template_id: tpl?.id ?? null, mensagem_renderizada: conteudo }).eq("id", item.id);

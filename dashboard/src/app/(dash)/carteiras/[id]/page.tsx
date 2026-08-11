@@ -25,11 +25,19 @@ export default async function CarteiraPage({ params, searchParams }: { params: P
 
   // padrão global do robô/asaas só é necessário para quem edita; credor/visualizador não veem chaves
   const padrao: Record<string, any> = {};
+  let conhecimento: any[] = [];
   if (podeEditar) {
     const { data: cfgRows } = await sb.from("configuracoes").select("chave, valor")
       .in("chave", ["bot_persona", "bot_contexto", "bot_guardrails", "faixas_desconto", "validade_proposta_dias", "ia", "asaas", "roteiro_modelo"])
       .is("cobrador_id", null);
     for (const r of cfgRows ?? []) padrao[r.chave] = r.valor;
+
+    // as desta carteira + as antigas sem carteira ("valem para todas"), que o bot-turno também usa —
+    // esconder as herdadas seria mentir sobre o que o robô sabe (§35)
+    const { data: conh } = await sb.from("bot_conhecimento").select("*")
+      .or(`carteira_id.eq.${carteira.id},carteira_id.is.null`)
+      .order("aprovado").order("id", { ascending: false });
+    conhecimento = conh ?? [];
   }
 
   // para credor/visualizador, remove config sensível (wallet/keys/prompt) antes de enviar ao browser
@@ -44,7 +52,8 @@ export default async function CarteiraPage({ params, searchParams }: { params: P
         <ArrowLeft className="h-4 w-4" /> Carteiras
       </Link>
       <SectionTitle title={carteira.nome} sub={carteira.credor ? `Credor: ${carteira.credor}` : "Acompanhe os envios e o robô desta carteira."} />
-      <CarteiraPainel carteira={carteiraView} importacoes={importacoes ?? []} padrao={padrao} tabInicial={tab as any} podeEditar={podeEditar} />
+      <CarteiraPainel carteira={carteiraView} importacoes={importacoes ?? []} padrao={padrao}
+                      conhecimento={conhecimento} tabInicial={tab} podeEditar={podeEditar} />
     </>
   );
 }

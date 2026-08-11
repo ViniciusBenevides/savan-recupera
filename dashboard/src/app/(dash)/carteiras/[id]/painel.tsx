@@ -11,24 +11,28 @@ import { DistribuicaoCard } from "./distribuicao";
 import { ImportadorIA, ModoSeletor } from "../importador-ia";
 import {
   Play, Pause, Archive, Trash2, Save, CheckCircle2, Loader2, Upload, Users, FileSpreadsheet, AlertTriangle,
-  CreditCard, Headset,
+  CreditCard, Headset, ChevronRight,
 } from "lucide-react";
 import { AbaRoteiro } from "./roteiro";
+import { ConhecimentoCarteira } from "./conhecimento";
 
-// Quatro abas, não seis: "Importações" era parte do estado da carteira e "Descontos" é uma
-// decisão do robô — cada uma virou um bloco dentro da aba a que pertence.
+// Quatro abas. A carteira é o único lugar onde o robô se configura (§35): o Fluxo carrega a linha
+// do tempo inteira (disparo → reenvios → conversa → pós-pagamento) mais os ajustes de persona e
+// desconto, e o Conhecimento é a base de respostas desta carteira. Não há mais tela global de Robô.
 const TABS = [
   { k: "visao", t: "Visão geral" },
-  { k: "robo", t: "Robô desta carteira" },
-  { k: "fluxo", t: "Fluxo da conversa" },
+  { k: "fluxo", t: "Fluxo do robô" },
+  { k: "conhecimento", t: "Conhecimento" },
   { k: "recebimento", t: "Recebimento" },
 ] as const;
 type Tab = typeof TABS[number]["k"];
 
-export function CarteiraPainel({ carteira, importacoes, padrao, tabInicial, podeEditar = true }: { carteira: any; importacoes: any[]; padrao: Record<string, any>; tabInicial?: Tab; podeEditar?: boolean }) {
+export function CarteiraPainel({ carteira, importacoes, padrao, conhecimento, tabInicial, podeEditar = true }: { carteira: any; importacoes: any[]; padrao: Record<string, any>; conhecimento: any[]; tabInicial?: string; podeEditar?: boolean }) {
   // credor/visualizador só veem o andamento, sem editar nem ver chaves
   const tabs = podeEditar ? TABS : TABS.filter((t) => t.k === "visao");
-  const inicial = tabInicial && tabs.some((t) => t.k === tabInicial) ? tabInicial : "visao";
+  // ?tab=robo era a aba de prompt/descontos, que virou um card dentro do Fluxo — link antigo não quebra
+  const pedida = tabInicial === "robo" ? "fluxo" : tabInicial;
+  const inicial = (tabs.find((t) => t.k === pedida)?.k ?? "visao") as Tab;
   const [tab, setTab] = React.useState<Tab>(inicial);
   return (
     <>
@@ -46,13 +50,15 @@ export function CarteiraPainel({ carteira, importacoes, padrao, tabInicial, pode
           <AbaHistorico carteira={carteira} importacoes={importacoes} podeEditar={podeEditar} />
         </div>
       )}
-      {tab === "robo" && podeEditar && (
-        <div className="space-y-6">
-          <AbaPrompt carteira={carteira} padrao={padrao} />
-          <AbaDescontos carteira={carteira} padrao={padrao} />
+      {tab === "fluxo" && podeEditar && (
+        <div className="space-y-4">
+          <AjustesDoRobo carteira={carteira} padrao={padrao} />
+          <AbaRoteiroLigado carteira={carteira} padrao={padrao} />
         </div>
       )}
-      {tab === "fluxo" && podeEditar && <AbaRoteiroLigado carteira={carteira} padrao={padrao} />}
+      {tab === "conhecimento" && podeEditar && (
+        <ConhecimentoCarteira carteiraId={carteira.id} entradas={conhecimento} />
+      )}
       {tab === "recebimento" && podeEditar && <AbaAsaas carteira={carteira} padrao={padrao} />}
     </>
   );
@@ -181,11 +187,38 @@ function AbaStatus({ carteira, podeEditar = true }: { carteira: any; podeEditar?
   );
 }
 
-/* ---------- Prompt do robô ---------- */
+/* ---------- Ajustes do robô (persona + descontos) ---------- */
+// Vivia numa aba própria e, antes disso, numa tela global de "Comportamento". Como cada carteira
+// negocia diferente (credor, natureza da dívida, teto de desconto), o ajuste é da carteira — e fica
+// recolhido em cima do canvas porque se mexe uma vez e não se olha mais.
+function AjustesDoRobo({ carteira, padrao }: { carteira: any; padrao: Record<string, any> }) {
+  const [aberto, setAberto] = React.useState(false);
+  return (
+    <Card className="p-0">
+      <button
+        onClick={() => setAberto((v) => !v)}
+        className="flex w-full items-center gap-2.5 px-5 py-3.5 text-left"
+      >
+        <ChevronRight className={`h-4 w-4 shrink-0 text-mist transition-transform ${aberto ? "rotate-90" : ""}`} />
+        <div className="min-w-0 flex-1">
+          <h3 className="font-display text-sm font-600 text-chalk">Ajustes do robô nesta carteira</h3>
+          <p className="truncate text-xs text-mist">
+            Quem ele diz que é, o que nunca pode citar e até onde pode descontar.
+          </p>
+        </div>
+      </button>
+      {aberto && (
+        <div className="space-y-4 border-t border-line p-5">
+          <AbaPrompt carteira={carteira} padrao={padrao} />
+          <AbaDescontos carteira={carteira} padrao={padrao} />
+        </div>
+      )}
+    </Card>
+  );
+}
+
 function AbaPrompt({ carteira, padrao }: { carteira: any; padrao: Record<string, any> }) {
   const { patch, salvando, ok, erro } = useSalvar(carteira.id);
-  const temCustom = !!(carteira.prompt_persona || carteira.contexto_negocio || carteira.guardrails);
-  const [custom, setCustom] = React.useState(temCustom);
 
   const gPadrao = padrao.bot_guardrails ?? {};
   const g0 = carteira.guardrails ?? gPadrao;
@@ -198,7 +231,6 @@ function AbaPrompt({ carteira, padrao }: { carteira: any; padrao: Record<string,
   const nomeBot = padrao.ia?.nome_bot ?? "Ana";
 
   async function salvar() {
-    if (!custom) { await patch({ prompt_persona: null, contexto_negocio: null, guardrails: null }); return; }
     const guardrails = {
       ...gPadrao,
       nunca_citar: String(nuncaCitar).split(",").map((s: string) => s.trim()).filter(Boolean),
@@ -214,41 +246,30 @@ function AbaPrompt({ carteira, padrao }: { carteira: any; padrao: Record<string,
   return (
     <div className="grid gap-4 lg:grid-cols-2">
       <Card className="space-y-4">
-        <div className="flex items-center justify-between">
-          <Label className="mb-0 flex items-center gap-1.5">
-            Usar o padrão global <HelpHint text="Ligado: esta carteira usa o comportamento definido em Robô → Comportamento. Desligado: você personaliza o robô só para esta carteira." />
-          </Label>
-          <Switch checked={!custom} onChange={(v) => setCustom(!v)} />
+        <div>
+          <Label className="flex items-center gap-1.5">Persona / objetivo <HelpHint text="Quem é o robô e o que ele quer. Use {{nome_bot}} e {{primeiro_nome}}." /></Label>
+          <Textarea rows={3} value={persona} onChange={(e) => setPersona(e.target.value)} />
         </div>
-
-        {custom && (
-          <>
-            <div>
-              <Label className="flex items-center gap-1.5">Persona / objetivo <HelpHint text="Quem é o robô e o que ele quer. Use {{nome_bot}} e {{primeiro_nome}}." /></Label>
-              <Textarea rows={3} value={persona} onChange={(e) => setPersona(e.target.value)} />
-            </div>
-            <div>
-              <Label className="flex items-center gap-1.5">Contexto do negócio <HelpHint text="Em nome de quem o robô fala e como enquadra a dívida." /></Label>
-              <Textarea rows={2} value={contexto} onChange={(e) => setContexto(e.target.value)} />
-            </div>
-            <div>
-              <Label className="flex items-center gap-1.5">Nunca citar <HelpHint text="Termos proibidos, separados por vírgula. Ex.: Serasa, SPC, processo judicial. Deixe vazio se esta carteira pode mencioná-los." /></Label>
-              <Input value={nuncaCitar} onChange={(e) => setNuncaCitar(e.target.value)} placeholder="Serasa, SPC, negativação…" />
-            </div>
-            <div className="flex items-center justify-between rounded-xl border border-line bg-ink-850 px-3.5 py-2.5">
-              <span className="flex items-center gap-1.5 text-sm text-chalk">Confirmar identidade antes de revelar dados <HelpHint text="O robô confirma que fala com a pessoa certa antes de citar CPF/valor. Recomendado por LGPD." /></span>
-              <Switch checked={confirmarId} onChange={setConfirmarId} />
-            </div>
-            <div>
-              <Label className="flex items-center gap-1.5">Tom <HelpHint text="Como o robô escreve: formal, leve, com emoji, etc." /></Label>
-              <Input value={tom} onChange={(e) => setTom(e.target.value)} placeholder="humano, caloroso, frases curtas…" />
-            </div>
-            <div>
-              <Label className="flex items-center gap-1.5">Regras extras (opcional) <HelpHint text="Qualquer instrução adicional específica desta carteira." /></Label>
-              <Textarea rows={2} value={regrasExtras} onChange={(e) => setRegrasExtras(e.target.value)} />
-            </div>
-          </>
-        )}
+        <div>
+          <Label className="flex items-center gap-1.5">Contexto do negócio <HelpHint text="Em nome de quem o robô fala e como enquadra a dívida." /></Label>
+          <Textarea rows={2} value={contexto} onChange={(e) => setContexto(e.target.value)} />
+        </div>
+        <div>
+          <Label className="flex items-center gap-1.5">Nunca citar <HelpHint text="Termos proibidos, separados por vírgula. Ex.: Serasa, SPC, processo judicial. Deixe vazio se esta carteira pode mencioná-los." /></Label>
+          <Input value={nuncaCitar} onChange={(e) => setNuncaCitar(e.target.value)} placeholder="Serasa, SPC, negativação…" />
+        </div>
+        <div className="flex items-center justify-between rounded-xl border border-line bg-ink-850 px-3.5 py-2.5">
+          <span className="flex items-center gap-1.5 text-sm text-chalk">Confirmar identidade antes de revelar dados <HelpHint text="O robô confirma que fala com a pessoa certa antes de citar CPF/valor. Recomendado por LGPD." /></span>
+          <Switch checked={confirmarId} onChange={setConfirmarId} />
+        </div>
+        <div>
+          <Label className="flex items-center gap-1.5">Tom <HelpHint text="Como o robô escreve: formal, leve, com emoji, etc." /></Label>
+          <Input value={tom} onChange={(e) => setTom(e.target.value)} placeholder="humano, caloroso, frases curtas…" />
+        </div>
+        <div>
+          <Label className="flex items-center gap-1.5">Regras extras (opcional) <HelpHint text="Qualquer instrução adicional específica desta carteira." /></Label>
+          <Textarea rows={2} value={regrasExtras} onChange={(e) => setRegrasExtras(e.target.value)} />
+        </div>
 
         <div className="flex items-center gap-3">
           <Tooltip text="Salva o prompt desta carteira. Vale para todas as próximas conversas dela.">
@@ -293,8 +314,6 @@ function montarPreview(o: any): string {
 function AbaDescontos({ carteira, padrao }: { carteira: any; padrao: Record<string, any> }) {
   const { patch, salvando, ok, erro } = useSalvar(carteira.id);
   const over = carteira.config_override ?? {};
-  const temCustom = !!over.faixas_desconto;
-  const [custom, setCustom] = React.useState(temCustom);
   const base = over.faixas_desconto ?? padrao.faixas_desconto ?? { faixas: [], valor_minimo_pix: 30, margem_extra_pp: 10 };
   const [faixas, setFaixas] = React.useState<{ idade_min: number; pct: number }[]>(base.faixas ?? []);
   const [minPix, setMinPix] = React.useState(base.valor_minimo_pix ?? 30);
@@ -306,7 +325,6 @@ function AbaDescontos({ carteira, padrao }: { carteira: any; padrao: Record<stri
   }
 
   async function salvar() {
-    if (!custom) { await patch({ config_override: null }); return; }
     const config_override = {
       ...over,
       faixas_desconto: { faixas, valor_minimo_pix: Number(minPix), margem_extra_pp: Number(margem) },
@@ -317,43 +335,37 @@ function AbaDescontos({ carteira, padrao }: { carteira: any; padrao: Record<stri
 
   return (
     <Card className="max-w-2xl space-y-4">
-      <div className="flex items-center justify-between">
-        <Label className="mb-0 flex items-center gap-1.5">
-          Usar os descontos globais <HelpHint text="Ligado: usa as faixas definidas em Robô → Comportamento. Desligado: define descontos só para esta carteira (útil para dívidas de naturezas diferentes)." />
-        </Label>
-        <Switch checked={!custom} onChange={(v) => setCustom(!v)} />
-      </div>
+      <h4 className="flex items-center gap-1.5 font-display text-sm font-600 text-chalk">
+        Descontos que ele pode oferecer
+        <HelpHint text="Vale só para esta carteira. Dívidas de naturezas diferentes (ou credores diferentes) costumam ter teto diferente." />
+      </h4>
 
-      {custom && (
-        <>
-          <div className="space-y-2">
-            <Label className="flex items-center gap-1.5">Faixas por idade da dívida <HelpHint text="A partir de X anos de atraso, oferece Y% de desconto. A maior faixa que o devedor atinge vale." /></Label>
-            {faixas.map((f, i) => (
-              <div key={i} className="flex items-center gap-2 text-sm">
-                <span className="text-mist">A partir de</span>
-                <Input type="number" className="w-20" value={f.idade_min} onChange={(e) => setFaixa(i, "idade_min", Number(e.target.value))} />
-                <span className="text-mist">anos →</span>
-                <Input type="number" className="w-20" value={f.pct} onChange={(e) => setFaixa(i, "pct", Number(e.target.value))} />
-                <span className="text-mist">% de desconto</span>
-              </div>
-            ))}
+      <div className="space-y-2">
+        <Label className="flex items-center gap-1.5">Faixas por idade da dívida <HelpHint text="A partir de X anos de atraso, oferece Y% de desconto. A maior faixa que o devedor atinge vale." /></Label>
+        {faixas.map((f, i) => (
+          <div key={i} className="flex items-center gap-2 text-sm">
+            <span className="text-mist">A partir de</span>
+            <Input type="number" className="w-20" value={f.idade_min} onChange={(e) => setFaixa(i, "idade_min", Number(e.target.value))} />
+            <span className="text-mist">anos →</span>
+            <Input type="number" className="w-20" value={f.pct} onChange={(e) => setFaixa(i, "pct", Number(e.target.value))} />
+            <span className="text-mist">% de desconto</span>
           </div>
-          <div className="grid grid-cols-3 gap-3">
-            <div>
-              <Label className="flex items-center gap-1.5">Pix mínimo <HelpHint text="Valor mínimo que um Pix pode ter, mesmo com desconto." /></Label>
-              <Input type="number" value={minPix} onChange={(e) => setMinPix(Number(e.target.value))} />
-            </div>
-            <div>
-              <Label className="flex items-center gap-1.5">Margem extra (pp) <HelpHint text="Pontos percentuais extras que o robô pode dar 1× se o devedor recusar." /></Label>
-              <Input type="number" value={margem} onChange={(e) => setMargem(Number(e.target.value))} />
-            </div>
-            <div>
-              <Label className="flex items-center gap-1.5">Validade (dias) <HelpHint text="Por quantos dias a proposta/Pix fica válida." /></Label>
-              <Input type="number" value={validade} onChange={(e) => setValidade(Number(e.target.value))} />
-            </div>
-          </div>
-        </>
-      )}
+        ))}
+      </div>
+      <div className="grid grid-cols-3 gap-3">
+        <div>
+          <Label className="flex items-center gap-1.5">Pix mínimo <HelpHint text="Valor mínimo que um Pix pode ter, mesmo com desconto." /></Label>
+          <Input type="number" value={minPix} onChange={(e) => setMinPix(Number(e.target.value))} />
+        </div>
+        <div>
+          <Label className="flex items-center gap-1.5">Margem extra (pp) <HelpHint text="Pontos percentuais extras que o robô pode dar 1× se o devedor recusar." /></Label>
+          <Input type="number" value={margem} onChange={(e) => setMargem(Number(e.target.value))} />
+        </div>
+        <div>
+          <Label className="flex items-center gap-1.5">Validade (dias) <HelpHint text="Por quantos dias a proposta/Pix fica válida." /></Label>
+          <Input type="number" value={validade} onChange={(e) => setValidade(Number(e.target.value))} />
+        </div>
+      </div>
 
       <div className="flex items-center gap-3">
         <Button onClick={salvar} disabled={salvando}>
@@ -509,7 +521,7 @@ function AbaAsaas({ carteira, padrao }: { carteira: any; padrao: Record<string, 
           })}
           {selecionados.some((id) => { const c = chipsEquipe.find((x) => x.id === id); return c && !c.numero_e164; }) && (
             <p className="flex items-center gap-1.5 rounded-lg border border-amber/30 bg-amber/10 px-3 py-2 text-[11px] text-amber">
-              <AlertTriangle className="h-3.5 w-3.5 shrink-0" /> Escalador sem número conectado é ignorado na escalação. Conecte o chip em Chips (QR) pra puxar o WhatsApp.
+              <AlertTriangle className="h-3.5 w-3.5 shrink-0" /> Escalador sem número é ignorado na escalação. Cadastre o WhatsApp dele em Ajustes → Chips.
             </p>
           )}
         </div>

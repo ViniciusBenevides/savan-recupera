@@ -135,7 +135,7 @@ export function IntegracoesForm({ role, asaas }: { role: string; asaas: any }) {
         <p className="text-xs text-mist">
           {ehAdmin
             ? "Chaves de infra da plataforma. Cada cobrador pode ter as suas; quando vazias, caem nestas."
-            : "Suas chaves (OpenAI, Asaas, Z-API). Se deixar vazio, o sistema usa as chaves globais da plataforma."}
+            : "Suas chaves (OpenAI, Asaas). Se deixar vazio, o sistema usa as chaves globais da plataforma."}
           {" "}As já salvas vêm mascaradas — clique no olho para revelar.
         </p>
         {segredos.map((s) => (

@@ -3,10 +3,8 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Card, Badge, Button, Input, Label } from "@/components/ui/primitives";
 import { MaturidadeField, type MaturidadeValor } from "@/components/MaturidadeField";
-import { TipoChipField, type TipoChip } from "@/components/TipoChipField";
 import { num } from "@/lib/utils";
-import { Play, Pause, QrCode, Smartphone, AlertTriangle, MoreVertical, Pencil, Trash2, X, Eye, EyeOff, Loader2, Cloud, Activity, RotateCw, Gauge, PauseCircle } from "lucide-react";
-import Link from "next/link";
+import { Play, Pause, Smartphone, MoreVertical, Pencil, Trash2, X, Eye, EyeOff, Loader2, Cloud, Activity, RotateCw, Gauge, PauseCircle } from "lucide-react";
 
 // Semáforo da qualidade do número na Meta (saber se está perto de banir).
 const QUALIDADE: Record<string, { tone: any; label: string }> = {
@@ -40,13 +38,6 @@ function CampoToken({ label, value, onChange, disabled }: {
   );
 }
 
-const TIPO: Record<string, { tone: any; label: string }> = {
-  fisico: { tone: "neutral", label: "Físico" },
-  esim: { tone: "blue", label: "eSIM" },
-  voip: { tone: "amber", label: "VoIP" },
-  virtual_api: { tone: "rose", label: "Virtual API" },
-};
-
 const STATUS: Record<string, { tone: any; label: string }> = {
   cadastrado: { tone: "neutral", label: "Cadastrado" },
   conectado: { tone: "blue", label: "Conectado" },
@@ -74,22 +65,15 @@ export function ChipCard({ chip, metrica, donoNome, ritmoHora }: {
   const [erro, setErro] = useState("");
 
   const [eNome, setENome] = useState(chip.nome);
-  const [eInstance, setEInstance] = useState("");
-  const [eToken, setEToken] = useState("");
-  const [eClientToken, setEClientToken] = useState("");
   const [eMaturidade, setEMaturidade] = useState<MaturidadeValor>({ maturidade: "novo", limite_dia_override: null, limite_hora_override: null });
   const [origMat, setOrigMat] = useState<MaturidadeValor>({ maturidade: "novo", limite_dia_override: null, limite_hora_override: null });
   const [ePapel, setEPapel] = useState<string>("bot");
   const [eAgente, setEAgente] = useState<string>("");
   const [eNumero, setENumero] = useState<string>("");
   const [origPapel, setOrigPapel] = useState({ papel: "bot", agente: "", numero: "" });
-  const [eTipo, setETipo] = useState<TipoChip>("fisico");
-  const [origTipo, setOrigTipo] = useState<TipoChip>("fisico");
   const [carregando, setCarregando] = useState(false);
-  const [orig, setOrig] = useState({ instance: "", token: "", clientToken: "" });
 
-  // conector Meta (oficial): credenciais e saúde do número
-  const ehMeta = (chip.conector ?? "zapi") === "meta_cloud";
+  // credenciais da Meta (o único conector) e saúde do número
   const [eMetaPhone, setEMetaPhone] = useState("");
   const [eMetaWaba, setEMetaWaba] = useState("");
   const [eMetaToken, setEMetaToken] = useState("");
@@ -111,10 +95,10 @@ export function ChipCard({ chip, metrica, donoNome, ritmoHora }: {
   const st = STATUS[chip.status] ?? STATUS.cadastrado;
   const dia = diaAquecimento(chip.data_ativacao);
   const enviados = metrica?.novos_contatos ?? 0;
-  // escalador humano "só registrado" (sem Z-API): papel=equipe, número à mão, sem inbox no Chatwoot.
-  // Não tem QR, não dispara e não aparece no Chatwoot — esconde os controles que não se aplicam.
-  const escaladorManual = (chip.papel ?? "bot") === "equipe" && !!chip.numero_e164 && !chip.chatwoot_inbox_id;
-  const escaladorManualEdit = ePapel === "equipe" && !chip.chatwoot_inbox_id;
+  // escalador humano "só registrado": papel=equipe, número à mão, sem inbox no Chatwoot.
+  // Não dispara e não aparece no Chatwoot — esconde os controles que não se aplicam.
+  const escalador = (chip.papel ?? "bot") === "equipe" && !!chip.numero_e164 && !chip.chatwoot_inbox_id;
+  const escaladorEdit = ePapel === "equipe" && !chip.chatwoot_inbox_id;
 
   function acao(a: string) {
     start(async () => {
@@ -132,15 +116,10 @@ export function ChipCard({ chip, metrica, donoNome, ritmoHora }: {
       .then((r) => r.json())
       .then((d) => {
         setENome(d.nome ?? chip.nome);
-        setEInstance(d.instance_id ?? "");
-        setEToken(d.token ?? "");
-        setEClientToken(d.client_token ?? "");
-        setOrig({ instance: d.instance_id ?? "", token: d.token ?? "", clientToken: d.client_token ?? "" });
         const mat: MaturidadeValor = { maturidade: d.maturidade ?? "novo", limite_dia_override: d.limite_dia_override ?? null, limite_hora_override: d.limite_hora_override ?? null };
         setEMaturidade(mat); setOrigMat(mat);
         setEPapel(d.papel ?? "bot"); setEAgente(d.agente_nome ?? ""); setENumero(d.numero_e164 ?? "");
         setOrigPapel({ papel: d.papel ?? "bot", agente: d.agente_nome ?? "", numero: d.numero_e164 ?? "" });
-        setETipo((d.tipo ?? "fisico") as TipoChip); setOrigTipo((d.tipo ?? "fisico") as TipoChip);
         setEMetaPhone(d.meta_phone_number_id ?? ""); setEMetaWaba(d.meta_waba_id ?? ""); setEMetaToken(d.meta_token ?? "");
         setOrigMeta({ phone: d.meta_phone_number_id ?? "", waba: d.meta_waba_id ?? "", token: d.meta_token ?? "" });
       })
@@ -152,9 +131,6 @@ export function ChipCard({ chip, metrica, donoNome, ritmoHora }: {
     setErro("");
     const body: Record<string, unknown> = {};
     if (eNome.trim() && eNome.trim() !== chip.nome) body.nome = eNome.trim();
-    if (eInstance.trim() && eInstance.trim() !== orig.instance) body.instance_id = eInstance.trim();
-    if (eToken.trim() && eToken.trim() !== orig.token) body.token = eToken.trim();
-    if (eClientToken.trim() && eClientToken.trim() !== orig.clientToken) body.client_token = eClientToken.trim();
     if (eMaturidade.maturidade !== origMat.maturidade) body.maturidade = eMaturidade.maturidade;
     if (eMaturidade.limite_hora_override !== origMat.limite_hora_override) {
       body.limite_hora_override = eMaturidade.limite_hora_override;
@@ -165,7 +141,6 @@ export function ChipCard({ chip, metrica, donoNome, ritmoHora }: {
     if (ePapel !== origPapel.papel) body.papel = ePapel;
     if (eAgente.trim() !== origPapel.agente) body.agente_nome = eAgente.trim();
     if (eNumero.trim() !== origPapel.numero) body.numero_e164 = eNumero.trim();
-    if (eTipo !== origTipo) body.tipo = eTipo;
     if (eMetaPhone.trim() !== origMeta.phone) body.meta_phone_number_id = eMetaPhone.trim();
     if (eMetaWaba.trim() !== origMeta.waba) body.meta_waba_id = eMetaWaba.trim();
     if (eMetaToken.trim() !== origMeta.token) body.meta_token = eMetaToken.trim();
@@ -225,15 +200,15 @@ export function ChipCard({ chip, metrica, donoNome, ritmoHora }: {
                 <Input value={eAgente} onChange={(e) => setEAgente(e.target.value)} placeholder="Ex.: Carlos" />
               </div>
             )}
-            {escaladorManualEdit ? (
+            {escaladorEdit ? (
               <div>
                 <Label>Número de WhatsApp do cobrador</Label>
                 <Input value={eNumero} onChange={(e) => setENumero(e.target.value)} placeholder="(11) 99999-9999" inputMode="tel" />
                 <p className="mt-1.5 text-xs text-mist">
-                  Com DDD. É o número que recebe as transferências. Este escalador não usa Z-API nem aparece no Chatwoot.
+                  Com DDD. É o número que recebe as transferências. Este escalador não conecta na Meta nem aparece no Chatwoot.
                 </p>
               </div>
-            ) : ehMeta ? (
+            ) : (
               <>
                 <div>
                   <Label>ID do número (phone_number_id)</Label>
@@ -244,17 +219,6 @@ export function ChipCard({ chip, metrica, donoNome, ritmoHora }: {
                   <Input value={eMetaWaba} onChange={(e) => setEMetaWaba(e.target.value)} className="font-mono text-xs" />
                 </div>
                 <CampoToken label="Token de acesso (Meta)" value={eMetaToken} onChange={setEMetaToken} />
-                <MaturidadeField value={eMaturidade} onChange={setEMaturidade} />
-              </>
-            ) : (
-              <>
-                <div>
-                  <Label>Instance ID (Z-API)</Label>
-                  <Input value={eInstance} onChange={(e) => setEInstance(e.target.value)} className="font-mono text-xs" />
-                </div>
-                <CampoToken label="Token da instância (Z-API)" value={eToken} onChange={setEToken} />
-                <CampoToken label="Token de Segurança (Z-API)" value={eClientToken} onChange={setEClientToken} />
-                <TipoChipField value={eTipo} onChange={setETipo} />
                 <MaturidadeField value={eMaturidade} onChange={setEMaturidade} />
               </>
             )}
@@ -284,15 +248,14 @@ export function ChipCard({ chip, metrica, donoNome, ritmoHora }: {
               {(chip.papel ?? "bot") === "equipe"
                 ? <Badge tone="violet">Cobrador{chip.agente_nome ? ` · ${chip.agente_nome}` : ""}</Badge>
                 : <Badge tone="blue">Bot</Badge>}
-              {ehMeta && <Badge tone="green"><Cloud className="h-3 w-3" /> Meta oficial</Badge>}
-              {!escaladorManual && !ehMeta && (() => { const t = TIPO[chip.tipo ?? "fisico"] ?? TIPO.fisico; return <Badge tone={t.tone}>{t.label}</Badge>; })()}
+              {!escalador && <Badge tone="green"><Cloud className="h-3 w-3" /> Meta oficial</Badge>}
               {donoNome && <Badge tone="neutral">Conta: {donoNome}</Badge>}
             </div>
             <div className="font-mono text-xs text-mist tabnums">{chip.numero_e164 ?? "sem número"}</div>
           </div>
         </div>
         <div className="flex items-center gap-1.5">
-          {!escaladorManual && <Badge tone={st.tone}>{st.label}</Badge>}
+          {!escalador && <Badge tone={st.tone}>{st.label}</Badge>}
           <div className="relative">
             <button onClick={() => setMenu((v) => !v)}
                     className="grid h-7 w-7 place-items-center rounded-lg text-mist transition-colors hover:bg-ink-800 hover:text-chalk">
@@ -329,7 +292,7 @@ export function ChipCard({ chip, metrica, donoNome, ritmoHora }: {
         </div>
       )}
 
-      {!escaladorManual && ehMeta && (() => {
+      {!escalador && (() => {
         const q = QUALIDADE[saude?.quality_rating ?? "UNKNOWN"] ?? QUALIDADE.UNKNOWN;
         const tier = saude?.messaging_limit_tier ?? "TIER_250";
         const teto = TETO_TIER[tier];
@@ -359,34 +322,25 @@ export function ChipCard({ chip, metrica, donoNome, ritmoHora }: {
                 </div>
               )}
             </div>
+            {/* Orçamento de ritmo por hora (§33): o freio que impede gastar a cota do dia numa rajada */}
+            {ritmoHora?.limite ? (
+              <div className="flex items-center justify-between border-t border-line pt-2">
+                <span className="flex items-center gap-1.5 text-xs text-mist">
+                  <Gauge className="h-3.5 w-3.5" /> Ritmo desta hora
+                </span>
+                <span className={`font-mono text-xs font-600 tabnums ${
+                  ritmoHora.usados >= ritmoHora.limite ? "text-amber" : "text-chalk"
+                }`}>
+                  {num(ritmoHora.usados)} / {num(ritmoHora.limite)}
+                </span>
+              </div>
+            ) : null}
             {saude?.quality_rating === "RED" && (
               <p className="text-[11px] text-rose">Qualidade vermelha: pause os disparos. Mais bloqueio/denúncia → a Meta restringe o número.</p>
             )}
           </div>
         );
       })()}
-
-      {!escaladorManual && !ehMeta && (
-        <div className="flex flex-col gap-2 rounded-xl border border-line bg-ink-850 px-3 py-2.5">
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-mist">Enviados hoje</span>
-            <span className="font-mono text-sm font-600 text-chalk tabnums">{num(enviados)}</span>
-          </div>
-          {/* Orçamento de ritmo por hora (§33): o freio que impede gastar a cota do dia numa rajada */}
-          {ritmoHora?.limite ? (
-            <div className="flex items-center justify-between border-t border-line pt-2">
-              <span className="flex items-center gap-1.5 text-xs text-mist">
-                <Gauge className="h-3.5 w-3.5" /> Ritmo desta hora
-              </span>
-              <span className={`font-mono text-xs font-600 tabnums ${
-                ritmoHora.usados >= ritmoHora.limite ? "text-amber" : "text-chalk"
-              }`}>
-                {num(ritmoHora.usados)} / {num(ritmoHora.limite)}
-              </span>
-            </div>
-          ) : null}
-        </div>
-      )}
 
       {/* Trava de abordagem: o chip continua respondendo, só não inicia conversa nova */}
       {chip.abordagem_travada_ate && new Date(chip.abordagem_travada_ate) > new Date() && (
@@ -398,14 +352,6 @@ export function ChipCard({ chip, metrica, donoNome, ritmoHora }: {
             O chip continua respondendo quem já respondeu — só não inicia conversa nova.
           </span>
         </div>
-      )}
-
-      {!escaladorManual && !ehMeta && !chip.chatwoot_inbox_id && (
-        <Link href={`/chips/novo?id=${chip.id}`}
-              className="flex items-center gap-2 rounded-lg border border-amber/30 bg-amber/10 px-3 py-2 text-xs text-amber transition-colors hover:bg-amber/15">
-          <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-          Chatwoot não vinculado — clique para vincular
-        </Link>
       )}
 
       {erro && <p className="rounded-lg border border-rose/30 bg-rose/10 px-3 py-2 text-xs text-rose">{erro}</p>}
@@ -422,17 +368,12 @@ export function ChipCard({ chip, metrica, donoNome, ritmoHora }: {
             </Button>
           </div>
         </div>
-      ) : escaladorManual ? (
+      ) : escalador ? (
         <div className="rounded-xl border border-line bg-ink-850 px-3 py-2.5 text-xs text-mist">
           Escalador humano — recebe as transferências no WhatsApp. Não dispara campanha nem aparece no Chatwoot.
         </div>
       ) : (
         <div className="flex gap-2">
-          {!ehMeta && (
-            <Link href={`/chips/novo?id=${chip.id}`} className="flex-1">
-              <Button variant="outline" size="sm" className="w-full"><QrCode className="h-4 w-4" /> QR Code</Button>
-            </Link>
-          )}
           {podeAtivar && (
             <Button size="sm" className="flex-1" onClick={() => acao("ativar")} disabled={pending}>
               <Play className="h-4 w-4" /> Ativar

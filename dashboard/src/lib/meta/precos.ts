@@ -1,7 +1,7 @@
-// Tarifas de referência para a calculadora de custos (Z-API+Salvy × Meta Cloud API).
+// Tarifas de referência da WhatsApp Cloud API (Meta) para a calculadora de custo.
 // ⚠️ A Meta muda a tabela com frequência e o preço final depende de câmbio/conta. Estes são
 //   VALORES DE REFERÊNCIA, mantidos à mão (mesmo padrão do lib/ia/modelos-catalogo.ts).
-//   Fonte: developers.facebook.com/.../whatsapp/pricing (conversation-based / por mensagem, BR).
+//   Fonte: developers.facebook.com/.../whatsapp/pricing (por mensagem, BR).
 //   Última verificação: 2026-06-29. Reconfira na Meta antes de decidir — a calculadora deixa
 //   o usuário sobrescrever os valores na tela.
 //
@@ -19,12 +19,6 @@ export const META_TARIFAS_BRL: Record<CategoriaTarifa, number> = {
   service: 0.0,         // resposta dentro da janela de 24h — gratuita
 };
 
-// Custo fixo mensal do caminho Z-API por NÚMERO (instância Z-API + chip/SIM Salvy), referência.
-export const ZAPI_CUSTOS_BRL = {
-  instanciaMes: 99,  // assinatura de 1 instância Z-API / mês
-  simSalvyMes: 40,   // 1 chip/linha Salvy / mês
-};
-
 export type CenarioCusto = {
   numeros: number;        // quantos números
   msgsDia: number;        // mensagens iniciadas pela empresa, por número, por dia
@@ -35,14 +29,13 @@ export type CenarioCusto = {
 };
 
 export type ResultadoCusto = {
-  zapiMes: number;
   metaMes: number;
   metaPorCategoria: { marketing: number; utility: number; service: number };
   msgsMes: number;
-  economiaMeta: number; // zapi - meta (positivo = Meta mais barata)
+  custoPorMsg: number; // custo médio por mensagem iniciada, no cenário
 };
 
-export function calcularCusto(c: CenarioCusto, tarifas = META_TARIFAS_BRL, zapi = ZAPI_CUSTOS_BRL): ResultadoCusto {
+export function calcularCusto(c: CenarioCusto, tarifas = META_TARIFAS_BRL): ResultadoCusto {
   const msgsMes = Math.max(0, c.numeros) * Math.max(0, c.msgsDia) * Math.max(0, c.diasMes);
   const fMkt = Math.min(100, Math.max(0, c.pctMarketing)) / 100;
   const fUtl = Math.min(100, Math.max(0, c.pctUtility)) / 100;
@@ -53,13 +46,10 @@ export function calcularCusto(c: CenarioCusto, tarifas = META_TARIFAS_BRL, zapi 
   const cSvc = msgsMes * fSvc * tarifas.service; // ~0
   const metaMes = cMkt + cUtl + cSvc;
 
-  const zapiMes = Math.max(0, c.numeros) * (zapi.instanciaMes + zapi.simSalvyMes);
-
   return {
-    zapiMes,
     metaMes,
     metaPorCategoria: { marketing: cMkt, utility: cUtl, service: cSvc },
     msgsMes,
-    economiaMeta: zapiMes - metaMes,
+    custoPorMsg: msgsMes > 0 ? metaMes / msgsMes : 0,
   };
 }
