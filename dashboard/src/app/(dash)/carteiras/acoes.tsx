@@ -23,7 +23,7 @@ export function CarteiraAcoes({ id, nome, status }: { id: number; nome: string; 
     <div className="flex items-center justify-end gap-1.5">
       {status === "importando" && (
         <Tooltip text="Retomar: enviar a planilha para concluir a criação desta carteira.">
-          <Link href={`/carteiras/${id}?tab=historico`}>
+          <Link href={`/carteiras/${id}?tab=visao`}>
             <Button size="sm" variant="outline"><Upload className="h-3.5 w-3.5" /> Continuar envio</Button>
           </Link>
         </Tooltip>

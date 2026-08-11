@@ -1,12 +1,11 @@
 import { supabaseServer } from "@/lib/supabase-server";
-import { Card, SectionTitle } from "@/components/ui/primitives";
+import { Card } from "@/components/ui/primitives";
 import { RecuperacaoChart } from "@/components/charts";
 import { HeatmapResposta } from "@/components/HeatmapResposta";
 import { brl, num, dataBR } from "@/lib/utils";
 
-export const dynamic = "force-dynamic";
-
-export default async function RelatoriosPage() {
+/** Aba "Histórico" do Início — era a página Relatórios. */
+export async function Historico() {
   const sb = await supabaseServer();
   const [{ data: metricas }, { data: heatmap }, { data: porTemplate }] = await Promise.all([
     sb.from("metricas_diarias").select("*").order("dia", { ascending: false }).limit(60),
@@ -24,8 +23,6 @@ export default async function RelatoriosPage() {
 
   return (
     <>
-      <SectionTitle title="Relatórios" sub="Histórico diário da campanha." />
-
       <div className="mb-4 grid gap-4 sm:grid-cols-4">
         {[
           ["Enviados", num(tot("enviados"))],

@@ -1,16 +1,18 @@
 import Link from "next/link";
 import { supabaseServer, supabaseAdmin } from "@/lib/supabase-server";
-import { Card, SectionTitle, Button } from "@/components/ui/primitives";
-import { getSessao } from "@/lib/auth";
-import { ChipCard } from "./chip-card";
-import { TesteCard } from "./teste-card";
+import { Card, Button } from "@/components/ui/primitives";
+import { CalculadoraCusto } from "@/components/CalculadoraCusto";
+import type { Sessao } from "@/lib/auth";
+import { ChipCard } from "../../chips/chip-card";
+import { TesteCard } from "../../chips/teste-card";
 import { Plus, Smartphone, Calculator } from "lucide-react";
 
-export const dynamic = "force-dynamic";
-
-export default async function ChipsPage() {
+/**
+ * Aba "Chips" — os números de WhatsApp. A calculadora de custo Z-API × Meta, que era uma
+ * página inteira só para ela (/chips/custos), virou um bloco recolhível no fim desta.
+ */
+export async function Chips({ sessao }: { sessao: Sessao }) {
   const sb = await supabaseServer();
-  const sessao = await getSessao();
   const hoje = new Date().toISOString().slice(0, 10);
   // hora local da operação — o orçamento de ritmo (§33) é por hora local, não UTC
   const tzOp = "America/Sao_Paulo";
@@ -24,6 +26,7 @@ export default async function ChipsPage() {
     sb.from("chip_metricas_horarias").select("chip_id, msgs").eq("dia", diaLocal).eq("hora", horaLocal),
     sb.from("configuracoes").select("valor").eq("chave", "ritmo").is("cobrador_id", null).maybeSingle(),
   ]);
+
   const porChip: Record<number, any> = {};
   for (const m of metr ?? []) porChip[m.chip_id] = m;
   const usadosHoraPorChip: Record<number, number> = {};
@@ -32,11 +35,12 @@ export default async function ChipsPage() {
 
   // admin vê de quem é cada chip (separação): mapa cobrador_id -> nome
   const donoPorChip: Record<number, string | null> = {};
-  if (sessao?.role === "admin") {
+  if (sessao.role === "admin") {
     const { data: us } = await supabaseAdmin().from("usuarios_app").select("id, nome, email");
     const nomeDe = new Map((us ?? []).map((u) => [u.id, u.nome || u.email]));
     for (const c of chips ?? []) donoPorChip[c.id] = c.cobrador_id ? (nomeDe.get(c.cobrador_id) ?? "—") : null;
   }
+
   // numero_teste: formato novo {numeros:[{e164,label,ativo}]} com compat do antigo {e164,ativo}
   const ntRaw = (cfgTeste?.valor as any) ?? {};
   const numerosTeste: { e164: string; label: string; ativo: boolean }[] = Array.isArray(ntRaw.numeros)
@@ -47,16 +51,12 @@ export default async function ChipsPage() {
 
   return (
     <>
-      <SectionTitle
-        title="Chips"
-        sub="Cada chip é um número de WhatsApp — conectado via Z-API (QR) ou pela API oficial da Meta."
-        action={
-          <div className="flex gap-2">
-            <Link href="/chips/custos"><Button variant="outline"><Calculator className="h-4 w-4" /> Custos</Button></Link>
-            <Link href="/chips/novo"><Button><Plus className="h-4 w-4" /> Adicionar chip</Button></Link>
-          </div>
-        }
-      />
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-mist">
+          Cada chip é um número de WhatsApp — conectado via Z-API (QR) ou pela API oficial da Meta.
+        </p>
+        <Link href="/chips/novo"><Button><Plus className="h-4 w-4" /> Adicionar chip</Button></Link>
+      </div>
 
       {(chips ?? []).length === 0 ? (
         <Card className="flex flex-col items-center gap-4 py-16 text-center">
@@ -94,6 +94,18 @@ export default async function ChipsPage() {
           </div>
         </>
       )}
+
+      {/* Antes era a página /chips/custos. É consulta ocasional — cabe recolhida aqui. */}
+      <details className="group mt-4">
+        <summary className="flex cursor-pointer list-none items-center gap-2 rounded-xl border border-line bg-ink-850 px-4 py-3 text-sm text-chalk transition-colors hover:border-ink-500">
+          <Calculator className="h-4 w-4 text-emerald" />
+          Comparar custo Z-API × Meta oficial
+          <span className="ml-auto text-xs text-mist transition-transform group-open:rotate-180">▾</span>
+        </summary>
+        <div className="mt-3">
+          <CalculadoraCusto />
+        </div>
+      </details>
     </>
   );
 }

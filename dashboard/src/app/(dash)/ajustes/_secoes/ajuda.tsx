@@ -7,6 +7,7 @@ import {
   Radio, Smartphone, MessageSquareText, Percent, Users, HandCoins, BarChart3,
   Settings, FolderUp, LayoutDashboard, KeyRound, Clock, Send, QrCode,
   AlertTriangle, CheckCircle2, ArrowRight, Flame, Network, FlaskConical,
+  MessagesSquare, Bot,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -42,30 +43,27 @@ const CONCEITOS = [
 ];
 
 const GOLIVE = [
-  { icon: KeyRound, t: "Chaves", d: "Configurações → Chaves: preencha a OPENAI_API_KEY (sem ela o robô não responde) e, no go‑live real, a chave de produção do Asaas. Ali ao lado dá para escolher o modelo de IA do robô (o sistema sugere o melhor)." },
-  { icon: QrCode, t: "Chips", d: "Chips → Novo chip: leia o QR Code com o WhatsApp do número. Ao conectar, ele entra como “aquecendo” e vira “ativo” sozinho." },
+  { icon: KeyRound, t: "Chaves", d: "Ajustes → Integrações: preencha a OPENAI_API_KEY (sem ela o robô não responde) e, no go‑live real, a chave de produção do Asaas. O modelo de IA do robô fica em Robô → Comportamento (o sistema sugere o melhor)." },
+  { icon: QrCode, t: "Chips", d: "Ajustes → Chips → Adicionar chip: leia o QR Code com o WhatsApp do número. Ao conectar, ele entra como “aquecendo” e vira “ativo” sozinho." },
   { icon: FolderUp, t: "Carteira", d: "Carteiras → Nova: baixe o modelo de planilha, preencha e suba — ou suba a sua planilha fora do padrão e deixe a IA organizar. Confira o relatório. A carteira nasce Pausada." },
-  { icon: MessageSquareText, t: "Mensagens e Descontos", d: "Ajuste os textos das mensagens e as faixas de desconto (por conta, e ainda dá para sobrescrever por carteira)." },
-  { icon: Sparkles, t: "Simulação", d: "Campanha → ligue com o Modo simulação LIGADO e confira o fluxo sem enviar nada. Para validar no seu próprio WhatsApp, use o “Enviar teste” em Chips (veja “Testar antes de disparar”)." },
-  { icon: Send, t: "Ativar de verdade", d: "Ative a carteira e, quando estiver tudo certo, desligue o Modo simulação. A partir daí é envio real (8h–20h, só em dias úteis e pulando feriados nacionais)." },
+  { icon: MessageSquareText, t: "Mensagens e Descontos", d: "Robô → Mensagens (os textos) e Robô → Comportamento (as faixas de desconto). Valem por conta, e ainda dá para sobrescrever por carteira." },
+  { icon: Sparkles, t: "Simulação", d: "Início → ligue a campanha com o Modo simulação LIGADO e confira o fluxo sem enviar nada. Para validar no seu próprio WhatsApp, use o “Enviar teste” em Ajustes → Chips (veja “Testar antes de disparar”)." },
+  { icon: Send, t: "Ativar de verdade", d: "Ative a carteira e, quando estiver tudo certo, desligue o Modo simulação no Início. A partir daí é envio real (8h–20h, só em dias úteis e pulando feriados nacionais)." },
 ];
 
+// O painel tem CINCO áreas, cada uma respondendo a uma pergunta. Tudo o que antes era um
+// item de menu virou uma aba dentro de uma delas.
 const TELAS = [
-  { icon: LayoutDashboard, n: "Visão geral", d: "Página inicial: cartões com os números do dia, o funil (enviados → respostas → acordos → pagos) e um feed ao vivo dos pagamentos. É o seu raio‑x diário." },
-  { icon: FolderUp, n: "Carteiras", d: "Suas carteiras com status (Importando / Ativa / Pausada / Arquivada), nº de devedores e saldo. Ao abrir, há abas: Status & envios, Prompt do robô, Descontos e Importações. Na importação, se a planilha não seguir o modelo, escolha “a IA organiza” e revise o de‑para antes de gravar. Só carteiras Ativas disparam." },
-  { icon: Radio, n: "Campanha", d: "A chave gigante liga/desliga a operação da conta. Aqui ficam o Modo simulação, a janela de envio (horário 8h–20h + dias de envio, padrão seg–sex, a opção pular feriados nacionais e um Calendário de envio que mostra os dias em que a campanha roda, lista os feriados nacionais e deixa marcar folgas), o intervalo mínimo entre mensagens (12s), o aquecimento e o card Robô (nome do bot + modelo de IA). Cada cobrador tem a sua; o admin escolhe a conta no seletor do topo." },
-  { icon: Smartphone, n: "Chips", d: "Cartões dos números. Novo chip → leia o QR. Se o QR não aparecer, a tela explica o motivo (ex.: assinatura Z‑API vencida). No cadastro você define a maturidade e o tipo do chip e vê o selo de papel (Bot ou Cobrador). Há ainda o card Número de teste e o botão Enviar teste. O menu ⋮ permite editar (tokens) e excluir." },
-  { icon: MessageSquareText, n: "Mensagens", d: "Modelos de mensagem (abertura, follow‑ups) com pré‑visualização, por conta. Use “Começar com os modelos padrão” para clonar o global e ajustar. Use as variáveis do modelo — nunca escreva o valor da dívida fixo no texto; o robô calcula." },
-  { icon: Percent, n: "Descontos", d: "Editor das faixas por idade da dívida (15+ anos→60%, 10+→50%, 5+→40%, abaixo→30%) + a margem extra única (+10pp) e um simulador. É por conta (cada cobrador a sua) e pode ainda ser sobrescrito por carteira." },
-  { icon: Users, n: "Devedores", d: "Busca e lista de devedores, com filtro por carteira e coluna de resposta. Ao abrir um devedor, você vê a linha do tempo (mensagens, proposta, Pix, pagamento)." },
-  { icon: HandCoins, n: "Pagamentos", d: "Lista dos Pix gerados e seu status (gerado / pago). Atualiza ao vivo quando alguém paga. Os totais reais não contam os disparos de teste (marcados com “Teste”)." },
-  { icon: BarChart3, n: "Relatórios", d: "Gráficos de recuperação e desempenho ao longo do tempo." },
-  { icon: Settings, n: "Configurações", d: "Asaas (sandbox/produção), Chaves/segredos (OpenAI, Asaas), o Modelo de IA do robô (com sugestão de custo‑benefício e de melhor para cobrança) e Usuários (criar usuário, definir papel). O admin gere o padrão global; o cobrador, a sua conta." },
+  { icon: LayoutDashboard, n: "Início", d: "“Como está indo?”. Na aba Resumo ficam a chave que liga/desliga a campanha, o Modo simulação, a Fila de hoje (quanto ainda cabe e até que horas), os cartões de resultado e o funil. A aba Dinheiro lista os Pix gerados e pagos com a sua comissão (os totais reais não contam os disparos de teste). A aba Histórico traz o dia a dia, o melhor horário para abordar e o desempenho de cada modelo de mensagem." },
+  { icon: FolderUp, n: "Carteiras", d: "“Quem eu estou cobrando?”. A aba Carteiras lista suas planilhas importadas com status (Importando / Ativa / Pausada / Arquivada) — só as Ativas disparam. A aba Devedores é a busca em todos eles, com filtro por carteira. Ao abrir uma carteira você tem quatro abas: Visão geral (status, distribuição, subir planilha e histórico de importações), Robô desta carteira (prompt e descontos próprios), Fluxo da conversa e Recebimento (Wallet do credor e escaladores)." },
+  { icon: MessagesSquare, n: "Conversas", d: "“O que está acontecendo agora?”. A aba Todas é a caixa de entrada com o histórico completo de cada contato. A aba Precisam de você mostra os casos que o robô entregou a um humano, com contador no título, contexto e desfecho — antes isso era a tela “Escalações”." },
+  { icon: Bot, n: "Robô", d: "“Como ele fala?”. Mensagens: os textos que ele dispara (abordagem, follow‑ups, proposta, Pix) mais os templates aprovados pela Meta, com um mapa explicando qual serve para quê. Comportamento: persona, tom, regras inegociáveis, o modelo de IA e as faixas de desconto. Conhecimento: respostas prontas que só entram em uso depois de aprovadas." },
+  { icon: Settings, n: "Ajustes", d: "“Como a máquina roda?”. Envio: horário, ritmo, dias, feriados e aquecimento. Chips: os números de WhatsApp (QR, maturidade, teste) e a calculadora de custo Z‑API × Meta. Integrações: Asaas e chaves de API. Equipe: quem entra no painel e com que papel. Minha conta e Ajuda." },
 ];
 
 const PROBLEMAS = [
-  { s: "O robô não responde as mensagens", c: "Falta a OPENAI_API_KEY em Configurações → Chaves." },
-  { s: "Nada é enviado", c: "Campanha desligada, carteira não‑Ativa, Modo simulação ligado, fora da janela (horário 8h–20h, fim de semana ou feriado nacional), ou chip sem limite (aquecimento)." },
+  { s: "O robô não responde as mensagens", c: "Falta a OPENAI_API_KEY em Ajustes → Integrações." },
+  { s: "Nada é enviado", c: "Campanha desligada no Início, carteira não‑Ativa, Modo simulação ligado, fora da janela (Ajustes → Envio: horário 8h–20h, fim de semana ou feriado nacional), ou chip sem limite (aquecimento)." },
   { s: "O QR Code não aparece", c: "A tela do chip mostra o motivo (ex.: assinatura Z‑API vencida). Resolva e clique em “tentar de novo”." },
   { s: "“Chatwoot não vinculado” no chip", c: "Use a opção de revincular o número no cartão do chip." },
   { s: "Respondi o teste e o robô não continuou", c: "Use “Revincular Chatwoot” no cartão do chip — garante o caminho de volta da mensagem (webhook de entrada da Z‑API)." },
@@ -132,7 +130,7 @@ function Callout({ tone = "amber", title, children }: {
 /*  Página                                                             */
 /* ------------------------------------------------------------------ */
 
-export default function AjudaPage() {
+export function Ajuda() {
   const [query, setQuery] = useState("");
   const [active, setActive] = useState<string>(SECTIONS[0].id);
   const [progress, setProgress] = useState(0);
@@ -600,7 +598,7 @@ export default function AjudaPage() {
           {visible.some((s) => s.id === "seguranca") && (
             <Section id="seguranca" title="Segurança & limites" icon={ShieldCheck} index={8}>
               <ul className="space-y-2.5 text-sm text-chalk/90">
-                <li className="flex gap-3"><Dot /> Não compartilhe seu login. Crie um usuário por pessoa (Configurações → Usuários) com o papel certo.</li>
+                <li className="flex gap-3"><Dot /> Não compartilhe seu login. Crie um usuário por pessoa (Ajustes → Equipe) com o papel certo.</li>
                 <li className="flex gap-3"><Dot /> As chaves (OpenAI, Asaas) e a planilha real nunca saem do ambiente seguro — não as cole em chat, e‑mail ou prints.</li>
                 <li className="flex gap-3"><Dot /> Comece sempre com Modo simulação e poucos chips; deixe o aquecimento subir o volume.</li>
               </ul>

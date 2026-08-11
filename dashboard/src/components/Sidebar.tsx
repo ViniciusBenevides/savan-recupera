@@ -1,35 +1,26 @@
 "use client";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import {
-  LayoutDashboard, Radio, Smartphone, MessageSquareText, Percent,
-  Users, BarChart3, Settings, LogOut, HandCoins, FolderUp, LifeBuoy, Headset,
-  MessagesSquare, FileBadge, BookOpen,
-} from "lucide-react";
+import { LayoutDashboard, FolderUp, MessagesSquare, Bot, Settings2, LogOut } from "lucide-react";
 import { Logo } from "@/components/Brand";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import { cn } from "@/lib/utils";
 
-// Cada item declara quais papéis o veem. admin tudo; cobrador o operacional dele;
-// credor/visualizador só leitura do andamento (sem chips/campanha/mensagens/config).
+// Cinco áreas, uma por pergunta que o operador faz:
+//   Início    → "como está indo?"      (resultado, dinheiro, histórico)
+//   Carteiras → "quem eu estou cobrando?" (carteiras e devedores)
+//   Conversas → "o que está acontecendo agora?" (diálogos + o que precisa de humano)
+//   Robô      → "como ele fala?"       (mensagens, comportamento, conhecimento)
+//   Ajustes   → "como a máquina roda?" (envio, chips, integrações, equipe, ajuda)
+// Tudo o que antes era um item de menu virou uma ABA dentro de uma dessas cinco.
 const TODOS = ["admin", "cobrador", "credor", "visualizador"];
 const nav = [
-  { href: "/", label: "Visão geral", icon: LayoutDashboard, roles: TODOS },
+  { href: "/", label: "Início", icon: LayoutDashboard, roles: TODOS },
   { href: "/carteiras", label: "Carteiras", icon: FolderUp, roles: TODOS },
-  { href: "/campanha", label: "Campanha", icon: Radio, roles: ["admin", "cobrador"] },
-  { href: "/chips", label: "Chips", icon: Smartphone, roles: ["admin", "cobrador"] },
-  { href: "/templates", label: "Mensagens", icon: MessageSquareText, roles: ["admin", "cobrador"] },
-  { href: "/conhecimento", label: "Base de conhecimento", icon: BookOpen, roles: ["admin", "cobrador"] },
-  { href: "/templates-meta", label: "Templates Meta", icon: FileBadge, roles: ["admin", "cobrador"] },
-  { href: "/descontos", label: "Descontos", icon: Percent, roles: ["admin", "cobrador"] },
-  { href: "/devedores", label: "Devedores", icon: Users, roles: TODOS },
   { href: "/conversas", label: "Conversas", icon: MessagesSquare, roles: ["admin", "cobrador", "credor"] },
-  { href: "/escalacoes", label: "Escalações", icon: Headset, roles: ["admin", "cobrador"] },
-  { href: "/pagamentos", label: "Pagamentos", icon: HandCoins, roles: TODOS },
-  { href: "/relatorios", label: "Relatórios", icon: BarChart3, roles: TODOS },
-  { href: "/configuracoes", label: "Configurações", icon: Settings, roles: ["admin", "cobrador"] },
-  { href: "/ajuda", label: "Ajuda", icon: LifeBuoy, roles: TODOS },
+  { href: "/robo", label: "Robô", icon: Bot, roles: ["admin", "cobrador"] },
+  { href: "/ajustes", label: "Ajustes", icon: Settings2, roles: TODOS },
 ];
 
 export function Sidebar({ nome, role }: { nome: string; role: string }) {
@@ -70,10 +61,10 @@ export function Sidebar({ nome, role }: { nome: string; role: string }) {
 
       <div className="mt-4 rounded-xl border border-line bg-ink-850 p-3">
         <div className="flex items-center gap-2.5">
-          <Link href="/conta" title="Minha conta" className="grid h-8 w-8 place-items-center rounded-full bg-emerald/15 font-display text-sm font-700 text-emerald hover:bg-emerald/25">
+          <Link href="/ajustes?aba=conta" title="Minha conta" className="grid h-8 w-8 place-items-center rounded-full bg-emerald/15 font-display text-sm font-700 text-emerald hover:bg-emerald/25">
             {nome.charAt(0).toUpperCase()}
           </Link>
-          <Link href="/conta" className="min-w-0 flex-1">
+          <Link href="/ajustes?aba=conta" className="min-w-0 flex-1">
             <div className="truncate text-sm font-medium text-chalk hover:text-emerald">{nome}</div>
             <div className="text-[11px] capitalize text-mist">{role} · minha conta</div>
           </Link>

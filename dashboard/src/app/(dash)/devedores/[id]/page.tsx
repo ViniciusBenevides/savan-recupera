@@ -29,7 +29,7 @@ export default async function DevedorPage({ params }: { params: Promise<{ id: st
 
   return (
     <>
-      <Link href="/devedores" className="mb-4 inline-flex items-center gap-1.5 text-sm text-mist hover:text-chalk">
+      <Link href="/carteiras?aba=devedores" className="mb-4 inline-flex items-center gap-1.5 text-sm text-mist hover:text-chalk">
         <ArrowLeft className="h-4 w-4" /> Voltar
       </Link>
       <SectionTitle

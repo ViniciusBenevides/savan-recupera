@@ -1,12 +1,11 @@
 import { supabaseServer } from "@/lib/supabase-server";
-import { Card, SectionTitle, Badge } from "@/components/ui/primitives";
+import { Card, Badge } from "@/components/ui/primitives";
 import { StatCard } from "@/components/StatCard";
 import { brl, num, dataHoraBR } from "@/lib/utils";
 import { Wallet, HandCoins, Clock } from "lucide-react";
 
-export const dynamic = "force-dynamic";
-
-export default async function PagamentosPage() {
+/** Aba "Dinheiro" do Início — era a página Pagamentos. */
+export async function Dinheiro() {
   const sb = await supabaseServer();
   const { data: pagamentos } = await sb
     .from("pagamentos")
@@ -23,8 +22,6 @@ export default async function PagamentosPage() {
 
   return (
     <>
-      <SectionTitle title="Pagamentos" sub="Pix gerados, recebidos e sua comissão." />
-
       <div className="mb-4 grid gap-4 sm:grid-cols-3">
         <StatCard label="Recebido" value={brl(totalRecebido)} tone="green" icon={Wallet} glow />
         <StatCard label="Sua comissão" value={brl(totalComissao)} tone="violet" icon={HandCoins} />

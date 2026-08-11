@@ -1,9 +1,7 @@
 import { supabaseServer } from "@/lib/supabase-server";
-import { Card, SectionTitle, Badge, Input, HelpHint } from "@/components/ui/primitives";
-import { brl, num, dataBR } from "@/lib/utils";
+import { Card, Badge, Input, HelpHint } from "@/components/ui/primitives";
+import { brl, num } from "@/lib/utils";
 import Link from "next/link";
-
-export const dynamic = "force-dynamic";
 
 const STATUS_TONE: Record<string, any> = {
   pago: "green", pix_gerado: "amber", em_negociacao: "violet", contatado: "blue",
@@ -22,8 +20,11 @@ const RESPOSTA: Record<string, { tone: any; label: string }> = {
   aguardando_resposta: { tone: "blue", label: "Aguardando" },
 };
 
-export default async function DevedoresPage({ searchParams }: { searchParams: Promise<{ q?: string; pg?: string; carteira?: string }> }) {
-  const { q, pg, carteira } = await searchParams;
+/**
+ * Aba "Devedores" — era uma entrada própria no menu, mas devedor só existe dentro de uma
+ * carteira: virou a visão plana (com busca e filtro por carteira) da mesma área.
+ */
+export async function ListaDevedores({ q, pg, carteira }: { q?: string; pg?: string; carteira?: string }) {
   const pagina = Math.max(1, Number(pg ?? 1));
   const porPag = 25;
   const sb = await supabaseServer();
@@ -44,31 +45,30 @@ export default async function DevedoresPage({ searchParams }: { searchParams: Pr
   const ids = (devedores ?? []).map((d) => d.id);
   const convPorDev = new Map<number, string>();
   if (ids.length) {
-    const { data: convs } = await sb.from("conversas").select("devedor_id, estado, ultima_msg_de").in("devedor_id", ids);
+    const { data: convs } = await sb.from("conversas").select("devedor_id, estado").in("devedor_id", ids);
     for (const c of convs ?? []) convPorDev.set(c.devedor_id, c.estado);
   }
   const nomeCarteira = new Map((carteiras ?? []).map((c) => [c.id, c.nome]));
 
   const qs = (extra: Record<string, string | number | undefined>) => {
-    const p = new URLSearchParams();
+    const p = new URLSearchParams({ aba: "devedores" });
     if (q) p.set("q", q);
     if (carteira) p.set("carteira", carteira);
     for (const [k, v] of Object.entries(extra)) if (v !== undefined && v !== "") p.set(k, String(v));
-    const s = p.toString();
-    return s ? `?${s}` : "";
+    return `?${p.toString()}`;
   };
 
   return (
     <>
-      <SectionTitle title="Devedores" sub={`${num(count ?? 0)} registros${carteira ? " nesta carteira" : ""}.`} />
-
       <form className="mb-4 flex flex-wrap items-center gap-2">
+        <input type="hidden" name="aba" value="devedores" />
         <Input name="q" defaultValue={q ?? ""} placeholder="Buscar por nome, CPF ou referência…" className="max-w-xs" />
         <select name="carteira" defaultValue={carteira ?? ""} className="h-10 rounded-xl border border-line bg-ink-850 px-3 text-sm text-chalk">
           <option value="">Todas as carteiras</option>
           {(carteiras ?? []).map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
         </select>
         <button className="h-10 rounded-xl border border-line px-4 text-sm text-chalk hover:border-ink-500 hover:bg-ink-800">Filtrar</button>
+        <span className="ml-auto text-xs text-mist">{num(count ?? 0)} registros</span>
       </form>
 
       <Card className="p-0">
@@ -115,11 +115,11 @@ export default async function DevedoresPage({ searchParams }: { searchParams: Pr
       {totalPag > 1 && (
         <div className="mt-4 flex items-center justify-center gap-2 text-sm">
           {pagina > 1 && (
-            <Link href={`/devedores${qs({ pg: pagina - 1 })}`} className="rounded-lg border border-line px-3 py-1.5 text-mist hover:text-chalk">Anterior</Link>
+            <Link href={`/carteiras${qs({ pg: pagina - 1 })}`} className="rounded-lg border border-line px-3 py-1.5 text-mist hover:text-chalk">Anterior</Link>
           )}
           <span className="text-mist">Página {pagina} de {totalPag}</span>
           {pagina < totalPag && (
-            <Link href={`/devedores${qs({ pg: pagina + 1 })}`} className="rounded-lg border border-line px-3 py-1.5 text-mist hover:text-chalk">Próxima</Link>
+            <Link href={`/carteiras${qs({ pg: pagina + 1 })}`} className="rounded-lg border border-line px-3 py-1.5 text-mist hover:text-chalk">Próxima</Link>
           )}
         </div>
       )}

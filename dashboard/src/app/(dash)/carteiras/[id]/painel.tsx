@@ -15,20 +15,20 @@ import {
 } from "lucide-react";
 import { AbaRoteiro } from "./roteiro";
 
+// Quatro abas, não seis: "Importações" era parte do estado da carteira e "Descontos" é uma
+// decisão do robô — cada uma virou um bloco dentro da aba a que pertence.
 const TABS = [
-  { k: "status", t: "Status & envios" },
-  { k: "prompt", t: "Prompt do robô" },
-  { k: "roteiro", t: "Fluxo do robô" },
-  { k: "descontos", t: "Descontos" },
-  { k: "asaas", t: "Asaas & cobrador" },
-  { k: "historico", t: "Importações" },
+  { k: "visao", t: "Visão geral" },
+  { k: "robo", t: "Robô desta carteira" },
+  { k: "fluxo", t: "Fluxo da conversa" },
+  { k: "recebimento", t: "Recebimento" },
 ] as const;
 type Tab = typeof TABS[number]["k"];
 
 export function CarteiraPainel({ carteira, importacoes, padrao, tabInicial, podeEditar = true }: { carteira: any; importacoes: any[]; padrao: Record<string, any>; tabInicial?: Tab; podeEditar?: boolean }) {
-  // credor/visualizador só veem o andamento (status + importações), sem editar nem ver chaves
-  const tabs = podeEditar ? TABS : TABS.filter((t) => t.k === "status" || t.k === "historico");
-  const inicial = tabInicial && tabs.some((t) => t.k === tabInicial) ? tabInicial : (carteira.status === "importando" && podeEditar ? "historico" : "status");
+  // credor/visualizador só veem o andamento, sem editar nem ver chaves
+  const tabs = podeEditar ? TABS : TABS.filter((t) => t.k === "visao");
+  const inicial = tabInicial && tabs.some((t) => t.k === tabInicial) ? tabInicial : "visao";
   const [tab, setTab] = React.useState<Tab>(inicial);
   return (
     <>
@@ -40,12 +40,20 @@ export function CarteiraPainel({ carteira, importacoes, padrao, tabInicial, pode
           </button>
         ))}
       </div>
-      {tab === "status" && <AbaStatus carteira={carteira} podeEditar={podeEditar} />}
-      {tab === "prompt" && podeEditar && <AbaPrompt carteira={carteira} padrao={padrao} />}
-      {tab === "roteiro" && podeEditar && <AbaRoteiroLigado carteira={carteira} padrao={padrao} />}
-      {tab === "descontos" && podeEditar && <AbaDescontos carteira={carteira} padrao={padrao} />}
-      {tab === "asaas" && podeEditar && <AbaAsaas carteira={carteira} padrao={padrao} />}
-      {tab === "historico" && <AbaHistorico carteira={carteira} importacoes={importacoes} podeEditar={podeEditar} />}
+      {tab === "visao" && (
+        <div className="max-w-2xl space-y-4">
+          <AbaStatus carteira={carteira} podeEditar={podeEditar} />
+          <AbaHistorico carteira={carteira} importacoes={importacoes} podeEditar={podeEditar} />
+        </div>
+      )}
+      {tab === "robo" && podeEditar && (
+        <div className="space-y-6">
+          <AbaPrompt carteira={carteira} padrao={padrao} />
+          <AbaDescontos carteira={carteira} padrao={padrao} />
+        </div>
+      )}
+      {tab === "fluxo" && podeEditar && <AbaRoteiroLigado carteira={carteira} padrao={padrao} />}
+      {tab === "recebimento" && podeEditar && <AbaAsaas carteira={carteira} padrao={padrao} />}
     </>
   );
 }
@@ -84,7 +92,7 @@ function AbaStatus({ carteira, podeEditar = true }: { carteira: any; podeEditar?
   }
 
   return (
-    <div className="max-w-2xl space-y-4">
+    <>
       <Card className="space-y-4">
         <div className="flex items-center justify-between">
           <div>
@@ -114,7 +122,7 @@ function AbaStatus({ carteira, podeEditar = true }: { carteira: any; podeEditar?
         {erro && <p className="text-xs text-rose">{erro}</p>}
         {podeEditar && (
           <p className="text-xs text-mist">
-            Importante: o robô só envia para carteiras <b className="text-chalk">Ativas</b>, e ainda assim respeitando a chave geral em <Link href="/campanha" className="text-emerald hover:underline">Campanha</Link> (liga/desliga e modo simulação).
+            Importante: o robô só envia para carteiras <b className="text-chalk">Ativas</b>, e ainda assim respeitando a chave geral da campanha, que fica no <Link href="/" className="text-emerald hover:underline">Início</Link> (liga/desliga e modo simulação).
           </p>
         )}
       </Card>
@@ -148,7 +156,7 @@ function AbaStatus({ carteira, podeEditar = true }: { carteira: any; podeEditar?
         <Card>
           <div className="text-xs text-mist">Devedores</div>
           <div className="font-mono text-2xl text-chalk tabnums">{num(carteira.num_devedores)}</div>
-          <Link href={`/devedores?carteira=${carteira.id}`} className="mt-1 inline-flex items-center gap-1 text-xs text-emerald hover:underline">
+          <Link href={`/carteiras?aba=devedores&carteira=${carteira.id}`} className="mt-1 inline-flex items-center gap-1 text-xs text-emerald hover:underline">
             <Users className="h-3.5 w-3.5" /> Ver devedores desta carteira
           </Link>
         </Card>
@@ -169,7 +177,7 @@ function AbaStatus({ carteira, podeEditar = true }: { carteira: any; podeEditar?
           <Button variant="danger" onClick={apagar}><Trash2 className="h-4 w-4" /> Apagar</Button>
         </Card>
       )}
-    </div>
+    </>
   );
 }
 
@@ -208,7 +216,7 @@ function AbaPrompt({ carteira, padrao }: { carteira: any; padrao: Record<string,
       <Card className="space-y-4">
         <div className="flex items-center justify-between">
           <Label className="mb-0 flex items-center gap-1.5">
-            Usar o padrão global <HelpHint text="Ligado: esta carteira usa o prompt configurado em Configurações. Desligado: você personaliza o robô só para esta carteira." />
+            Usar o padrão global <HelpHint text="Ligado: esta carteira usa o comportamento definido em Robô → Comportamento. Desligado: você personaliza o robô só para esta carteira." />
           </Label>
           <Switch checked={!custom} onChange={(v) => setCustom(!v)} />
         </div>
@@ -311,7 +319,7 @@ function AbaDescontos({ carteira, padrao }: { carteira: any; padrao: Record<stri
     <Card className="max-w-2xl space-y-4">
       <div className="flex items-center justify-between">
         <Label className="mb-0 flex items-center gap-1.5">
-          Usar os descontos globais <HelpHint text="Ligado: usa as faixas de desconto de Descontos. Desligado: define descontos só para esta carteira (útil para dívidas de naturezas diferentes)." />
+          Usar os descontos globais <HelpHint text="Ligado: usa as faixas definidas em Robô → Comportamento. Desligado: define descontos só para esta carteira (útil para dívidas de naturezas diferentes)." />
         </Label>
         <Switch checked={!custom} onChange={(v) => setCustom(!v)} />
       </div>
@@ -427,7 +435,7 @@ function AbaAsaas({ carteira, padrao }: { carteira: any; padrao: Record<string, 
         </h3>
         <div className="flex items-center justify-between rounded-xl border border-line bg-ink-850 px-3.5 py-2.5">
           <span className="flex items-center gap-1.5 text-sm text-chalk">
-            Usar o Asaas global <HelpHint text="Ligado: usa o Wallet ID e a comissão de Configurações. Desligado: este credor recebe em um Wallet ID próprio (cada carteira é de um credor diferente)." />
+            Usar o Asaas global <HelpHint text="Ligado: usa o Wallet ID e a comissão de Ajustes → Integrações. Desligado: este credor recebe em um Wallet ID próprio (cada carteira é de um credor diferente)." />
           </span>
           <Switch checked={usarGlobal} onChange={setUsarGlobal} />
         </div>
@@ -543,11 +551,11 @@ function AbaHistorico({ carteira, importacoes, podeEditar = true }: { carteira: 
   }
 
   return (
-    <div className="max-w-2xl space-y-4">
+    <>
       {podeEditar && carteira.status === "importando" && (
         <div className="flex items-start gap-2 rounded-xl border border-amber/30 bg-amber/10 px-4 py-3 text-sm text-amber">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>Esta carteira ainda não tem planilha. Envie o arquivo abaixo para concluir a criação — ou apague a carteira na aba <b>Status &amp; envios</b>.</span>
+          <span>Esta carteira ainda não tem planilha. Envie o arquivo abaixo para concluir a criação — ou apague a carteira no bloco acima.</span>
         </div>
       )}
       {podeEditar && (
@@ -577,6 +585,9 @@ function AbaHistorico({ carteira, importacoes, podeEditar = true }: { carteira: 
       )}
 
       <Card className="p-0">
+        <h3 className="border-b border-line px-5 py-3 font-display text-sm font-600 text-chalk">
+          Importações desta carteira
+        </h3>
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-line text-left text-xs uppercase tracking-wider text-mist">
@@ -601,7 +612,7 @@ function AbaHistorico({ carteira, importacoes, podeEditar = true }: { carteira: 
           </tbody>
         </table>
       </Card>
-    </div>
+    </>
   );
 }
 

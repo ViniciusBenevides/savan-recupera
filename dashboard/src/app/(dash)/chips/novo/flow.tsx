@@ -341,7 +341,7 @@ export function NovoChipFlow() {
           <div className="text-xs leading-relaxed text-mist">
             <b className="text-amber">Para disparar a campanha por este número</b>, a 1ª mensagem a um contato novo
             precisa ser um <b className="text-chalk">modelo (template) aprovado pela Meta</b>. Crie e acompanhe a
-            aprovação em <a href="/templates-meta" className="text-emerald-soft underline">Templates Meta</a>. A qualidade
+            aprovação em <a href="/robo?aba=mensagens" className="text-emerald-soft underline">Robô → Mensagens</a>. A qualidade
             do número cai se as pessoas bloquearem/denunciarem — acompanhe o semáforo no card do chip.
           </div>
         </Card>

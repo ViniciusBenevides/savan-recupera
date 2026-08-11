@@ -122,7 +122,7 @@ export function ImportadorIA({ carteiraId, onImportado }: { carteiraId: number; 
         <div className="flex items-start gap-2 rounded-xl border border-amber/30 bg-amber/10 px-4 py-3 text-sm text-amber">
           <KeyRound className="mt-0.5 h-4 w-4 shrink-0" />
           <span>Para a organização automática, preencha a <b>OPENAI_API_KEY</b> em{" "}
-            <Link href="/configuracoes" className="underline">Configurações → Chaves</Link>. Sem ela, use o modelo padrão.</span>
+            <Link href="/ajustes?aba=integracoes" className="underline">Ajustes → Integrações</Link>. Sem ela, use o modelo padrão.</span>
         </div>
       )}
       {erro && <p className="flex items-center gap-1.5 text-xs text-rose"><AlertTriangle className="h-3.5 w-3.5" /> {erro}</p>}

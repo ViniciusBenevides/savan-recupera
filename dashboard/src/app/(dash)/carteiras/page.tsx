@@ -1,107 +1,47 @@
-import { supabaseServer } from "@/lib/supabase-server";
-import { Card, SectionTitle, Badge, Button, HelpHint } from "@/components/ui/primitives";
-import { brl, num, dataBR } from "@/lib/utils";
-import { FolderUp, Plus } from "lucide-react";
 import Link from "next/link";
-import { CarteiraAcoes } from "./acoes";
+import { SectionTitle, Button } from "@/components/ui/primitives";
+import { Abas, resolverAba } from "@/components/Abas";
+import { getSessao } from "@/lib/auth";
+import { FolderUp, Users, Plus } from "lucide-react";
+import { ListaCarteiras } from "./_secoes/lista";
+import { ListaDevedores } from "./_secoes/devedores";
 
 export const dynamic = "force-dynamic";
 
-const STATUS_CARTEIRA: Record<string, { tone: any; label: string; ajuda: string }> = {
-  importando: { tone: "amber", label: "Importando", ajuda: "Carteira criada, aguardando o envio da planilha. Não dispara mensagens." },
-  ativa: { tone: "green", label: "Ativa (enviando)", ajuda: "O robô está enviando mensagens para os devedores desta carteira (respeitando a janela e os limites)." },
-  pausada: { tone: "neutral", label: "Pausada", ajuda: "Importada, mas sem disparar. Ative quando quiser começar os envios." },
-  arquivada: { tone: "rose", label: "Arquivada", ajuda: "Guardada como histórico. Não dispara e não aparece nas campanhas." },
-};
+// Carteiras = "quem eu estou cobrando?". Devedores deixou de ser um item de menu à parte
+// porque devedor sempre pertence a uma carteira — agora é a visão plana da mesma área.
+const ABAS = [
+  { k: "carteiras", t: "Carteiras", icon: FolderUp },
+  { k: "devedores", t: "Devedores", icon: Users },
+];
 
-export default async function CarteirasPage() {
-  const sb = await supabaseServer();
-  const { data: { user } } = await sb.auth.getUser();
-  const { data: perfil } = await sb.from("usuarios_app").select("role").eq("id", user!.id).maybeSingle();
-  const role = perfil?.role ?? "visualizador";
-  const ehAdmin = role === "admin";
+export default async function CarteirasPage({ searchParams }: {
+  searchParams: Promise<{ aba?: string; q?: string; pg?: string; carteira?: string }>;
+}) {
+  const { aba: pedida, q, pg, carteira } = await searchParams;
+  const aba = resolverAba(ABAS, pedida);
+  const sessao = await getSessao();
+  const role = sessao?.role ?? "visualizador";
   const podeEditar = role === "admin" || role === "cobrador";
-
-  const { data: carteiras } = await sb.from("carteiras")
-    .select("id, nome, credor, status, num_devedores, soma_saldo, criado_em, cobrador_id, credor_id")
-    .order("criado_em", { ascending: false });
-
-  // atribuição (só admin): mapa id->nome dos donos/credores
-  let nomes = new Map<string, string>();
-  if (ehAdmin) {
-    const ids = [...new Set((carteiras ?? []).flatMap((c) => [c.cobrador_id, c.credor_id]).filter(Boolean))] as string[];
-    if (ids.length) {
-      const { data: us } = await sb.from("usuarios_app").select("id, nome").in("id", ids);
-      nomes = new Map((us ?? []).map((u) => [u.id, u.nome ?? "—"]));
-    }
-  }
 
   return (
     <>
       <SectionTitle
         title="Carteiras"
-        sub={podeEditar ? "Cada planilha que você sobe vira uma carteira de cobrança independente." : "Acompanhe o andamento das carteiras (somente leitura)."}
-        action={podeEditar ? (
-          <Link href="/carteiras/nova">
-            <Button><Plus className="h-4 w-4" /> Nova carteira</Button>
-          </Link>
+        sub={aba === "devedores"
+          ? "Todos os devedores importados — busque por nome, CPF ou referência."
+          : podeEditar
+            ? "Cada planilha que você sobe vira uma carteira de cobrança independente."
+            : "Acompanhe o andamento das carteiras (somente leitura)."}
+        action={podeEditar && aba === "carteiras" ? (
+          <Link href="/carteiras/nova"><Button><Plus className="h-4 w-4" /> Nova carteira</Button></Link>
         ) : undefined}
       />
 
-      {(carteiras ?? []).length === 0 ? (
-        <Card className="flex flex-col items-center gap-3 py-14 text-center">
-          <div className="grid h-12 w-12 place-items-center rounded-2xl bg-emerald/12 text-emerald"><FolderUp className="h-6 w-6" /></div>
-          <div>
-            <p className="font-display text-lg text-chalk">Nenhuma carteira ainda</p>
-            <p className="mt-1 text-sm text-mist">{podeEditar ? "Crie a primeira carteira e suba uma planilha de devedores para começar." : "Ainda não há carteiras para acompanhar."}</p>
-          </div>
-          {podeEditar && <Link href="/carteiras/nova"><Button><Plus className="h-4 w-4" /> Nova carteira</Button></Link>}
-        </Card>
-      ) : (
-        <Card className="p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-line text-left text-xs uppercase tracking-wider text-mist">
-                  <th className="px-5 py-3 font-medium">Carteira</th>
-                  <th className="px-5 py-3 font-medium">Devedores</th>
-                  <th className="px-5 py-3 font-medium">Total da carteira</th>
-                  <th className="px-5 py-3 font-medium">Criada em</th>
-                  <th className="px-5 py-3 font-medium">
-                    <span className="inline-flex items-center gap-1">Status <HelpHint text="Importando: aguardando planilha. Pausada: importada, sem enviar. Ativa: enviando. Arquivada: histórico." /></span>
-                  </th>
-                  {ehAdmin && <th className="px-5 py-3 font-medium">Responsável</th>}
-                  {podeEditar && <th className="px-5 py-3 text-right font-medium">Ações</th>}
-                </tr>
-              </thead>
-              <tbody>
-                {(carteiras ?? []).map((c) => {
-                  const s = STATUS_CARTEIRA[c.status] ?? STATUS_CARTEIRA.pausada;
-                  return (
-                    <tr key={c.id} className="border-b border-line/50 transition-colors hover:bg-ink-850">
-                      <td className="px-5 py-3">
-                        <Link href={`/carteiras/${c.id}`} className="font-medium text-chalk hover:text-emerald">{c.nome}</Link>
-                        {c.credor && <div className="text-[11px] text-mist">Credor: {c.credor}</div>}
-                      </td>
-                      <td className="px-5 py-3 font-mono text-chalk tabnums">{num(c.num_devedores)}</td>
-                      <td className="px-5 py-3 font-mono text-chalk tabnums">{brl(c.soma_saldo)}</td>
-                      <td className="px-5 py-3 text-mist">{dataBR(c.criado_em)}</td>
-                      <td className="px-5 py-3"><Badge tone={s.tone}>{s.label}</Badge></td>
-                      {ehAdmin && (
-                        <td className="px-5 py-3 text-xs text-mist">
-                          <div>Cobrador: <span className="text-chalk">{c.cobrador_id ? (nomes.get(c.cobrador_id) ?? "—") : "—"}</span></div>
-                          {c.credor_id && <div>Credor: <span className="text-chalk">{nomes.get(c.credor_id) ?? "—"}</span></div>}
-                        </td>
-                      )}
-                      {podeEditar && <td className="px-5 py-3"><CarteiraAcoes id={c.id} nome={c.nome} status={c.status} /></td>}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </Card>
-      )}
+      <Abas abas={ABAS} atual={aba} />
+
+      {aba === "carteiras" && <ListaCarteiras role={role} />}
+      {aba === "devedores" && <ListaDevedores q={q} pg={pg} carteira={carteira} />}
     </>
   );
 }
