@@ -154,39 +154,59 @@ def w01():
         '"telefone_id": {{ $json.telefone_id }}, "devedor_id": {{ $json.devedor_id }}, '
         '"devedor_nome": {{ JSON.stringify($json.devedor_nome) }}, "processo": {{ JSON.stringify($json.processo) }}, '
         '"valor_divida": {{ $json.valor_divida }} }')
+    contato_ok = node("Contato criado?", "n8n-nodes-base.if", 2.2, [1340, 300], {
+        "conditions": {"options": {"caseSensitive": True, "typeValidation": "loose"},
+                       "combinator": "and", "conditions": [
+            {"leftValue": "={{ $json.ok }}", "rightValue": True,
+             "operator": {"type": "boolean", "operation": "true", "singleValue": True}}]}})
     # IF: número existe no whatsapp?
-    cond = node("Tem WhatsApp?", "n8n-nodes-base.if", 2.2, [1340, 360], {
+    cond = node("Tem WhatsApp?", "n8n-nodes-base.if", 2.2, [1560, 360], {
         "conditions": {"options": {"caseSensitive": True, "typeValidation": "loose"},
                        "combinator": "and", "conditions": [
             {"leftValue": "={{ $json.exists }}", "rightValue": True,
              "operator": {"type": "boolean", "operation": "true", "singleValue": True}}]}})
     # envia via Chatwoot (apenas se não for simulação) — controla com IF separado
-    sim = node("É simulação?", "n8n-nodes-base.if", 2.2, [1560, 300], {
+    sim = node("É simulação?", "n8n-nodes-base.if", 2.2, [1780, 300], {
         "conditions": {"options": {"caseSensitive": True, "typeValidation": "loose"},
                        "combinator": "and", "conditions": [
             {"leftValue": "={{ $('Loop').item.json.simulacao }}", "rightValue": True,
              "operator": {"type": "boolean", "operation": "true", "singleValue": True}}]}})
-    envia = http_chatwoot("Enviar msg", [1780, 360],
+    envia = http_chatwoot("Enviar msg", [2000, 360],
         f"={env('CHATWOOT_URL').rstrip('/')}/api/v1/accounts/1/conversations/{{{{ $json.conversation_id }}}}/messages",
         # A 1a mensagem abre a conversa: fora da janela de 24h a Cloud API so aceita modelo
         # aprovado. O campanha-lote ja manda o descritor pronto em `template`.
         '={ "content": {{ JSON.stringify($(\'Loop\').item.json.mensagem) }}, "message_type": "outgoing", '
         '"template_params": {{ JSON.stringify($(\'Loop\').item.json.template) }} }')
-    reg_ok = http_edge("Registrar enviado", "campanha-registrar", [2000, 300],
+    envio_ok = node("Mensagem aceita?", "n8n-nodes-base.if", 2.2, [2220, 360], {
+        "conditions": {"options": {"caseSensitive": True, "typeValidation": "loose"},
+                       "combinator": "and", "conditions": [
+            {"leftValue": "={{ !!$json.id }}", "rightValue": True,
+             "operator": {"type": "boolean", "operation": "true", "singleValue": True}}]}})
+    reg_ok = http_edge("Registrar enviado", "campanha-registrar", [2440, 300],
         '={ "fila_id": {{ $(\'Loop\').item.json.fila_id }}, "chip_id": {{ $(\'Loop\').item.json.chip_id }}, '
-        '"devedor_id": {{ $(\'Loop\').item.json.devedor_id }}, "telefone_id": {{ $(\'Loop\').item.json.telefone_id }}, '
+        '"carteira_id": {{ $(\'Loop\').item.json.carteira_id }}, "devedor_id": {{ $(\'Loop\').item.json.devedor_id }}, '
+        '"telefone_id": {{ $(\'Loop\').item.json.telefone_id }}, "mensagem": {{ JSON.stringify($(\'Loop\').item.json.mensagem) }}, '
         '"status": "enviado", "simulacao": {{ $(\'Loop\').item.json.simulacao }}, '
         '"chatwoot_conversation_id": {{ $(\'Criar contato\').item.json.conversation_id }}, '
         '"chatwoot_contact_id": {{ $(\'Criar contato\').item.json.contact_id }} }')
-    reg_sem = http_edge("Registrar sem WA", "campanha-registrar", [1560, 480],
+    reg_sem = http_edge("Registrar sem WA", "campanha-registrar", [1780, 520],
         '={ "fila_id": {{ $(\'Loop\').item.json.fila_id }}, "devedor_id": {{ $(\'Loop\').item.json.devedor_id }}, '
         '"telefone_id": {{ $(\'Loop\').item.json.telefone_id }}, "status": "sem_whatsapp" }')
+    reg_falha_contato = http_edge("Registrar falha de contato", "campanha-registrar", [1560, 600],
+        '={ "fila_id": {{ $(\'Loop\').item.json.fila_id }}, "devedor_id": {{ $(\'Loop\').item.json.devedor_id }}, '
+        '"telefone_id": {{ $(\'Loop\').item.json.telefone_id }}, "status": "falha", '
+        '"erro": {{ JSON.stringify($json.erro || "contato_criar_falhou") }} }')
+    reg_falha_envio = http_edge("Registrar falha de envio", "campanha-registrar", [2440, 520],
+        '={ "fila_id": {{ $(\'Loop\').item.json.fila_id }}, "devedor_id": {{ $(\'Loop\').item.json.devedor_id }}, '
+        '"telefone_id": {{ $(\'Loop\').item.json.telefone_id }}, "status": "falha", '
+        '"erro": {{ JSON.stringify($json.error || $json.message || "chatwoot_resposta_sem_id") }} }')
     # espera ALEATÓRIA até o próximo envio (anti-ban): lê delay_proximo (30–90s) sorteado no campanha-lote
-    espera = node("Aguardar intervalo", "n8n-nodes-base.wait", 1.1, [2220, 300],
+    espera = node("Aguardar intervalo", "n8n-nodes-base.wait", 1.1, [2660, 300],
                   {"amount": "={{ $('Loop').item.json.delay_proximo }}", "unit": "seconds"},
                   {"webhookId": "savan-w01-wait"})
 
-    nodes = [trig, lote, split, loop, contato, cond, sim, envia, reg_ok, reg_sem, espera]
+    nodes = [trig, lote, split, loop, contato, contato_ok, cond, sim, envia, envio_ok,
+             reg_ok, reg_sem, reg_falha_contato, reg_falha_envio, espera]
     connections = {}
     def add(src, dst, idx=0):
         connections.setdefault(src, {}).setdefault("main", [])
@@ -197,13 +217,19 @@ def w01():
     add("Buscar lote", "Itens")
     add("Itens", "Loop")
     add("Loop", "Criar contato", 1)      # saída 1 = "loop" (cada item)
-    add("Criar contato", "Tem WhatsApp?")
+    add("Criar contato", "Contato criado?")
+    add("Contato criado?", "Tem WhatsApp?", 0)
+    add("Contato criado?", "Registrar falha de contato", 1)
     add("Tem WhatsApp?", "É simulação?", 0)   # true
     add("Tem WhatsApp?", "Registrar sem WA", 1)  # false
     add("É simulação?", "Registrar enviado", 0)  # true -> não envia, só registra
     add("É simulação?", "Enviar msg", 1)         # false -> envia
-    add("Enviar msg", "Registrar enviado")
+    add("Enviar msg", "Mensagem aceita?")
+    add("Mensagem aceita?", "Registrar enviado", 0)
+    add("Mensagem aceita?", "Registrar falha de envio", 1)
     add("Registrar enviado", "Aguardar intervalo")
+    add("Registrar falha de contato", "Aguardar intervalo")
+    add("Registrar falha de envio", "Aguardar intervalo")
     add("Aguardar intervalo", "Loop")
     add("Registrar sem WA", "Loop")
     upsert("SAVAN W01 - Disparador", nodes, connections)

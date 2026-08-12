@@ -112,3 +112,22 @@ A organização aqui se limita ao que é do produto — nenhuma limpeza é feita
 A pasta `WORKFLOWS/` (na raiz, **gitignored**) guarda exports `.json` de workflows de
 referência de terceiros (Secretária/Asaas/Z-API) usados como base — **não** são os workflows
 reais do SAVAN. Os reais são gerados por `criar_workflows.py`.
+
+---
+
+## Meta Cloud: validação e falhas do W01
+
+Inboxes nativas `whatsapp_cloud` não implementam a sondagem `on_whatsapp` como as integrações
+não oficiais: o Chatwoot pode responder HTTP 200 com corpo `null` mesmo para um número válido. O
+`contato-criar` por isso não usa esse endpoint para chips `meta_cloud`; a validade final é determinada
+pelo aceite/rejeição do template aprovado pela Meta.
+
+O W01 também valida explicitamente os dois limites externos antes de gravar o resultado:
+
+1. `contato-criar` precisa devolver `ok=true`; falhas de contato, contact inbox, `source_id` ou conversa
+   são registradas como `falha`, nunca como `sem_whatsapp`.
+2. O POST da mensagem no Chatwoot precisa devolver um `id`; resposta sem `id` é registrada como
+   `falha`, nunca como envio concluído.
+
+Ao diagnosticar, sempre abra a execução com `includeData=true`: o status geral `success` apenas diz que
+o grafo terminou, não que o provedor aceitou cada operação.

@@ -1669,3 +1669,32 @@ antigo sem `tipo`) — pegaram um bug real de `Object.values()` num `Map`; `npx 
 **Não verificado:** a migration 030 não rodou em banco nenhum, e o canvas não foi aberto no navegador
 (precisa de sessão autenticada). O dono precisa aplicar a migration, redeployar as 6 Edge Functions e
 conferir a tela.
+
+---
+
+## 36. Incidente Meta: `on_whatsapp=null` descartava a fila (12/08/2026)
+
+Ao ligar a campanha real, o W01 selecionava um item a cada 5 min, mas `contato-criar` chamava
+`POST /inboxes/{id}/on_whatsapp` também para a inbox nativa Meta Cloud. Essa inbox devolveu HTTP 200
+com corpo `null`, inclusive para o número de teste válido. O código interpretava `null` como
+`exists=false`; o n8n terminava como `success` e registrava cada item como `sem_whatsapp`.
+
+**Contenção e reparo:** campanha pausada (`campanha_ativa=false`); nenhum envio real saiu. Os 10
+telefones afetados foram delimitados por `telefones_devedor.verificado_em` entre a ativação e a última
+execução defeituosa. Somente esses 10 voltaram para `fila_envios.status=aguardando`, com `erro/chip_id`
+limpos; `whatsapp_valido/verificado_em` voltaram a `null`; os devedores afetados voltaram a `na_fila`.
+O total histórico `sem_whatsapp` voltou de 42 para 32.
+
+**Correção em produção:**
+- `contato-criar`: chips `meta_cloud` não usam `on_whatsapp`; cria/busca contato, garante o vínculo
+  `contact_inbox` e usa seu `source_id` real antes de criar conversa. Todas as respostas do Chatwoot
+  agora são validadas e falham fechadas, sem converter indisponibilidade em número inválido.
+- `disparar-teste`: repassa o JWT `service_role` recebido ao chamar `contato-criar` (o segredo interno
+  pode ser `sb_secret_...`, que não é JWT) e preserva o código técnico real da falha.
+- n8n W01: novos gates `Contato criado?` e `Mensagem aceita?`; falhas externas vão para
+  `campanha-registrar status=falha`, e somente `exists=false` confirmado vira `sem_whatsapp`.
+
+**Verificação:** template `savan_abordagem_identidade` enviado ao número de teste pela mesma carteira e
+chip da campanha; Chatwoot registrou mensagem de saída `status=sent`. Ciclo W01 posterior, com a campanha
+pausada, devolveu `{total:0,pulados:{campanha_inativa:1}}`. A campanha permaneceu pausada para reativação
+deliberada pelo dono.

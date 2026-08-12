@@ -171,12 +171,23 @@ Deno.serve(async (req) => {
   }
 
   // cria contato + conversa no Chatwoot (reaproveita contato-criar)
+  // Repassa o JWT service_role ja validado nesta requisicao. O segredo interno pode usar o
+  // formato `sb_secret_...` (nao JWT) e era rejeitado pela trava A1 da funcao chamada.
+  const authRecebida = req.headers.get("Authorization") ?? "";
   const ccR = await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/contato-criar`, {
     method: "POST",
-    headers: { "Authorization": `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`, "Content-Type": "application/json" },
+    headers: { "Authorization": authRecebida, "Content-Type": "application/json" },
     body: JSON.stringify({ inbox_id: chip.chatwoot_inbox_id, telefone_e164: numeroTeste, telefone_id: tel!.id, devedor_id: dev!.id, devedor_nome: dev!.nome, processo: dev!.processo, valor_divida: dev!.saldo, teste_real: true }),
   });
-  const cc = await ccR.json();
+  const cc = await ccR.json().catch(() => null);
+  if (!cc?.ok) {
+    return json({
+      ok: false,
+      erro: cc?.erro ?? "contato_criar_falhou",
+      detalhe: "Nao foi possivel criar o contato/conversa de teste no Chatwoot.",
+      status_provedor: cc?.status_provedor ?? ccR.status,
+    }, 400);
+  }
   if (!cc?.ok || !cc?.exists || !cc?.conversation_id) {
     return json({ ok: false, erro: "sem_whatsapp_teste", detalhe: "O número de teste não tem WhatsApp ativo ou o chip não respondeu. Confira o número e a conexão do chip." }, 400);
   }
