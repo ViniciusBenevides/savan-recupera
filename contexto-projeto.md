@@ -1741,3 +1741,10 @@ expiração real: o mesmo token permanente estava no `.env`, Supabase e Chatwoot
 válida do canal limpou `reauthorization_required` sem trocar nenhuma credencial, e o callback respondeu
 corretamente ao desafio. O fluxo de configuração do webhook agora também reconfirma o inbox depois que
 a Meta valida a assinatura, para não deixar esse marcador preso após uma falha inicial já corrigida.
+
+Ao observar o primeiro ciclo reativado, apareceu uma segunda falha de cadência: com intervalo configurado
+em 1.000–2.000 s, `campanha-lote` devolve um item, o W01 envia primeiro e só então espera. Outro schedule
+nasce cinco minutos depois e poderia enviar seu primeiro item antes do relógio anterior. A campanha foi
+pausada antes do ciclo seguinte. `chips.proximo_disparo_em` agora reserva atomicamente a cadência do chip
+entre execuções; o Wait continua espaçando itens do mesmo lote. Assim o schedule pode consultar a cada
+cinco minutos sem furar o intervalo sorteado.

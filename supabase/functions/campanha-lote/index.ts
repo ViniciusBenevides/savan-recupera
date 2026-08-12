@@ -255,7 +255,7 @@ Deno.serve(async (req) => {
   }
 
   // chips com o dono (cobrador) p/ resolver a config/template de cada um
-  const { data: chips } = await sb.from("chips").select("id, nome, chatwoot_inbox_id, status, cobrador_id").in("status", ["ativo", "aquecendo"]);
+  const { data: chips } = await sb.from("chips").select("id, nome, chatwoot_inbox_id, status, cobrador_id, proximo_disparo_em").in("status", ["ativo", "aquecendo"]);
   const itens: any[] = [];
   const pulados: Record<string, number> = {}; // motivo -> nº de chips
 
@@ -264,6 +264,11 @@ Deno.serve(async (req) => {
     // gate POR COBRADOR: a campanha dele precisa estar ligada e dentro da janela dele
     if (!(cfg.campanha_ativa === true || cfg.campanha_ativa === "true")) { pulados.campanha_inativa = (pulados.campanha_inativa ?? 0) + 1; continue; }
     if (!dentroDaJanela(cfg.janela_envio)) { pulados.fora_da_janela = (pulados.fora_da_janela ?? 0) + 1; continue; }
+    const agoraMs = Date.now();
+    if (chip.proximo_disparo_em && new Date(chip.proximo_disparo_em).getTime() > agoraMs) {
+      pulados.intervalo_chip = (pulados.intervalo_chip ?? 0) + 1;
+      continue;
+    }
 
     // GATE DO CONECTOR OFICIAL (§32). Todo chip é Meta Cloud API: a 1ª mensagem a um contato novo
     // NÃO pode ser texto livre — tem que ser um TEMPLATE aprovado pela Meta. Enquanto o envio por
@@ -305,9 +310,8 @@ Deno.serve(async (req) => {
     const restanteHora = Math.max(0, (limHora ?? 0) - (mHora?.msgs ?? 0));
     if (restanteHora <= 0) { pulados.teto_hora = (pulados.teto_hora ?? 0) + 1; continue; }
 
-    // O W01 roda a cada 5 min; o lote cobre esse horizonte e é espaçado item a item pela espera
-    // aleatória do n8n (campo delay_proximo). Dimensiono pelo intervalo MÁX p/ o ciclo não estourar
-    // os 5 min (no pior caso, lote × intMax ≈ horizonte).
+    // O W01 consulta a cada 5 min. O lote cabe nesse horizonte quando os intervalos sao curtos;
+    // com intervalos maiores ele cai para um item, e proximo_disparo_em segura os outros schedules.
     const HORIZONTE_MIN = 5;
     const porHorizonte = Math.max(1, Math.floor((HORIZONTE_MIN * 60) / intMax));
     const demanda = Math.ceil((restante / restanteJanela) * HORIZONTE_MIN * 1.2);
@@ -321,9 +325,38 @@ Deno.serve(async (req) => {
     const intMinEfetivo = Math.max(intMin, pisoRitmo);
     const intMaxEfetivo = Math.max(intMax, intMinEfetivo);
 
-    const { data: selec } = await sb.rpc("fn_selecionar_lote", { p_chip_id: chip.id, p_n: lote });
+    // Reserva o chip antes de tirar itens da fila. O Wait do n8n controla mensagens dentro deste
+    // lote; esta reserva controla o primeiro envio dos proximos schedules e evita sobreposicao.
+    const delaysReservados = Array.from({ length: lote }, () =>
+      intMinEfetivo + Math.floor(Math.random() * (intMaxEfetivo - intMinEfetivo + 1))
+    );
+    const agoraIso = new Date(agoraMs).toISOString();
+    const reservaIso = new Date(agoraMs + delaysReservados.reduce((s, n) => s + n, 0) * 1000).toISOString();
+    const { data: reserva, error: erroReserva } = await sb.from("chips")
+      .update({ proximo_disparo_em: reservaIso })
+      .eq("id", chip.id)
+      .or(`proximo_disparo_em.is.null,proximo_disparo_em.lte.${agoraIso}`)
+      .select("id")
+      .maybeSingle();
+    if (erroReserva || !reserva) {
+      pulados.intervalo_chip = (pulados.intervalo_chip ?? 0) + 1;
+      continue;
+    }
 
-    for (const item of selec ?? []) {
+    const { data: selec } = await sb.rpc("fn_selecionar_lote", { p_chip_id: chip.id, p_n: lote });
+    const selecionados = selec ?? [];
+    if (!selecionados.length) {
+      await sb.from("chips").update({ proximo_disparo_em: null }).eq("id", chip.id).eq("proximo_disparo_em", reservaIso);
+      continue;
+    }
+    if (selecionados.length !== delaysReservados.length) {
+      const reservaRealIso = new Date(
+        agoraMs + delaysReservados.slice(0, selecionados.length).reduce((s, n) => s + n, 0) * 1000,
+      ).toISOString();
+      await sb.from("chips").update({ proximo_disparo_em: reservaRealIso }).eq("id", chip.id).eq("proximo_disparo_em", reservaIso);
+    }
+
+    for (const [indice, item] of selecionados.entries()) {
       const { data: dev } = await sb.from("devedores").select("id, nome, processo, saldo, vencimento, chatwoot_contact_id").eq("id", item.devedor_id).single();
       const { data: tel } = await sb.from("telefones_devedor").select("id, telefone_e164").eq("id", item.telefone_id).maybeSingle();
       if (!tel) { await sb.from("fila_envios").update({ status: "sem_whatsapp", erro: "sem_telefone" }).eq("id", item.id); continue; }
@@ -351,7 +384,7 @@ Deno.serve(async (req) => {
 
       // "digitando" curto e proporcional ao texto (parece humano); espera até o próximo envio = sorteio anti-ban
       const delayTyping = Math.min(8, 3 + Math.floor(conteudo.length / 60) + Math.floor(Math.random() * 3));
-      const delayProximo = intMinEfetivo + Math.floor(Math.random() * (intMaxEfetivo - intMinEfetivo + 1));
+      const delayProximo = delaysReservados[indice];
 
       itens.push({
         fila_id: item.id, carteira_id: item.carteira_id, chip_id: chip.id, inbox_id: chip.chatwoot_inbox_id,

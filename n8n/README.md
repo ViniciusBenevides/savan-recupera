@@ -33,6 +33,10 @@ Nós Wait precisam declarar `resume: timeInterval`. Informar somente `amount/uni
 aguardando o webhook interno indefinidamente; no W01 isso ocupa concorrência e acaba interrompendo os
 próximos ciclos do schedule.
 
+O intervalo da campanha também é persistido em `chips.proximo_disparo_em`. O Wait separa itens dentro
+do mesmo lote; o relógio do chip impede que dois schedules diferentes enviem seus primeiros itens com
+apenas cinco minutos de distância quando a configuração exige uma pausa maior.
+
 ### Contrato W01 (passo a passo)
 `campanha-lote` devolve `{ itens: [...] }`; cada item já traz `inbox_id`, `telefone_e164`,
 `telefone_id`, `devedor_id`, `devedor_nome`, `processo`, `valor_divida`, `mensagem`,

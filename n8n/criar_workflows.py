@@ -140,8 +140,8 @@ def upsert(nome, nodes, connections, ativo=False, settings=None):
 
 # ============================ W01 — DISPARADOR ============================
 def w01():
-    # 5 min: o lote do campanha-lote cobre esse horizonte e é espaçado item a item pela espera
-    # ALEATÓRIA abaixo (30–90s, via delay_proximo). Cadência > intervalo p/ o sorteio surtir efeito.
+    # 5 min: o campanha-lote reserva a cadencia entre schedules; dentro de um lote, a espera
+    # ALEATORIA abaixo usa o delay_proximo calculado pela configuracao da conta.
     trig = node("Cada 5 min", "n8n-nodes-base.scheduleTrigger", 1.2, [240, 300],
                 {"rule": {"interval": [{"field": "minutes", "minutesInterval": 5}]}})
     lote = http_edge("Buscar lote", "campanha-lote", [460, 300], "={}")
@@ -201,7 +201,7 @@ def w01():
         '={ "fila_id": {{ $(\'Loop\').item.json.fila_id }}, "devedor_id": {{ $(\'Loop\').item.json.devedor_id }}, '
         '"telefone_id": {{ $(\'Loop\').item.json.telefone_id }}, "status": "falha", '
         '"erro": {{ JSON.stringify($json.error || $json.message || "chatwoot_resposta_sem_id") }} }')
-    # espera ALEATÓRIA até o próximo envio (anti-ban): lê delay_proximo (30–90s) sorteado no campanha-lote
+    # espera ALEATORIA ate o proximo envio (anti-ban): le delay_proximo sorteado no campanha-lote
     espera = node("Aguardar intervalo", "n8n-nodes-base.wait", 1.1, [2660, 300],
                   {"resume": "timeInterval", "amount": "={{ $('Loop').item.json.delay_proximo }}", "unit": "seconds"},
                   {"webhookId": "savan-w01-wait"})
