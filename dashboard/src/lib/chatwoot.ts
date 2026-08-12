@@ -82,6 +82,30 @@ export async function dadosWebhookInbox(inboxId: number): Promise<{ callback_url
   } catch { return null; }
 }
 
+// Regrava a configuracao atual do canal depois que a Meta confirmou o webhook. O Chatwoot marca
+// o inbox para reautorizacao quando a configuracao automatica inicial falha; configurar o webhook
+// por fora resolve a causa, mas a marca fica no Redis ate uma atualizacao valida do canal.
+export async function confirmarAutorizacaoInboxMeta(inboxId: number): Promise<boolean> {
+  const { url, token, accountId } = cfgCw();
+  if (!url || !token) return false;
+  try {
+    const endpoint = `${url}/api/v1/accounts/${accountId}/inboxes/${inboxId}`;
+    const atual = await fetch(endpoint, { headers: { api_access_token: token } });
+    if (!atual.ok) return false;
+    const corpo = await atual.json().catch(() => null);
+    const inbox = corpo?.payload ?? corpo;
+    const providerConfig = inbox?.provider_config;
+    if (inbox?.provider !== "whatsapp_cloud" || !providerConfig?.api_key || !providerConfig?.phone_number_id) return false;
+
+    const r = await fetch(endpoint, {
+      method: "PUT",
+      headers: { api_access_token: token, "Content-Type": "application/json" },
+      body: JSON.stringify({ channel: { provider_config: providerConfig } }),
+    });
+    return r.ok;
+  } catch { return false; }
+}
+
 export async function deletarInbox(inboxId: number): Promise<boolean> {
   const { url, token, accountId } = cfgCw();
   if (!url || !token) return false;

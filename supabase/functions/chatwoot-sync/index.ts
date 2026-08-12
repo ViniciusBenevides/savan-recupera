@@ -202,7 +202,10 @@ async function espelharMensagem(sb: SupabaseClient, conv: any, msg: any): Promis
       }).eq("id", alvo.id);
       if (error) throw error;
     } else {
-      const { error } = await sb.from("mensagens").upsert({
+      // Use INSERT here. If the API response registers the same automated message between our
+      // lookup and this write, an upsert would overwrite origem=bot with sender.type=user from
+      // Chatwoot. On the unique race, update only transport fields and preserve the known author.
+      const { error } = await sb.from("mensagens").insert({
         conversa_id: conv.id,
         direcao,
         origem,
@@ -210,8 +213,16 @@ async function espelharMensagem(sb: SupabaseClient, conv: any, msg: any): Promis
         chatwoot_message_id: messageId,
         criado_em: criadoEm,
         simulacao: conv.simulacao === true,
-      }, { onConflict: "chatwoot_message_id" });
-      if (error) throw error;
+      });
+      if (error?.code === "23505") {
+        const { error: erroCorrida } = await sb.from("mensagens").update({
+          conversa_id: conv.id, direcao, conteudo, criado_em: criadoEm,
+          simulacao: conv.simulacao === true,
+        }).eq("chatwoot_message_id", messageId);
+        if (erroCorrida) throw erroCorrida;
+      } else if (error) {
+        throw error;
+      }
     }
   }
 

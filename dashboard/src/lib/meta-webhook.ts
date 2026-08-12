@@ -1,6 +1,6 @@
 import { supabaseAdmin } from "@/lib/supabase-server";
 import { assinarWebhookApp } from "@/lib/meta";
-import { dadosWebhookInbox } from "@/lib/chatwoot";
+import { confirmarAutorizacaoInboxMeta, dadosWebhookInbox } from "@/lib/chatwoot";
 
 // Fecha sozinho o último passo manual do cadastro de número: apontar o webhook do app da Meta
 // para o inbox Cloud do Chatwoot. Quem dá a URL de callback e o verify token é o Chatwoot; quem
@@ -48,12 +48,23 @@ export async function configurarWebhookDoChip(opts: {
   });
   if (!r.ok) return { ok: false, motivo: r.motivo, mensagem: r.mensagem, ...base };
 
-  await supabaseAdmin().from("chips_credenciais_meta").update({
+  const admin = supabaseAdmin();
+  await admin.from("chips_credenciais_meta").update({
     webhook_callback_url: opts.callbackUrl,
     webhook_verify_token: opts.verifyToken,
     webhook_configurado_em: new Date().toISOString(),
     atualizado_em: new Date().toISOString(),
   }).eq("chip_id", opts.chipId);
+
+  const { data: chip } = await admin.from("chips").select("chatwoot_inbox_id").eq("id", opts.chipId).maybeSingle();
+  if (chip?.chatwoot_inbox_id && !(await confirmarAutorizacaoInboxMeta(chip.chatwoot_inbox_id))) {
+    return {
+      ok: false,
+      motivo: "sem_chatwoot",
+      mensagem: "O webhook foi validado pela Meta, mas o Chatwoot nao confirmou novamente as credenciais do inbox.",
+      ...base,
+    };
+  }
 
   return {
     ok: true,

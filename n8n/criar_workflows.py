@@ -203,7 +203,7 @@ def w01():
         '"erro": {{ JSON.stringify($json.error || $json.message || "chatwoot_resposta_sem_id") }} }')
     # espera ALEATÓRIA até o próximo envio (anti-ban): lê delay_proximo (30–90s) sorteado no campanha-lote
     espera = node("Aguardar intervalo", "n8n-nodes-base.wait", 1.1, [2660, 300],
-                  {"amount": "={{ $('Loop').item.json.delay_proximo }}", "unit": "seconds"},
+                  {"resume": "timeInterval", "amount": "={{ $('Loop').item.json.delay_proximo }}", "unit": "seconds"},
                   {"webhookId": "savan-w01-wait"})
 
     nodes = [trig, lote, split, loop, contato, contato_ok, cond, sim, envia, envio_ok,
@@ -316,7 +316,7 @@ def w02():
         f"={env('CHATWOOT_URL').rstrip('/')}/api/v1/accounts/1/conversations/{{{{ $json.conv }}}}/messages",
         '={ "content": {{ JSON.stringify($json.texto) }}, "message_type": "outgoing" }')
     espera = node("Aguardar", "n8n-nodes-base.wait", 1.1, [2220, 360],
-                  {"amount": 3, "unit": "seconds"}, {"webhookId": "savan-w02-wait"})
+                  {"resume": "timeInterval", "amount": 3, "unit": "seconds"}, {"webhookId": "savan-w02-wait"})
 
     # A escalada (aviso ao cobrador via WhatsApp + nota/label/atribuição ao time no Chatwoot)
     # é feita inteiramente pelo bot-turno (Edge Function), usando o cobrador/número da carteira

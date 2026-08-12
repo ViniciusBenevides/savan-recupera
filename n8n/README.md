@@ -29,6 +29,10 @@ processar a mesma mensagem sem criar duplicata. Notas privadas e mensagens de at
 na aba Conversas. Para importar histórico de uma inbox gerenciada, chame a função com
 `{ "backfill": true, "inbox_id": <id> }` usando `service_role`.
 
+Nós Wait precisam declarar `resume: timeInterval`. Informar somente `amount/unit` deixa a execução
+aguardando o webhook interno indefinidamente; no W01 isso ocupa concorrência e acaba interrompendo os
+próximos ciclos do schedule.
+
 ### Contrato W01 (passo a passo)
 `campanha-lote` devolve `{ itens: [...] }`; cada item já traz `inbox_id`, `telefone_e164`,
 `telefone_id`, `devedor_id`, `devedor_nome`, `processo`, `valor_divida`, `mensagem`,

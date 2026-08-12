@@ -1722,3 +1722,22 @@ os IDs 427/428/429 existem nos dois sistemas e a mensagem 9743 aparece uma únic
 Repetir o backfill e reenviar o mesmo evento pelo W02 manteve uma única linha; chamada sem credencial
 retornou 401. A verificação visual externa chegou até `/login`; a contagem autenticada foi validada
 diretamente nas tabelas que alimentam a página.
+
+No primeiro disparo real posterior, API e webhook chegaram quase juntos. O ID ficou único, mas o
+`sender.type=user` do Chatwoot ganhou a corrida e marcou a abordagem como `humano`. `chatwoot-sync`
+passou a usar `INSERT`; se a constraint detectar a corrida, atualiza somente os campos de transporte e
+preserva a autoria já conhecida (`bot`). A mensagem afetada foi reconciliada para `bot`.
+
+**Falha adicional observada ao reativar:** o W01 abriu execuções, enviou normalmente, mas parou no nó
+`Aguardar intervalo`. O JSON tinha `amount/unit`, porém não `resume: timeInterval`; o default do Wait é
+aguardar callback e as execuções 109920/109930 ficaram indefinidas. Com duas vagas ocupadas, novos ticks
+deixaram de virar execução, parecendo falha do cron. W01 e W02 passaram a declarar o modo de espera;
+somente as duas execuções presas foram interrompidas. O W01 original foi preservado inativo e a cópia
+limpa `NHIWqs5OLDPGGP1X` assumiu o nome de produção.
+
+O aviso do Chatwoot de que a conexão do inbox Meta havia expirado era um estado residual, não uma
+expiração real: o mesmo token permanente estava no `.env`, Supabase e Chatwoot; a Graph confirmou
+`is_valid=true`, expiração zero, número `CONNECTED`, qualidade `GREEN` e WABA assinada. A atualização
+válida do canal limpou `reauthorization_required` sem trocar nenhuma credencial, e o callback respondeu
+corretamente ao desafio. O fluxo de configuração do webhook agora também reconfirma o inbox depois que
+a Meta valida a assinatura, para não deixar esse marcador preso após uma falha inicial já corrigida.
