@@ -1,0 +1,324 @@
+// SAVAN Recupera - espelha conversas e mensagens do Chatwoot no Supabase.
+// Chamado pelo n8n para message_created/conversation_created e manualmente para backfill.
+import { createClient, SupabaseClient } from "jsr:@supabase/supabase-js@2";
+
+const cors = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+const json = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), { status, headers: { ...cors, "Content-Type": "application/json" } });
+
+function admin(): SupabaseClient {
+  return createClient(
+    Deno.env.get("SUPABASE_URL")!,
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+    { auth: { persistSession: false } },
+  );
+}
+
+function serviceRole(req: Request): boolean {
+  try {
+    let p = ((req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "").split(".")[1] ?? "")
+      .replace(/-/g, "+").replace(/_/g, "/");
+    while (p.length % 4) p += "=";
+    return JSON.parse(atob(p)).role === "service_role";
+  } catch {
+    return false;
+  }
+}
+
+async function configESegredos(sb: SupabaseClient) {
+  const [{ data: cfgRows, error: cfgErro }, { data: segRows, error: segErro }] = await Promise.all([
+    sb.from("configuracoes").select("chave, valor"),
+    sb.from("segredos").select("chave, valor"),
+  ]);
+  if (cfgErro || segErro) throw new Error("configuracao_indisponivel");
+  const cfg: Record<string, any> = {};
+  const seg: Record<string, string> = {};
+  for (const r of cfgRows ?? []) cfg[r.chave] = r.valor;
+  for (const r of segRows ?? []) if (r.valor) seg[r.chave] = r.valor;
+  const url = String(cfg.chatwoot?.url ?? "").replace(/\/$/, "");
+  const accountId = Number(cfg.chatwoot?.account_id ?? 1);
+  if (!url || !seg.CHATWOOT_TOKEN) throw new Error("chatwoot_nao_configurado");
+  return { url, accountId, token: seg.CHATWOOT_TOKEN };
+}
+
+async function cwGet(base: string, token: string, path: string): Promise<any> {
+  const r = await fetch(`${base}${path}`, { headers: { "api_access_token": token } });
+  if (!r.ok) throw new Error(`chatwoot_http_${r.status}`);
+  return await r.json();
+}
+
+function numero(v: unknown): number | null {
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function iso(v: unknown, fallback = new Date().toISOString()): string {
+  if (typeof v === "number") {
+    const d = new Date(v < 10_000_000_000 ? v * 1000 : v);
+    if (!Number.isNaN(d.getTime())) return d.toISOString();
+  }
+  if (typeof v === "string" && v) {
+    if (/^\d+$/.test(v)) return iso(Number(v), fallback);
+    const d = new Date(v);
+    if (!Number.isNaN(d.getTime())) return d.toISOString();
+  }
+  return fallback;
+}
+
+function tipoMensagem(v: unknown): "entrada" | "saida" | null {
+  const t = String(v ?? "").toLowerCase();
+  if (t === "incoming" || t === "0") return "entrada";
+  if (t === "outgoing" || t === "template" || t === "1" || t === "3") return "saida";
+  return null;
+}
+
+async function conversaDetalhe(base: string, token: string, accountId: number, convId: number) {
+  return await cwGet(base, token, `/api/v1/accounts/${accountId}/conversations/${convId}`);
+}
+
+async function garantirConversa(
+  sb: SupabaseClient,
+  cw: { url: string; accountId: number; token: string },
+  convId: number,
+  detalheRecebido?: any,
+  simulacaoRecebida?: boolean,
+): Promise<any | null> {
+  const { data: existente, error: erroExistente } = await sb.from("conversas")
+    .select("id, devedor_id, carteira_id, chip_id, simulacao, estado")
+    .eq("chatwoot_conversation_id", convId).maybeSingle();
+  if (erroExistente) throw erroExistente;
+  if (existente) return existente;
+
+  const detalhe = detalheRecebido ?? await conversaDetalhe(cw.url, cw.token, cw.accountId, convId);
+  const inboxId = numero(detalhe?.inbox_id ?? detalhe?.inbox?.id ?? detalhe?.conversation?.inbox_id);
+  if (!inboxId) return null;
+
+  const { data: chip, error: erroChip } = await sb.from("chips")
+    .select("id").eq("chatwoot_inbox_id", inboxId).maybeSingle();
+  if (erroChip) throw erroChip;
+  if (!chip) return null;
+
+  const remetente = detalhe?.meta?.sender ?? detalhe?.conversation?.meta?.sender ?? {};
+  const contactId = numero(remetente?.id ?? detalhe?.contact_inbox?.contact_id);
+  const attrs = remetente?.custom_attributes ?? {};
+  let devedorId = numero(attrs?.devedor_id);
+
+  if (!devedorId && contactId) {
+    const { data: devContato } = await sb.from("devedores")
+      .select("id").eq("chatwoot_contact_id", contactId).limit(2);
+    if ((devContato ?? []).length === 1) devedorId = devContato![0].id;
+  }
+
+  const fone = String(remetente?.phone_number ?? "").replace(/\D/g, "");
+  let telefoneId: number | null = null;
+  if (!devedorId && fone.length >= 8) {
+    const { data: tels } = await sb.from("telefones_devedor")
+      .select("id, devedor_id").ilike("telefone_e164", `%${fone.slice(-8)}`);
+    const ids = [...new Set((tels ?? []).map((t: any) => Number(t.devedor_id)))];
+    if (ids.length === 1) devedorId = ids[0];
+    if (devedorId) telefoneId = numero((tels ?? []).find((t: any) => Number(t.devedor_id) === devedorId)?.id);
+  }
+  if (!devedorId) {
+    console.warn(`chatwoot-sync: conversa ${convId} sem devedor identificavel`);
+    return null;
+  }
+
+  const { data: dev, error: erroDev } = await sb.from("devedores")
+    .select("id, carteira_id").eq("id", devedorId).maybeSingle();
+  if (erroDev) throw erroDev;
+  if (!dev) return null;
+  if (!telefoneId) {
+    const { data: tel } = await sb.from("telefones_devedor")
+      .select("id").eq("devedor_id", devedorId).eq("principal", true).limit(1).maybeSingle();
+    telefoneId = numero(tel?.id);
+  }
+
+  const { data: semelhante } = await sb.from("conversas")
+    .select("simulacao").eq("devedor_id", devedorId).eq("chip_id", chip.id)
+    .order("criado_em", { ascending: false }).limit(1).maybeSingle();
+  const simulacao = typeof simulacaoRecebida === "boolean"
+    ? simulacaoRecebida
+    : semelhante?.simulacao === true;
+  const quando = iso(detalhe?.last_activity_at ?? detalhe?.created_at);
+  const estado = String(detalhe?.status ?? "open") === "resolved" ? "encerrada" : "aguardando_resposta";
+
+  const { data: criada, error: erroCriar } = await sb.from("conversas").upsert({
+    devedor_id: devedorId,
+    carteira_id: dev.carteira_id,
+    chip_id: chip.id,
+    telefone_id: telefoneId,
+    chatwoot_conversation_id: convId,
+    chatwoot_contact_id: contactId,
+    estado,
+    ultima_msg_em: quando,
+    ultima_msg_de: "sistema",
+    simulacao,
+    criado_em: iso(detalhe?.created_at, quando),
+  }, { onConflict: "chatwoot_conversation_id" })
+    .select("id, devedor_id, carteira_id, chip_id, simulacao, estado").single();
+  if (erroCriar) throw erroCriar;
+  return criada;
+}
+
+async function espelharMensagem(sb: SupabaseClient, conv: any, msg: any): Promise<"gravada" | "ignorada"> {
+  if (msg?.private === true) return "ignorada";
+  const direcao = tipoMensagem(msg?.message_type);
+  if (!direcao) return "ignorada";
+  const messageId = numero(msg?.id ?? msg?.chatwoot_message_id);
+  if (!messageId) return "ignorada";
+
+  const criadoEm = iso(msg?.created_at);
+  const conteudo = String(msg?.content ?? msg?.conteudo ?? "");
+  const senderType = String(msg?.sender?.type ?? msg?.sender_type ?? "").toLowerCase();
+  const origem = direcao === "entrada" ? "devedor" : (senderType === "user" ? "humano" : "bot");
+
+  const { data: porId, error: erroId } = await sb.from("mensagens")
+    .select("id, origem").eq("chatwoot_message_id", messageId).maybeSingle();
+  if (erroId) throw erroId;
+  if (porId) {
+    const { error } = await sb.from("mensagens").update({
+      conversa_id: conv.id, direcao, conteudo, criado_em: criadoEm, simulacao: conv.simulacao === true,
+    }).eq("id", porId.id);
+    if (error) throw error;
+  } else {
+    const { data: candidatos, error: erroCandidatos } = await sb.from("mensagens")
+      .select("id, conteudo, criado_em, origem")
+      .eq("conversa_id", conv.id).eq("direcao", direcao).is("chatwoot_message_id", null)
+      .order("criado_em", { ascending: false }).limit(12);
+    if (erroCandidatos) throw erroCandidatos;
+    const alvo = (candidatos ?? [])
+      .filter((m: any) => String(m.conteudo ?? "") === conteudo)
+      .map((m: any) => ({ ...m, distancia: Math.abs(new Date(m.criado_em).getTime() - new Date(criadoEm).getTime()) }))
+      .filter((m: any) => m.distancia <= 15 * 60 * 1000)
+      .sort((a: any, b: any) => a.distancia - b.distancia)[0];
+
+    if (alvo) {
+      const { error } = await sb.from("mensagens").update({
+        chatwoot_message_id: messageId, criado_em: criadoEm,
+      }).eq("id", alvo.id);
+      if (error) throw error;
+    } else {
+      const { error } = await sb.from("mensagens").upsert({
+        conversa_id: conv.id,
+        direcao,
+        origem,
+        conteudo,
+        chatwoot_message_id: messageId,
+        criado_em: criadoEm,
+        simulacao: conv.simulacao === true,
+      }, { onConflict: "chatwoot_message_id" });
+      if (error) throw error;
+    }
+  }
+
+  const ultimaMsgDe = direcao === "entrada" ? "devedor" : origem;
+  const { error: erroConv } = await sb.from("conversas").update({
+    ultima_msg_em: criadoEm,
+    ultima_msg_de: ultimaMsgDe,
+  }).eq("id", conv.id).or(`ultima_msg_em.is.null,ultima_msg_em.lte.${criadoEm}`);
+  if (erroConv) throw erroConv;
+  return "gravada";
+}
+
+async function mensagensDaConversa(
+  cw: { url: string; accountId: number; token: string },
+  convId: number,
+): Promise<any[]> {
+  const todas: any[] = [];
+  const vistos = new Set<number>();
+  let before: number | null = null;
+  for (let pagina = 0; pagina < 100; pagina++) {
+    const sufixo = before ? `?before=${before}` : "";
+    const d = await cwGet(cw.url, cw.token, `/api/v1/accounts/${cw.accountId}/conversations/${convId}/messages${sufixo}`);
+    const lote = Array.isArray(d?.payload) ? d.payload : [];
+    let novos = 0;
+    for (const m of lote) {
+      const id = numero(m?.id);
+      if (id && !vistos.has(id)) {
+        vistos.add(id);
+        todas.push(m);
+        novos++;
+      }
+    }
+    if (lote.length < 20 || novos === 0) break;
+    before = Math.min(...lote.map((m: any) => numero(m?.id)).filter(Boolean) as number[]);
+    if (!before) break;
+  }
+  return todas.sort((a, b) => new Date(iso(a?.created_at)).getTime() - new Date(iso(b?.created_at)).getTime());
+}
+
+async function executarBackfill(
+  sb: SupabaseClient,
+  cw: { url: string; accountId: number; token: string },
+  inboxId: number,
+) {
+  let conversas = 0, mensagens = 0, ignoradas = 0, semVinculo = 0;
+  const vistos = new Set<number>();
+  for (let page = 1; page <= 100; page++) {
+    const d = await cwGet(cw.url, cw.token,
+      `/api/v1/accounts/${cw.accountId}/conversations?inbox_id=${inboxId}&status=all&page=${page}`);
+    const lote = Array.isArray(d?.data?.payload) ? d.data.payload : [];
+    let novos = 0;
+    for (const resumo of lote) {
+      const convId = numero(resumo?.id);
+      if (!convId || vistos.has(convId)) continue;
+      vistos.add(convId);
+      novos++;
+      const detalhe = await conversaDetalhe(cw.url, cw.token, cw.accountId, convId);
+      const conv = await garantirConversa(sb, cw, convId, detalhe);
+      if (!conv) { semVinculo++; continue; }
+      conversas++;
+      for (const m of await mensagensDaConversa(cw, convId)) {
+        if (await espelharMensagem(sb, conv, m) === "gravada") mensagens++;
+        else ignoradas++;
+      }
+    }
+    if (lote.length === 0 || novos === 0 || vistos.size >= Number(d?.data?.meta?.all_count ?? Infinity)) break;
+  }
+  return { conversas, mensagens, ignoradas, sem_vinculo: semVinculo };
+}
+
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
+  if (!serviceRole(req)) return json({ ok: false, erro: "nao_autorizado" }, 401);
+  try {
+    const sb = admin();
+    const cw = await configESegredos(sb);
+    const body = await req.json();
+
+    if (body?.backfill === true) {
+      const inboxId = numero(body?.inbox_id);
+      if (!inboxId) return json({ ok: false, erro: "inbox_id_ausente" }, 400);
+      return json({ ok: true, ...(await executarBackfill(sb, cw, inboxId)) });
+    }
+
+    const evento = String(body?.evento ?? body?.event ?? "");
+    if (evento !== "message_created" && evento !== "conversation_created") {
+      return json({ ok: true, ignorado: "evento_nao_suportado" });
+    }
+    const convId = numero(body?.chatwoot_conversation_id ?? body?.conversation?.id ?? body?.conversation_id);
+    if (!convId) return json({ ok: false, erro: "conversation_id_ausente" }, 400);
+    const detalhe = await conversaDetalhe(cw.url, cw.token, cw.accountId, convId);
+    const conv = await garantirConversa(sb, cw, convId, detalhe, body?.simulacao);
+    if (!conv) return json({ ok: true, ignorado: "conversa_sem_vinculo_local" });
+    if (evento === "conversation_created") return json({ ok: true, conversa_id: conv.id, mensagem: "ignorada" });
+    const resultado = await espelharMensagem(sb, conv, {
+      id: body?.chatwoot_message_id ?? body?.id,
+      message_type: body?.message_type,
+      private: body?.private,
+      content: body?.mensagem ?? body?.content,
+      content_type: body?.content_type,
+      created_at: body?.created_at,
+      sender_type: body?.sender_type,
+      sender: body?.sender,
+    });
+    return json({ ok: true, conversa_id: conv.id, mensagem: resultado });
+  } catch (e) {
+    console.error("chatwoot-sync erro:", e instanceof Error ? e.message : String(e));
+    return json({ ok: false, erro: "falha_sincronizacao" }, 500);
+  }
+});

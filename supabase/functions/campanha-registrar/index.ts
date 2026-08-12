@@ -96,8 +96,15 @@ Deno.serve(async (req) => {
         if (texto) {
           const { data: existe } = await sb.from("mensagens")
             .select("id").eq("conversa_id", conversaLocalId).eq("direcao", "saida").eq("conteudo", texto).limit(1).maybeSingle();
-          if (!existe) {
-            await sb.from("mensagens").insert({ conversa_id: conversaLocalId, direcao: "saida", origem: "bot", conteudo: texto, simulacao: sim });
+          if (existe) {
+            await sb.from("mensagens").update({
+              origem: "bot", chatwoot_message_id: b.chatwoot_message_id ?? null, simulacao: sim,
+            }).eq("id", existe.id);
+          } else {
+            await sb.from("mensagens").upsert({
+              conversa_id: conversaLocalId, direcao: "saida", origem: "bot", conteudo: texto,
+              chatwoot_message_id: b.chatwoot_message_id ?? null, simulacao: sim,
+            }, b.chatwoot_message_id ? { onConflict: "chatwoot_message_id" } : undefined);
           }
         }
       }

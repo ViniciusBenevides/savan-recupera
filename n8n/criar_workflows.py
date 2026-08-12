@@ -187,6 +187,7 @@ def w01():
         '"carteira_id": {{ $(\'Loop\').item.json.carteira_id }}, "devedor_id": {{ $(\'Loop\').item.json.devedor_id }}, '
         '"telefone_id": {{ $(\'Loop\').item.json.telefone_id }}, "mensagem": {{ JSON.stringify($(\'Loop\').item.json.mensagem) }}, '
         '"status": "enviado", "simulacao": {{ $(\'Loop\').item.json.simulacao }}, '
+        '"chatwoot_message_id": {{ $json.id || null }}, '
         '"chatwoot_conversation_id": {{ $(\'Criar contato\').item.json.conversation_id }}, '
         '"chatwoot_contact_id": {{ $(\'Criar contato\').item.json.contact_id }} }')
     reg_sem = http_edge("Registrar sem WA", "campanha-registrar", [1780, 520],
@@ -267,29 +268,41 @@ def w02():
     wh = node("Webhook Chatwoot", "n8n-nodes-base.webhook", 2.1, [240, 300], {
         "httpMethod": "POST", "path": "savan-bot", "responseMode": "onReceived",
         "options": {}}, {"webhookId": "savan-bot"})
-    # filtro: incoming, não-privada, sem agente-off
-    filtro = node("Filtrar", "n8n-nodes-base.code", 2, [460, 300], {"jsClass": "", "jsCode": (
+    normalizar = node("Normalizar evento", "n8n-nodes-base.code", 2, [460, 300], {"jsClass": "", "jsCode": (
         "const b = $json.body || $json;\n"
-        "const ev = b.event;\n"
-        "const mt = b.message_type;\n"
-        "const priv = b.private;\n"
+        "const evento = String(b.event || '');\n"
+        "if (!['message_created', 'conversation_created'].includes(evento)) return [];\n"
+        "const conv = Number((b.conversation && b.conversation.id) || b.conversation_id || (evento === 'conversation_created' ? b.id : 0));\n"
+        "if (!conv) return [];\n"
         "const labels = (b.conversation && b.conversation.labels) || b.labels || [];\n"
-        "const off = Array.isArray(labels) && labels.includes('agente-off');\n"
-        "const conv = (b.conversation && b.conversation.id) || b.conversation_id;\n"
-        "const content = b.content;\n"
-        "// só processa mensagem recebida do cliente, não-privada, bot ligado\n"
-        "if (ev !== 'message_created' || mt !== 'incoming' || priv || off || !content) {\n"
-        "  return [];\n"
-        "}\n"
-        "return [{ json: { chatwoot_conversation_id: conv, mensagem: content } }];"
+        "return [{ json: {\n"
+        "  evento, chatwoot_conversation_id: conv, chatwoot_message_id: b.id || null,\n"
+        "  message_type: b.message_type || null, private: b.private === true,\n"
+        "  mensagem: b.content || '', content_type: b.content_type || null,\n"
+        "  created_at: b.created_at || null, sender_type: (b.sender && b.sender.type) || null, labels\n"
+        "} }];"
     )})
-    bot = http_edge("Bot responder", "bot-turno", [680, 300],
+    sync = http_edge("Espelhar no painel", "chatwoot-sync", [680, 300], "={{ $json }}")
+    sync_ok = node("Sincronizacao ok?", "n8n-nodes-base.if", 2.2, [900, 300], {
+        "conditions": {"options": {"caseSensitive": True, "typeValidation": "loose"},
+                       "combinator": "and", "conditions": [
+            {"leftValue": "={{ $json.ok }}", "rightValue": True,
+             "operator": {"type": "boolean", "operation": "true", "singleValue": True}}]}})
+    # O espelhamento aceita entrada e saída. Somente entrada pública com o bot ligado segue para a IA.
+    filtro = node("Filtrar bot", "n8n-nodes-base.code", 2, [1120, 300], {"jsClass": "", "jsCode": (
+        "const b = $('Normalizar evento').item.json;\n"
+        "const off = Array.isArray(b.labels) && b.labels.includes('agente-off');\n"
+        "if (b.evento !== 'message_created' || b.message_type !== 'incoming' || b.private || off || !b.mensagem) return [];\n"
+        "return [{ json: b }];"
+    )})
+    bot = http_edge("Bot responder", "bot-turno", [1340, 300],
         '={ "chatwoot_conversation_id": {{ $json.chatwoot_conversation_id }}, '
+        '"chatwoot_message_id": {{ $json.chatwoot_message_id }}, '
         '"mensagem": {{ JSON.stringify($json.mensagem) }} }')
     # quebra mensagens e envia
-    prep = node("Preparar envios", "n8n-nodes-base.code", 2, [900, 300], {"jsCode": (
+    prep = node("Preparar envios", "n8n-nodes-base.code", 2, [1560, 300], {"jsCode": (
         "const r = $json;\n"
-        "const conv = $('Filtrar').item.json.chatwoot_conversation_id;\n"
+        "const conv = $('Filtrar bot').item.json.chatwoot_conversation_id;\n"
         "const out = [];\n"
         "for (const m of (r.mensagens || [])) {\n"
         "  out.push({ json: { conv, texto: m } });\n"
@@ -297,26 +310,29 @@ def w02():
         "// a escalada (aviso ao cobrador + nota/label/atribuição no Chatwoot) é feita pelo bot-turno\n"
         "return out;"
     )})
-    loop = node("Loop msgs", "n8n-nodes-base.splitInBatches", 3, [1120, 300],
+    loop = node("Loop msgs", "n8n-nodes-base.splitInBatches", 3, [1780, 300],
                 {"batchSize": 1, "options": {}})
-    envia = http_chatwoot("Enviar resposta", [1340, 360],
+    envia = http_chatwoot("Enviar resposta", [2000, 360],
         f"={env('CHATWOOT_URL').rstrip('/')}/api/v1/accounts/1/conversations/{{{{ $json.conv }}}}/messages",
         '={ "content": {{ JSON.stringify($json.texto) }}, "message_type": "outgoing" }')
-    espera = node("Aguardar", "n8n-nodes-base.wait", 1.1, [1560, 360],
+    espera = node("Aguardar", "n8n-nodes-base.wait", 1.1, [2220, 360],
                   {"amount": 3, "unit": "seconds"}, {"webhookId": "savan-w02-wait"})
 
     # A escalada (aviso ao cobrador via WhatsApp + nota/label/atribuição ao time no Chatwoot)
     # é feita inteiramente pelo bot-turno (Edge Function), usando o cobrador/número da carteira
     # (config_override.equipe). Não há mais ramo de escalada aqui — evita nota/label duplicados.
-    nodes = [wh, filtro, bot, prep, loop, envia, espera]
+    nodes = [wh, normalizar, sync, sync_ok, filtro, bot, prep, loop, envia, espera]
     connections = {}
     def add(src, dst, idx=0):
         connections.setdefault(src, {}).setdefault("main", [])
         while len(connections[src]["main"]) <= idx:
             connections[src]["main"].append([])
         connections[src]["main"][idx].append({"node": dst, "type": "main", "index": 0})
-    add("Webhook Chatwoot", "Filtrar")
-    add("Filtrar", "Bot responder")
+    add("Webhook Chatwoot", "Normalizar evento")
+    add("Normalizar evento", "Espelhar no painel")
+    add("Espelhar no painel", "Sincronizacao ok?")
+    add("Sincronizacao ok?", "Filtrar bot", 0)
+    add("Filtrar bot", "Bot responder")
     add("Bot responder", "Preparar envios")
     add("Preparar envios", "Loop msgs")
     add("Loop msgs", "Enviar resposta", 1)

@@ -1698,3 +1698,27 @@ O total histórico `sem_whatsapp` voltou de 42 para 32.
 chip da campanha; Chatwoot registrou mensagem de saída `status=sent`. Ciclo W01 posterior, com a campanha
 pausada, devolveu `{total:0,pulados:{campanha_inativa:1}}`. A campanha permaneceu pausada para reativação
 deliberada pelo dono.
+
+---
+
+## 37. Espelhamento completo Chatwoot → Conversas (12/08/2026)
+
+A aba `/conversas` lê `conversas`/`mensagens` no Supabase, não o Chatwoot diretamente. O W02 antigo
+descartava toda mensagem `outgoing` e só criava/vinculava conversa quando uma entrada chegava ao
+`bot-turno`. Resultado observado no inbox Meta: 3 conversas no Chatwoot, somente 1 no Supabase; a única
+mensagem enviada existia localmente, mas sem `chatwoot_message_id`.
+
+**Correção em produção:** nova Edge Function `chatwoot-sync`, chamada antes do bot no W02, recebe
+`message_created` e `conversation_created`. Ela cria a conversa local pelo `devedor_id` do contato,
+espelha mensagens públicas de entrada e saída, preserva autoria humana/robô e reconcilia registros já
+gravados pelo texto/horário. A constraint `mensagens_chatwoot_message_id_key` torna o processamento
+idempotente. `bot-turno`, `campanha-registrar`, `campanha-followup` e `disparar-teste` agora propagam o
+ID real da mensagem; o bot exclui a entrada já espelhada do histórico antes de montar o prompt, evitando
+duplicá-la para a IA.
+
+O webhook Chatwoot id 5 (`/webhook/savan-bot`) passou a assinar `message_created` +
+`conversation_created`. Backfill do inbox Meta 8: 3 conversas, 1 mensagem, 0 sem vínculo. Depois dele,
+os IDs 427/428/429 existem nos dois sistemas e a mensagem 9743 aparece uma única vez, como saída do bot.
+Repetir o backfill e reenviar o mesmo evento pelo W02 manteve uma única linha; chamada sem credencial
+retornou 401. A verificação visual externa chegou até `/login`; a contagem autenticada foi validada
+diretamente nas tabelas que alimentam a página.

@@ -188,7 +188,7 @@ Deno.serve(async (req) => {
     .lte("proximo_followup_em", new Date().toISOString())
     .order("proximo_followup_em").limit(30);
 
-  let enviados = 0, encerrados = 0, gated = 0, semTemplate = 0;
+  let enviados = 0, encerrados = 0, gated = 0, semTemplate = 0, falhas = 0;
   for (const c of convs ?? []) {
     const cart = cartMap.get(c.carteira_id) ?? { credor: null, cobrador_id: null, blocos: [] };
     const cfg = resolverCfg(cart.cobrador_id);
@@ -219,20 +219,27 @@ Deno.serve(async (req) => {
     if (!tplMeta) { semTemplate++; continue; }
     const texto = tplMeta.texto;
 
+    let chatwootMessageId: number | null = null;
     if (!simulacao) {
-      await fetch(`${cwUrl}/api/v1/accounts/${acc}/conversations/${c.chatwoot_conversation_id}/messages`, {
+      const envio = await fetch(`${cwUrl}/api/v1/accounts/${acc}/conversations/${c.chatwoot_conversation_id}/messages`, {
         method: "POST", headers: { "api_access_token": seg.CHATWOOT_TOKEN, "Content-Type": "application/json" },
         body: JSON.stringify(chatwootTemplateBody(tplMeta)),
       });
+      const envioBody = await envio.json().catch(() => null);
+      chatwootMessageId = Number(envioBody?.id ?? 0) || null;
+      if (!envio.ok || !chatwootMessageId) { falhas++; continue; }
     }
     // o próximo reenvio é agendado pela espera do PRÓXIMO bloco do fluxo (ou pela config global)
     const horasProx = blocos[n + 1]?.espera_horas ?? intervalos[Math.min(n + 1, intervalos.length - 1)];
     const prox = new Date(Date.now() + horasProx * 3600000).toISOString();
     await sb.from("conversas").update({ followups_enviados: n + 1, proximo_followup_em: prox, ultima_msg_em: new Date().toISOString(), ultima_msg_de: "bot" }).eq("id", c.id);
-    await sb.from("mensagens").insert({ conversa_id: c.id, direcao: "saida", origem: "bot", conteudo: texto, simulacao });
+    await sb.from("mensagens").upsert({
+      conversa_id: c.id, direcao: "saida", origem: "bot", conteudo: texto,
+      chatwoot_message_id: chatwootMessageId, simulacao,
+    }, chatwootMessageId ? { onConflict: "chatwoot_message_id" } : undefined);
     await sb.from("eventos_campanha").insert({ tipo: "followup", devedor_id: c.devedor_id, carteira_id: c.carteira_id, payload: { n: n + 1, simulacao } });
     enviados++;
   }
   // sem_template = reenvio adiado por falta de modelo aprovado (nao consome a vez)
-  return json({ ok: true, enviados, encerrados, gated, sem_template: semTemplate });
+  return json({ ok: true, enviados, encerrados, gated, sem_template: semTemplate, falhas });
 });

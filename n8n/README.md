@@ -15,14 +15,19 @@ por HTTP com o `service_role` como `Bearer`.
 
 | Workflow | Gatilho | Chama (Edge Function) | O que faz |
 |---|---|---|---|
-| **SAVAN W01 - Disparador** | Schedule, **1 min** | `campanha-lote` → `contato-criar` → `campanha-registrar` | Pega o lote permitido, valida WhatsApp, cria contato/conversa no Chatwoot, envia a 1ª mensagem (respeitando _Modo simulação_) e registra. Espera 12 s entre envios. |
-| **SAVAN W02 - Bot Negociador** | Webhook `POST /webhook/savan-bot` | `bot-turno` | Recebe o evento `message_created` do Chatwoot, filtra (só mensagem recebida, não-privada, bot ligado), chama o cérebro do bot e devolve a(s) resposta(s) ao Chatwoot. |
+| **SAVAN W01 - Disparador** | Schedule, **5 min** | `campanha-lote` → `contato-criar` → `campanha-registrar` | Pega o lote permitido, valida WhatsApp, cria contato/conversa no Chatwoot, envia a 1ª mensagem (respeitando _Modo simulação_) e registra. Usa o intervalo aleatório devolvido pelo lote. |
+| **SAVAN W02 - Bot Negociador** | Webhook `POST /webhook/savan-bot` | `chatwoot-sync` → `bot-turno` | Espelha `conversation_created` e toda mensagem pública recebida/enviada no painel. Somente mensagens recebidas, não-privadas e com o bot ligado seguem para a IA. |
 | **SAVAN W07 - Follow-up** | Schedule, **5 min** | `campanha-followup` | Reengaja quem não respondeu (até 3×), respeitando a janela. |
 | **SAVAN W08 - Monitor de Chips** | Schedule, **15 min** | `chips-monitor` | Consulta o status Z-API de cada chip e atualiza saúde/status. |
 | **SAVAN W09 - Métricas** | Schedule, **5 min** | `metricas-sync` | Reabre itens presos, recalcula métricas do dia, promove chips aquecidos→ativos. |
 
 **Webhook do Chatwoot** (inbox/integração) deve apontar para
-`https://<seu-n8n>/webhook/savan-bot`, evento `message_created`.
+`https://<seu-n8n>/webhook/savan-bot`, eventos `message_created` e `conversation_created`.
+
+`chatwoot-sync` reconcilia pelo `chatwoot_message_id`: retorno imediato da API, webhook e backfill podem
+processar a mesma mensagem sem criar duplicata. Notas privadas e mensagens de atividade não aparecem
+na aba Conversas. Para importar histórico de uma inbox gerenciada, chame a função com
+`{ "backfill": true, "inbox_id": <id> }` usando `service_role`.
 
 ### Contrato W01 (passo a passo)
 `campanha-lote` devolve `{ itens: [...] }`; cada item já traz `inbox_id`, `telefone_e164`,

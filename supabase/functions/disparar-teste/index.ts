@@ -228,10 +228,13 @@ Deno.serve(async (req) => {
     headers: { "api_access_token": seg.CHATWOOT_TOKEN, "Content-Type": "application/json" },
     body: JSON.stringify(chatwootTemplateBody(tplMeta)),
   });
+  const envioBody = await envio.json().catch(() => null);
   if (!envio.ok) {
-    const det = await envio.text().catch(() => "");
-    return json({ ok: false, erro: "falha_envio", detalhe: `O Chatwoot recusou o envio do modelo (${envio.status}). ${det.slice(0, 300)}` }, 400);
+    const det = JSON.stringify(envioBody ?? {}).slice(0, 300);
+    return json({ ok: false, erro: "falha_envio", detalhe: `O Chatwoot recusou o envio do modelo (${envio.status}). ${det}` }, 400);
   }
+  const chatwootMessageId = Number(envioBody?.id ?? 0) || null;
+  if (!chatwootMessageId) return json({ ok: false, erro: "falha_envio", detalhe: "O Chatwoot aceitou a requisicao sem devolver o ID da mensagem." }, 502);
 
   // cria/atualiza a conversa marcada como teste
   await sb.from("conversas").upsert({
@@ -241,7 +244,10 @@ Deno.serve(async (req) => {
     simulacao: true,
   }, { onConflict: "chatwoot_conversation_id" });
   const { data: convRow } = await sb.from("conversas").select("id").eq("chatwoot_conversation_id", conversationId).maybeSingle();
-  if (convRow) await sb.from("mensagens").insert({ conversa_id: convRow.id, direcao: "saida", origem: "bot", conteudo: conteudoFinal, simulacao: true });
+  if (convRow) await sb.from("mensagens").upsert({
+    conversa_id: convRow.id, direcao: "saida", origem: "bot", conteudo: conteudoFinal,
+    chatwoot_message_id: chatwootMessageId, simulacao: true,
+  }, { onConflict: "chatwoot_message_id" });
 
   return json({ ok: true, conversation_id: conversationId, numero_teste: numeroTeste, mensagem: conteudoFinal, template: tplMeta.name });
 });

@@ -308,6 +308,7 @@ Deno.serve(async (req) => {
   let cfg = await getConfig(sb);
   const b = await req.json();
   const convId = b.chatwoot_conversation_id;
+  const incomingMessageId = Number(b.chatwoot_message_id ?? 0) || null;
 
   let { data: conv } = await sb.from("conversas").select("id, devedor_id, carteira_id, estado, chip_id, simulacao, telefone_id, etapa_roteiro").eq("chatwoot_conversation_id", convId).maybeSingle();
   if (!conv) {
@@ -317,7 +318,10 @@ Deno.serve(async (req) => {
   const simulacao = conv.simulacao === true;
 
   if (conv.estado === "humano") {
-    await sb.from("mensagens").insert({ conversa_id: conv.id, direcao: "entrada", origem: "devedor", conteudo: b.mensagem, simulacao });
+    await sb.from("mensagens").upsert({
+      conversa_id: conv.id, direcao: "entrada", origem: "devedor", conteudo: b.mensagem,
+      chatwoot_message_id: incomingMessageId, simulacao,
+    }, incomingMessageId ? { onConflict: "chatwoot_message_id" } : undefined);
     await sb.from("conversas").update({ ultima_msg_em: new Date().toISOString(), ultima_msg_de: "devedor" }).eq("id", conv.id);
     return json({ ok: true, acao: "humano", mensagens: [] });
   }
@@ -337,15 +341,18 @@ Deno.serve(async (req) => {
 
   const { data: convsDev } = await sb.from("conversas").select("id").eq("devedor_id", conv.devedor_id);
   const convIds = (convsDev ?? []).map((c) => c.id);
-  const { data: histRaw } = await sb.from("mensagens").select("origem, direcao, conteudo").in("conversa_id", convIds.length ? convIds : [conv.id]).order("criado_em", { ascending: false }).limit(20);
-  const hist = (histRaw ?? []).reverse();
+  const { data: histRaw } = await sb.from("mensagens").select("origem, direcao, conteudo, chatwoot_message_id").in("conversa_id", convIds.length ? convIds : [conv.id]).order("criado_em", { ascending: false }).limit(21);
+  const hist = (histRaw ?? []).filter((m: any) => !incomingMessageId || Number(m.chatwoot_message_id) !== incomingMessageId).slice(0, 20).reverse();
   const conhecimento = await carregarConhecimento(sb, carteiraId ?? null);
   const etapaAtual = etapaDoRoteiro(carteira, conv.etapa_roteiro ?? null);
   const messages: any[] = [{ role: "system", content: montarSystemPrompt(cfg, carteira, prop, conhecimento, etapaAtual) }];
   for (const m of hist) messages.push({ role: m.direcao === "entrada" ? "user" : "assistant", content: m.conteudo ?? "" });
   messages.push({ role: "user", content: b.mensagem ?? "" });
 
-  await sb.from("mensagens").insert({ conversa_id: conv.id, direcao: "entrada", origem: "devedor", conteudo: b.mensagem, simulacao });
+  await sb.from("mensagens").upsert({
+    conversa_id: conv.id, direcao: "entrada", origem: "devedor", conteudo: b.mensagem,
+    chatwoot_message_id: incomingMessageId, simulacao,
+  }, incomingMessageId ? { onConflict: "chatwoot_message_id" } : undefined);
   await sb.from("conversas").update({ estado: "bot_ativo", ultima_msg_em: new Date().toISOString(), ultima_msg_de: "devedor", proximo_followup_em: null }).eq("id", conv.id);
   await sb.from("eventos_campanha").insert({ tipo: "resposta", devedor_id: conv.devedor_id, carteira_id: carteiraId, payload: { simulacao } });
   if (!simulacao) {
