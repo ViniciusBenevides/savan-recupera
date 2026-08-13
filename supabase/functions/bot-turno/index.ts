@@ -4,6 +4,14 @@
 // Modo teste: herda conversas.simulacao -> não suja métricas reais, passa flag ao gerar-pix.
 // SEGURANÇA (auditoria 2026-06-26): A1 — só o service_role (n8n W02) pode chamar; anon key recusada (401).
 import { createClient, SupabaseClient } from "jsr:@supabase/supabase-js@2";
+import { ehEstadoTerminal } from "../_shared/conversation-state.ts";
+import {
+  classificarRespostaIdentidade,
+  ehPerguntaDeIdentidade,
+  normalizar,
+  respostaConfirmacaoIdentidade,
+  respostaPessoaErrada,
+} from "../_shared/identity.ts";
 
 const OPENAI = "https://api.openai.com/v1/chat/completions";
 const cors = {
@@ -327,7 +335,7 @@ async function concluirNaoPerturbe(
 
 async function concluirPessoaErrada(
   sb: SupabaseClient,
-  conv: { id: number; devedor_id: number },
+  conv: { id: number; devedor_id: number; telefone_id?: number | null },
   carteiraId: number | null,
   simulacao: boolean,
 ) {
@@ -338,6 +346,23 @@ async function concluirPessoaErrada(
     .select("id").maybeSingle();
   if (error) throw error;
   if (!alterada) return;
+
+  // Cumpra o que a mensagem de encerramento informa: este telefone nao deve
+  // voltar para a fila da pessoa procurada. A conversa permanece no historico,
+  // mas novas abordagens destinadas ao devedor ficam bloqueadas neste numero.
+  if (conv.telefone_id) {
+    const agora = new Date().toISOString();
+    const { error: erroTelefone } = await sb.from("telefones_devedor")
+      .update({ whatsapp_valido: false, verificado_em: agora })
+      .eq("id", conv.telefone_id);
+    if (erroTelefone) throw erroTelefone;
+
+    const { error: erroFila } = await sb.from("fila_envios")
+      .update({ status: "cancelado", erro: "pessoa_errada" })
+      .eq("telefone_id", conv.telefone_id)
+      .in("status", ["aguardando", "processando"]);
+    if (erroFila) throw erroFila;
+  }
 
   await sb.from("devedores").update({ status_cobranca: "recusado" }).eq("id", conv.devedor_id);
   await sb.from("eventos_campanha").insert({
@@ -414,6 +439,12 @@ Deno.serve(async (req) => {
   }
   const simulacao = conv.simulacao === true;
 
+  // Uma mensagem nova nao pode ressuscitar uma conversa que ja teve desfecho.
+  // O chatwoot-sync, executado antes desta funcao, ja espelhou a entrada.
+  if (ehEstadoTerminal(conv.estado)) {
+    return json({ ok: true, acao: "encerrada", ignorado: "conversa_finalizada", mensagens: [] });
+  }
+
   if (conv.estado === "humano") {
     await sb.from("mensagens").upsert({
       conversa_id: conv.id, direcao: "entrada", origem: "devedor", conteudo: b.mensagem,
@@ -448,6 +479,17 @@ Deno.serve(async (req) => {
     if (incomingMessageId && !(await ehUltimaEntrada(sb, conv.id, incomingMessageId))) {
       await marcarFila(sb, incomingMessageId, "suplantada");
       return json({ ok: true, ignorado: "mensagem_suplantada", mensagens: [] });
+    }
+
+    // Outra execucao pode ter encerrado a conversa enquanto esta aguardava o lock.
+    // Releia somente o estado e nunca deixe o update para bot_ativo abaixo desfazer
+    // pessoa_errada, opt-out ou pagamento confirmado.
+    const { data: estadoAtual, error: erroEstadoAtual } = await sb.from("conversas")
+      .select("estado").eq("id", conv.id).maybeSingle();
+    if (erroEstadoAtual) throw erroEstadoAtual;
+    if (ehEstadoTerminal(estadoAtual?.estado)) {
+      await marcarFila(sb, incomingMessageId, "concluida");
+      return json({ ok: true, acao: "encerrada", ignorado: "conversa_finalizada", mensagens: [] });
     }
     await marcarFila(sb, incomingMessageId, "processando");
 
@@ -499,13 +541,11 @@ Deno.serve(async (req) => {
   // modelo recebe autorização para falar de origem, CPF ou valores. Isso evita que "oi" seja
   // interpretado como confirmação. Conversas antigas que já tiveram valores revelados são
   // marcadas como confirmadas para o robô não voltar atrás no meio da negociação.
-  const normalizar = (v: unknown) => String(v ?? "").normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9\s]/g, " ")
-    .replace(/\s+/g, " ").trim();
   const entradaNormal = normalizar(b.mensagem);
-  const confirmouAgora = /^(sim|sim sou eu|sou eu|isso|isso mesmo|correto|correta|pode sim|pode falar|e ela|e ele|eu mesma|eu mesmo)$/.test(entradaNormal);
-  const negouIdentidade = /^(nao|nao sou eu|nao e ela|nao e ele|numero errado)$/.test(entradaNormal)
-    || /\b(nao conheco|pessoa errada|telefone errado|ligou errado|mensagem errada|numero reciclado)\b/.test(entradaNormal);
+  const nomeProcurado = prop?.nome ?? prop?.primeiro_nome ?? "a pessoa procurada";
+  const classificacaoIdentidade = classificarRespostaIdentidade(b.mensagem, nomeProcurado);
+  const confirmouAgora = classificacaoIdentidade === "confirmou";
+  const negouIdentidade = classificacaoIdentidade === "negou";
   const jaHouveDetalhe = hist.some((m: any) => m.direcao === "saida"
     && /R\$|valor original|valor final|desconto de \d/i.test(String(m.conteudo ?? "")));
   let identidadeConfirmada = !!conv.identidade_confirmada_em || jaHouveDetalhe;
@@ -534,13 +574,19 @@ Deno.serve(async (req) => {
     let acaoIdentidade = "responder";
     let encerrarIdentidade = false;
     if (negouIdentidade) {
-      respostaIdentidade = "Desculpe pelo incômodo. Vou retirar este número do contato destinado a essa pessoa. Tenha um bom dia!";
+      respostaIdentidade = respostaPessoaErrada(Number(incomingMessageId ?? conv.id));
       acaoIdentidade = "encerrar";
       encerrarIdentidade = true;
       await concluirPessoaErrada(sb, conv, carteiraId, simulacao);
     } else {
-      const nomeCompleto = String(prop?.nome ?? "a pessoa procurada");
-      respostaIdentidade = `Entendo. Antes de falar sobre qualquer registro, preciso proteger os dados da pessoa procurada. Você é ${nomeCompleto}?`;
+      const tentativasAnteriores = hist.filter((m: any) =>
+        m.direcao === "saida" && ehPerguntaDeIdentidade(m.conteudo)
+      ).length;
+      respostaIdentidade = respostaConfirmacaoIdentidade(
+        nomeProcurado,
+        tentativasAnteriores,
+        b.mensagem,
+      );
     }
     await sb.from("mensagens").insert({
       conversa_id: conv.id, direcao: "saida", origem: "bot", conteudo: respostaIdentidade, simulacao,

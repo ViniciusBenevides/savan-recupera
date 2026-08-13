@@ -59,7 +59,17 @@ class Asaas {
     if (!d?.id) throw new Error("asaas_payment: " + JSON.stringify(d));
     return d;
   }
-  async pixQrCode(id: string) { const r = await fetch(`${this.base}/payments/${id}/pixQrCode`, { headers: this.h() }); return await r.json(); }
+  async pixQrCode(id: string) {
+    let ultimo: any = null;
+    // Em produção o QR pode ficar disponível alguns instantes depois da cobrança.
+    for (const esperaMs of [0, 300, 900, 1800]) {
+      if (esperaMs) await new Promise((resolve) => setTimeout(resolve, esperaMs));
+      const r = await fetch(`${this.base}/payments/${id}/pixQrCode`, { headers: this.h() });
+      ultimo = await r.json();
+      if (r.ok && ultimo?.payload) return ultimo;
+    }
+    throw new Error("asaas_pix_qrcode: " + JSON.stringify(ultimo));
+  }
 }
 
 Deno.serve(async (req) => {
@@ -150,7 +160,10 @@ Deno.serve(async (req) => {
 
   const { data: neg } = await sb.from("negociacoes").insert({ devedor_id: dev.id, conversa_id: b.conversa_id ?? null, valor_original: dev.saldo, desconto_pct: descontoPct, valor_proposto: valorFinal, faixa_aplicada: prop.faixa_aplicada, desconto_extra_usado: extraAplicado, status: "aceita", validade: dueDate, simulacao }).select("id").single();
 
-  let payId: string, pixPayload: string, pixImg: string | null, invoiceUrl: string | null, customerId: string | null = dev.asaas_customer_id ?? null;
+  // Customer IDs do Asaas pertencem ao ambiente/conta que os criou. Nunca reutilize
+  // cegamente um ID persistido ao alternar sandbox <-> produção; resolva pelo
+  // externalReference no ambiente ativo e atualize o cache local quando for real.
+  let payId: string, pixPayload: string, pixImg: string | null, invoiceUrl: string | null, customerId: string | null = null;
 
   if (!podeAsaas) {
     payId = "TESTE-" + crypto.randomUUID().slice(0, 8);
@@ -161,8 +174,10 @@ Deno.serve(async (req) => {
     const asaas = new Asaas(apiKey, ambiente);
     const { data: tel } = await sb.from("telefones_devedor").select("telefone_e164").eq("devedor_id", dev.id).eq("tipo", "movel").order("ordem").limit(1).maybeSingle();
     const mobile = tel?.telefone_e164?.replace("+", "");
-    customerId = customerId ?? await asaas.acharOuCriarCliente({ nome: dev.nome, cpfCnpj: dev.cpf_cnpj, mobilePhone: mobile, externalReference: String(dev.id) });
-    if (!dev.asaas_customer_id && !simulacao) await sb.from("devedores").update({ asaas_customer_id: customerId }).eq("id", dev.id);
+    customerId = await asaas.acharOuCriarCliente({ nome: dev.nome, cpfCnpj: dev.cpf_cnpj, mobilePhone: mobile, externalReference: String(dev.id) });
+    if (!simulacao && dev.asaas_customer_id !== customerId) {
+      await sb.from("devedores").update({ asaas_customer_id: customerId }).eq("id", dev.id);
+    }
     const pay = await asaas.criarPix({ customer: customerId, value: valorFinal, dueDate, externalReference: String(neg?.id ?? dev.id), description: `Quitacao - processo ${dev.processo ?? dev.id}`, walletSavan: walletCredor, comissaoPct });
     const qr = await asaas.pixQrCode(pay.id);
     payId = pay.id; pixPayload = qr.payload; pixImg = qr.encodedImage ?? null; invoiceUrl = pay.invoiceUrl ?? null;

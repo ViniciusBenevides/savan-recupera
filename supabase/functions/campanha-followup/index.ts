@@ -3,6 +3,7 @@
 // janela do cobrador dono da carteira); templates de follow-up escopados ao cobrador (cai no global).
 // SEGURANÇA (auditoria 2026-06-26): A1 — só o service_role (n8n) pode chamar; anon key recusada (401).
 import { createClient, SupabaseClient } from "jsr:@supabase/supabase-js@2";
+import { nomeCompletoLegivel } from "../_shared/identity.ts";
 
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, content-type", "Access-Control-Allow-Methods": "POST, OPTIONS" };
 const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { ...cors, "Content-Type": "application/json" } });
@@ -216,7 +217,7 @@ Deno.serve(async (req) => {
       encerrados++; continue;
     }
     const { data: dev } = await sb.from("devedores").select("nome").eq("id", c.devedor_id).single();
-    const pn = (dev?.nome ?? "").split(" ")[0];
+    const nomeCompleto = nomeCompletoLegivel(dev?.nome);
     const credor = cart.credor ?? "";
 
     // O reenvio vai para quem NUNCA respondeu — a janela de 24h nunca abriu, então também só sai
@@ -224,7 +225,10 @@ Deno.serve(async (req) => {
     // no RITMO (quantos e de quanto em quanto tempo); o TEXTO é o do modelo aprovado.
     const refs: any[] = Array.isArray(cfg.meta_followup_templates?.lista) ? cfg.meta_followup_templates.lista : [];
     const tplMeta = await montarTemplate(sb, cart.cobrador_id, refs[n], {
-      primeiro_nome: pn.charAt(0) + pn.slice(1).toLowerCase(), nome: dev?.nome ?? "",
+      // Templates antigos ainda chamam o placeholder de `primeiro_nome`.
+      // O requisito atual e citar o nome completo antes da confirmacao, entao
+      // ambos os aliases recebem o mesmo valor completo e legivel.
+      primeiro_nome: nomeCompleto, nome: nomeCompleto,
       credor, nome_bot: cfg.ia?.nome_bot ?? "Ana",
     });
     if (!tplMeta) { semTemplate++; continue; }
