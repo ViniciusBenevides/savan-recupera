@@ -14,6 +14,17 @@ const cors = {
 };
 const json = (b: unknown, s = 200) =>
   new Response(JSON.stringify(b), { status: s, headers: { ...cors, "Content-Type": "application/json" } });
+// O W01 consulta a fila a cada minuto. Carregar até um ciclo de atraso impede que a
+// granularidade do cron transforme 2min24s em 3min em todos os envios, sem criar rajada
+// depois de uma pausa longa do workflow.
+const CICLO_W01_MS = 60_000;
+
+function baseCadenciaMs(proximoDisparoEm: string | null, agoraMs: number): number {
+  const anteriorMs = proximoDisparoEm ? new Date(proximoDisparoEm).getTime() : NaN;
+  if (!Number.isFinite(anteriorMs) || anteriorMs > agoraMs) return agoraMs;
+  return Math.max(anteriorMs, agoraMs - CICLO_W01_MS);
+}
+
 function admin(): SupabaseClient {
   return createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
 }
@@ -312,9 +323,9 @@ Deno.serve(async (req) => {
     const intMin = Math.max(5, Math.ceil(3600 / Math.max(1, Number(limHora))));
     const intMax = Math.max(intMin, Math.ceil(intMin * 1.25));
 
-    // O W01 consulta a cada 5 min. O lote cabe nesse horizonte quando os intervalos sao curtos;
+    // O W01 consulta a cada 1 min. O lote cabe nesse horizonte quando os intervalos sao curtos;
     // com intervalos maiores ele cai para um item, e proximo_disparo_em segura os outros schedules.
-    const HORIZONTE_MIN = 5;
+    const HORIZONTE_MIN = 1;
     const porHorizonte = Math.max(1, Math.floor((HORIZONTE_MIN * 60) / intMax));
     const demanda = Math.ceil((restante / restanteJanela) * HORIZONTE_MIN * 1.2);
     // o teto da hora entra como mais um limitador do lote (nunca o AUMENTA)
@@ -327,7 +338,12 @@ Deno.serve(async (req) => {
       intMin + Math.floor(Math.random() * (intMax - intMin + 1))
     );
     const agoraIso = new Date(agoraMs).toISOString();
-    const reservaIso = new Date(agoraMs + delaysReservados.reduce((s, n) => s + n, 0) * 1000).toISOString();
+    const baseReservaMs = baseCadenciaMs(chip.proximo_disparo_em, agoraMs);
+    const reservaMs = Math.max(
+      agoraMs + 1000,
+      baseReservaMs + delaysReservados.reduce((s, n) => s + n, 0) * 1000,
+    );
+    const reservaIso = new Date(reservaMs).toISOString();
     const { data: reserva, error: erroReserva } = await sb.from("chips")
       .update({ proximo_disparo_em: reservaIso })
       .eq("id", chip.id)
@@ -346,9 +362,11 @@ Deno.serve(async (req) => {
       continue;
     }
     if (selecionados.length !== delaysReservados.length) {
-      const reservaRealIso = new Date(
-        agoraMs + delaysReservados.slice(0, selecionados.length).reduce((s, n) => s + n, 0) * 1000,
-      ).toISOString();
+      const reservaRealMs = Math.max(
+        agoraMs + 1000,
+        baseReservaMs + delaysReservados.slice(0, selecionados.length).reduce((s, n) => s + n, 0) * 1000,
+      );
+      const reservaRealIso = new Date(reservaRealMs).toISOString();
       await sb.from("chips").update({ proximo_disparo_em: reservaRealIso }).eq("id", chip.id).eq("proximo_disparo_em", reservaIso);
     }
 

@@ -15,7 +15,7 @@ por HTTP com o `service_role` como `Bearer`.
 
 | Workflow | Gatilho | Chama (Edge Function) | O que faz |
 |---|---|---|---|
-| **SAVAN W01 - Disparador** | Schedule, **5 min** | `campanha-lote` → `contato-criar` → `campanha-registrar` | Pega o lote permitido, valida WhatsApp, cria contato/conversa no Chatwoot, envia a 1ª mensagem (respeitando _Modo simulação_) e registra. Usa o intervalo aleatório devolvido pelo lote. |
+| **SAVAN W01 - Disparador** | Schedule, **1 min** | `campanha-lote` → `contato-criar` → `campanha-registrar` | Pega o lote permitido, valida WhatsApp, cria contato/conversa no Chatwoot, envia a 1ª mensagem (respeitando _Modo simulação_) e registra. O relógio persistente do chip carrega os segundos entre ciclos para cumprir o ritmo sem rajadas. |
 | **SAVAN W02 - Bot Negociador** | Webhook `POST /webhook/savan-bot` | `chatwoot-sync` → `bot-turno` | Espelha `conversation_created` e toda mensagem pública recebida/enviada no painel. Somente mensagens recebidas, não-privadas e com o bot ligado seguem para a IA. |
 | **SAVAN W07 - Follow-up** | Schedule, **5 min** | `campanha-followup` | Reengaja quem não respondeu (até 3×), respeitando a janela. |
 | **SAVAN W08 - Monitor de Chips** | Schedule, **15 min** | `chips-monitor` | Consulta o status Z-API de cada chip e atualiza saúde/status. |

@@ -34,7 +34,7 @@
 > (Anterior: Anti-ban — intervalo de envio ALEATÓRIO (sorteado em [min, max], padrão 30–90s)
 > + variação de TAMANHO das mensagens. `intervalo_min_segundos` ganha par `intervalo_max_segundos`;
 > `campanha-lote` sorteia `delay_proximo` por mensagem e o n8n W01 espera esse tempo (nó "Aguardar
-> intervalo" dinâmico) com cadência de 5 min; templates de abordagem ganham spintax opcional
+> intervalo" dinâmico) com consulta a cada 1 min e saldo de cadência persistido por chip; templates de abordagem ganham spintax opcional
 > (`{|texto}`) p/ variar o comprimento; UI da Campanha com campos mín/máx + migration 023 — ver §28.)
 > (Anterior: Janela de envio só em dias úteis (seg–sex) e pulando feriados nacionais —
 > `dias` vira padrão seg–sex e nova flag `pular_feriados` (feriados fixos + móveis via Páscoa, base

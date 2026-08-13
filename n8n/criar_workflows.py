@@ -140,10 +140,10 @@ def upsert(nome, nodes, connections, ativo=False, settings=None):
 
 # ============================ W01 — DISPARADOR ============================
 def w01():
-    # 5 min: o campanha-lote reserva a cadencia entre schedules; dentro de um lote, a espera
-    # ALEATORIA abaixo usa o delay_proximo calculado pela configuracao da conta.
-    trig = node("Cada 5 min", "n8n-nodes-base.scheduleTrigger", 1.2, [240, 300],
-                {"rule": {"interval": [{"field": "minutes", "minutesInterval": 5}]}})
+    # 1 min: granularidade suficiente para o relogio persistente do chip alternar ciclos de
+    # 2 e 3 min quando o ritmo e 25/h. Dentro de lotes, delay_proximo mantem a espera aleatoria.
+    trig = node("Cada 1 min", "n8n-nodes-base.scheduleTrigger", 1.2, [240, 300],
+                {"rule": {"interval": [{"field": "minutes", "minutesInterval": 1}]}})
     lote = http_edge("Buscar lote", "campanha-lote", [460, 300], "={}")
     split = node("Itens", "n8n-nodes-base.splitOut", 1, [680, 300],
                  {"fieldToSplitOut": "itens", "options": {}})
@@ -214,7 +214,7 @@ def w01():
         while len(connections[src]["main"]) <= idx:
             connections[src]["main"].append([])
         connections[src]["main"][idx].append({"node": dst, "type": "main", "index": 0})
-    add("Cada 5 min", "Buscar lote")
+    add("Cada 1 min", "Buscar lote")
     add("Buscar lote", "Itens")
     add("Itens", "Loop")
     add("Loop", "Criar contato", 1)      # saída 1 = "loop" (cada item)
