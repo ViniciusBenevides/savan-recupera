@@ -1,0 +1,4 @@
+project_id = "wmggqsmqvklxlqwsksjs"
+
+[functions.campanha-lote]
+verify_jwt = true

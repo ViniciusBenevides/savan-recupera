@@ -87,7 +87,7 @@ export function MaturidadeField({ value, onChange }: {
           <span>
             <b className="text-chalk">Sugestão do sistema:</b> aquecimento gradual e{" "}
             <span className="text-emerald-soft">{SUGESTAO_HORA.novo} mensagens por hora</span>. É o recomendado
-            para chip recém-comprado. A curva diária é a que estiver salva na tela de Campanha.
+            para chip recém-comprado. O limite diário padrão aumenta gradualmente conforme a idade do chip.
           </span>
         )}
       </div>
@@ -96,7 +96,7 @@ export function MaturidadeField({ value, onChange }: {
       <div className="mt-3 rounded-xl border border-line bg-ink-850 p-3">
         <Label className="text-xs">
           <Gauge className="mr-1 inline h-3.5 w-3.5" /> Ritmo de envio deste chip
-          <HelpHint text="Em branco = usa a sugestão do sistema para a maturidade escolhida (por hora) e a curva de aquecimento da tela de Campanha (por dia). Preencher aqui vale só para este chip." />
+          <HelpHint text="Em branco = usa os limites seguros sugeridos pelo sistema para a maturidade e a idade deste chip. Preencher aqui personaliza somente este chip." />
         </Label>
 
         <div className="mt-2 grid gap-3 sm:grid-cols-2">
@@ -119,7 +119,7 @@ export function MaturidadeField({ value, onChange }: {
             <input
               type="number"
               min={1}
-              placeholder="em branco = curva de aquecimento"
+              placeholder="em branco = sugestão do sistema"
               value={value.limite_dia_override ?? ""}
               onChange={(e) => onChange({
                 ...value,

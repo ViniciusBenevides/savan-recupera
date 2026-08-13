@@ -283,11 +283,6 @@ Deno.serve(async (req) => {
       .eq("cobrador_id", chip.cobrador_id).eq("name", refTpl.name).eq("status", "APPROVED").maybeSingle();
     if (!aprov) { pulados.meta_template_nao_aprovado = (pulados.meta_template_nao_aprovado ?? 0) + 1; continue; }
 
-    // Intervalo ALEATÓRIO entre mensagens (anti-ban): cada envio aguarda um tempo sorteado em
-    // [intervalo_min_segundos, intervalo_max_segundos]. Compatível com config antiga (só o mín).
-    const intMin = Math.max(5, Number(cfg.intervalo_min_segundos ?? 30));
-    let intMax = Number(cfg.intervalo_max_segundos ?? 90);
-    if (!Number.isFinite(intMax) || intMax < intMin) intMax = intMin;
     const simulacao = cfg.modo_simulacao === true || cfg.modo_simulacao === "true";
     const restanteJanela = minutosRestantesJanela(cfg.janela_envio);
     const nomeBot = cfg.ia?.nome_bot ?? "Ana";
@@ -310,6 +305,13 @@ Deno.serve(async (req) => {
     const restanteHora = Math.max(0, (limHora ?? 0) - (mHora?.msgs ?? 0));
     if (restanteHora <= 0) { pulados.teto_hora = (pulados.teto_hora ?? 0) + 1; continue; }
 
+    // A aba do CHIP é a única fonte configurável do ritmo. O teto por hora vira também a
+    // cadência entre mensagens; uma variação de até 25% evita intervalos mecanicamente iguais.
+    // As antigas chaves intervalo_min/max continuam no banco por compatibilidade histórica,
+    // mas não comandam mais o disparador.
+    const intMin = Math.max(5, Math.ceil(3600 / Math.max(1, Number(limHora))));
+    const intMax = Math.max(intMin, Math.ceil(intMin * 1.25));
+
     // O W01 consulta a cada 5 min. O lote cabe nesse horizonte quando os intervalos sao curtos;
     // com intervalos maiores ele cai para um item, e proximo_disparo_em segura os outros schedules.
     const HORIZONTE_MIN = 5;
@@ -319,16 +321,10 @@ Deno.serve(async (req) => {
     const lote = Math.min(porHorizonte, Math.max(1, demanda), restanteHora);
     if (lote <= 0) continue;
 
-    // Piso do intervalo derivado do ritmo: com um teto de N msgs/hora, dois envios não podem sair
-    // mais juntos que 3600/N segundos. O sorteio anti-ban (§28) continua, só que a partir desse piso.
-    const pisoRitmo = (limHora ?? 0) > 0 ? Math.floor(3600 / (limHora as number)) : 0;
-    const intMinEfetivo = Math.max(intMin, pisoRitmo);
-    const intMaxEfetivo = Math.max(intMax, intMinEfetivo);
-
     // Reserva o chip antes de tirar itens da fila. O Wait do n8n controla mensagens dentro deste
     // lote; esta reserva controla o primeiro envio dos proximos schedules e evita sobreposicao.
     const delaysReservados = Array.from({ length: lote }, () =>
-      intMinEfetivo + Math.floor(Math.random() * (intMaxEfetivo - intMinEfetivo + 1))
+      intMin + Math.floor(Math.random() * (intMax - intMin + 1))
     );
     const agoraIso = new Date(agoraMs).toISOString();
     const reservaIso = new Date(agoraMs + delaysReservados.reduce((s, n) => s + n, 0) * 1000).toISOString();

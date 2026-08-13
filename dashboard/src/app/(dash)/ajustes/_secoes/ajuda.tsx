@@ -57,7 +57,7 @@ const TELAS = [
   { icon: LayoutDashboard, n: "Início", d: "“Como está indo?”. Na aba Resumo ficam a chave que liga/desliga a campanha, o Modo simulação, a Fila de hoje (quanto ainda cabe e até que horas), os cartões de resultado e o funil. A aba Dinheiro lista os Pix gerados e pagos com a sua comissão (os totais reais não contam os disparos de teste). A aba Histórico traz o dia a dia, o melhor horário para abordar e o desempenho de cada modelo de mensagem." },
   { icon: FolderUp, n: "Carteiras", d: "“Quem eu estou cobrando?”. A aba Carteiras lista suas planilhas importadas com status (Importando / Ativa / Pausada / Arquivada) — só as Ativas disparam. A aba Devedores é a busca em todos eles, com filtro por carteira. Ao abrir uma carteira você tem quatro abas: Visão geral (status, distribuição, subir planilha e histórico de importações), Fluxo do robô (a linha do tempo inteira — primeira mensagem, reenvios, a conversa e o termo de quitação — mais os ajustes de persona e desconto), Conhecimento (respostas prontas desta carteira) e Recebimento (Wallet do credor e escaladores)." },
   { icon: MessagesSquare, n: "Conversas", d: "“O que está acontecendo agora?”. A aba Todas é a caixa de entrada com o histórico completo de cada contato. A aba Precisam de você mostra os casos que o robô entregou a um humano, com contador no título, contexto e desfecho — antes isso era a tela “Escalações”." },
-  { icon: Settings, n: "Ajustes", d: "“Como a máquina roda?”. Envio: horário, ritmo, dias, feriados e aquecimento. Chips: os números de WhatsApp (credenciais da Meta, maturidade, teste) e a calculadora de custo. Integrações: Asaas, chaves de API, o modelo de IA que o robô usa e os templates aprovados pela Meta. Equipe: quem entra no painel e com que papel. Minha conta e Ajuda." },
+  { icon: Settings, n: "Ajustes", d: "“Como a máquina roda?”. Envio: dias, horários e feriados. Chips: os números de WhatsApp, o ritmo individual de cada um, credenciais da Meta, maturidade, teste e a calculadora de custo. Integrações: Asaas, chaves de API, o modelo de IA que o robô usa e os templates aprovados pela Meta. Equipe: quem entra no painel e com que papel. Minha conta e Ajuda." },
 ];
 
 const PROBLEMAS = [
@@ -570,7 +570,7 @@ export function Ajuda() {
                 <li className="flex gap-3"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald" /> Enquadra sempre como quitação voluntária / encerramento com termo.</li>
                 <li className="flex gap-3"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald" /> Se perguntarem sobre prescrição, responde com honestidade (dívida antiga, pode estar prescrita, pagamento é voluntário).</li>
                 <li className="flex gap-3"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald" /> Confirma a identidade antes de revelar CPF/valor.</li>
-                <li className="flex gap-3"><Clock className="mt-0.5 h-4 w-4 shrink-0 text-emerald" /> Envia só das 8h às 20h (horário de São Paulo), em dias úteis (seg–sex), pulando feriados nacionais, com intervalo aleatório (30–90s) e tamanho de mensagem variável entre os envios — anti-bloqueio do chip.</li>
+                <li className="flex gap-3"><Clock className="mt-0.5 h-4 w-4 shrink-0 text-emerald" /> Envia só nos dias e horários permitidos, pulando feriados nacionais. A cadência é calculada pelo limite por hora definido individualmente em cada chip.</li>
               </ul>
               <div className="mt-5">
                 <Callout tone="rose" title="Bloqueante legal">

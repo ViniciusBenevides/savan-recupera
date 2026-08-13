@@ -41,7 +41,7 @@ export default async function AjustesPage({ searchParams }: {
   const aba = resolverAba(abas, pedida);
 
   const sub: Record<string, string> = {
-    envio: "Quando e em que ritmo o robô envia.",
+    envio: "Dias e horários em que o robô pode enviar.",
     chips: "Os números de WhatsApp por onde ele conversa.",
     modelos: "Os textos que a Meta precisa aprovar para o robô abrir conversa.",
     integracoes: "Asaas, chaves de API e serviços externos.",

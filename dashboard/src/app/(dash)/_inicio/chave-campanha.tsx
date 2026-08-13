@@ -8,9 +8,8 @@ import { Power, FlaskConical, SlidersHorizontal } from "lucide-react";
 
 /**
  * A chave geral da operação. Antes era uma página inteira ("Campanha") só para dois
- * interruptores; agora ela vive no Início, junto do número que ela move. As REGRAS de
- * envio (janela, ritmo, aquecimento) — que se mexe uma vez e esquece — foram para
- * Ajustes → Envio, com o link daqui.
+ * interruptores; agora ela vive no Início, junto do número que ela move. A janela de
+ * envio fica em Ajustes → Envio; o ritmo é definido individualmente em Ajustes → Chips.
  */
 export function ChaveCampanha({ ativa: ativa0, simulacao: sim0, aguardando, enviados, conta, podeEditar }: {
   ativa: boolean; simulacao: boolean; aguardando: number; enviados: number; conta: string; podeEditar: boolean;
@@ -46,12 +45,12 @@ export function ChaveCampanha({ ativa: ativa0, simulacao: sim0, aguardando, envi
             </h3>
             <p className="mt-1 max-w-md text-sm text-mist">
               {ativa
-                ? "O robô está enviando dentro das regras de horário e ritmo."
+                ? "O robô está enviando nos horários permitidos e no ritmo de cada chip."
                 : "Nenhuma mensagem sai enquanto estiver desligada."}
             </p>
             {podeEditar && (
               <Link href="/ajustes" className="mt-1.5 inline-flex items-center gap-1 text-xs text-emerald hover:underline">
-                <SlidersHorizontal className="h-3 w-3" /> Ajustar horário, ritmo e aquecimento
+                <SlidersHorizontal className="h-3 w-3" /> Ajustar dias e horários
               </Link>
             )}
           </div>
