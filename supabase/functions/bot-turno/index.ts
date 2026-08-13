@@ -290,6 +290,47 @@ function tools() {
   ];
 }
 
+async function concluirNaoPerturbe(
+  sb: SupabaseClient,
+  conv: { id: number; devedor_id: number },
+  carteiraId: number | null,
+  simulacao: boolean,
+) {
+  const { data: alterada, error } = await sb.from("conversas")
+    .update({ estado: "optout", proximo_followup_em: null })
+    .eq("id", conv.id).neq("estado", "optout").select("id").maybeSingle();
+  if (error) throw error;
+  if (!alterada) return;
+
+  await sb.from("devedores").update({ status_cobranca: "nao_perturbe" }).eq("id", conv.devedor_id);
+  await sb.from("eventos_campanha").insert({
+    tipo: "optout", devedor_id: conv.devedor_id, carteira_id: carteiraId, payload: { simulacao },
+  });
+  if (!simulacao) {
+    await sb.rpc("fn_inc_metrica_dia", {
+      p_dia: new Date().toISOString().slice(0, 10), p_campo: "optouts", p_n: 1,
+    });
+  }
+}
+
+async function concluirPessoaErrada(
+  sb: SupabaseClient,
+  conv: { id: number; devedor_id: number },
+  carteiraId: number | null,
+  simulacao: boolean,
+) {
+  const { data: alterada, error } = await sb.from("conversas")
+    .update({ estado: "encerrada", proximo_followup_em: null })
+    .eq("id", conv.id).neq("estado", "encerrada").select("id").maybeSingle();
+  if (error) throw error;
+  if (!alterada) return;
+
+  await sb.from("devedores").update({ status_cobranca: "recusado" }).eq("id", conv.devedor_id);
+  await sb.from("eventos_campanha").insert({
+    tipo: "pessoa_errada", devedor_id: conv.devedor_id, carteira_id: carteiraId, payload: { simulacao },
+  });
+}
+
 type EstadoFila = "pendente" | "processando" | "concluida" | "suplantada" | "falhou";
 
 async function registrarNaFila(
@@ -448,6 +489,7 @@ Deno.serve(async (req) => {
   let escalarMotivo: string | null = null;
   let escalarResumo: string | null = null;
   let encerrar = false;
+  const toolsExecutadas = new Set<string>();
 
   for (let passo = 0; passo < 5; passo++) {
     const r = await fetch(OPENAI, { method: "POST", headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" }, body: JSON.stringify({ model: modelo, messages, tools: tools(), temperature: 0.7 }) });
@@ -459,6 +501,7 @@ Deno.serve(async (req) => {
 
     for (const tc of msg.tool_calls) {
       const nome = tc.function.name;
+      toolsExecutadas.add(nome);
       let args: any = {};
       try { args = JSON.parse(tc.function.arguments || "{}"); } catch { /**/ }
       let resultado: any = { ok: true };
@@ -522,15 +565,10 @@ Deno.serve(async (req) => {
           : { ok: true, instrucao: "Encerre com naturalidade: avise que vai transferir para um atendente humano da equipe, que dara sequencia por aqui mesmo. Nao invente dados." };
       } else if (nome === "nao_perturbe") {
         acao = "encerrar"; encerrar = true;
-        await sb.from("devedores").update({ status_cobranca: "nao_perturbe" }).eq("id", conv.devedor_id);
-        await sb.from("conversas").update({ estado: "optout", proximo_followup_em: null }).eq("id", conv.id);
-        await sb.from("eventos_campanha").insert({ tipo: "optout", devedor_id: conv.devedor_id, carteira_id: carteiraId, payload: { simulacao } });
-        if (!simulacao) await sb.rpc("fn_inc_metrica_dia", { p_dia: new Date().toISOString().slice(0, 10), p_campo: "optouts", p_n: 1 });
+        await concluirNaoPerturbe(sb, conv, carteiraId, simulacao);
       } else if (nome === "pessoa_errada") {
         acao = "encerrar"; encerrar = true;
-        await sb.from("devedores").update({ status_cobranca: "recusado" }).eq("id", conv.devedor_id);
-        await sb.from("conversas").update({ estado: "encerrada", proximo_followup_em: null }).eq("id", conv.id);
-        await sb.from("eventos_campanha").insert({ tipo: "pessoa_errada", devedor_id: conv.devedor_id, carteira_id: carteiraId, payload: { simulacao } });
+        await concluirPessoaErrada(sb, conv, carteiraId, simulacao);
       }
       messages.push({ role: "tool", tool_call_id: tc.id, content: JSON.stringify(resultado) });
     }
@@ -564,6 +602,19 @@ Deno.serve(async (req) => {
       await sb.from("conversas").update({ etapa_roteiro: proxima }).eq("id", conv.id);
     } else if (!conv.etapa_roteiro) {
       await sb.from("conversas").update({ etapa_roteiro: etapaAtual.id }).eq("id", conv.id);
+    }
+
+    // Uma etapa pode classificar a resposta e apontar direto para um encerramento. Nesse caso não
+    // haverá um próximo turno para a etapa terminal chamar sua tool. Executamos a ação declarada no
+    // destino agora, de forma idempotente, para a conversa não ficar falsamente em "Respondeu".
+    const destino = (carteira?.roteiro?.etapas ?? []).find((e: any) => ehConversa(e) && e.id === proxima);
+    const instrucaoDestino = `${destino?.id ?? ""} ${destino?.instrucao ?? ""}`.toLowerCase();
+    if (proxima && instrucaoDestino.includes("pessoa_errada") && !toolsExecutadas.has("pessoa_errada")) {
+      acao = "encerrar"; encerrar = true;
+      await concluirPessoaErrada(sb, conv, carteiraId, simulacao);
+    } else if (proxima && instrucaoDestino.includes("nao_perturbe") && !toolsExecutadas.has("nao_perturbe")) {
+      acao = "encerrar"; encerrar = true;
+      await concluirNaoPerturbe(sb, conv, carteiraId, simulacao);
     }
   }
 

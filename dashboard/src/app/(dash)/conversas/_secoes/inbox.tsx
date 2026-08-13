@@ -59,6 +59,8 @@ const FILTROS: { v: string; label: string }[] = [
   { v: "aguardando_resposta", label: "Aguardando" },
   { v: "bot_ativo", label: "Responderam" },
   { v: "humano", label: "Com humano" },
+  { v: "encerrada", label: "Encerradas" },
+  { v: "optout", label: "Não perturbe" },
   { v: "pix_enviado", label: "Pix" },
   { v: "pago", label: "Pagaram" },
 ];
