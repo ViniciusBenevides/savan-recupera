@@ -615,6 +615,7 @@ Deno.serve(async (req) => {
     const respostaOrigem = respostaOrigemDeterministica({
       primeiroNome: prop?.primeiro_nome ?? null,
       cpf: origemDev?.cpf_cnpj ?? null,
+      processo: origemDev?.processo ?? null,
       vencimento: origemDev?.vencimento ?? null,
     });
     await sb.from("mensagens").insert({
@@ -692,7 +693,7 @@ Deno.serve(async (req) => {
           valor_registrado: origemDev?.saldo ?? prop.valor_original,
           aviso_data_ausente: origemDev?.vencimento
             ? null
-            : "A base recebida não informa a data da compra ou vencimento. Não invente um ano; ofereça solicitar o documento de origem.",
+            : "O cadastro disponível neste atendimento não informa a data da compra ou vencimento. Não conclua que a documentação de origem não contém essa informação; ofereça consultá-la.",
           pagamento: "Somente à MC Cred, por Pix ou no escritório informado; não orientar pagamento na loja SAVAN.",
         };
       } else if (nome === "desconto_extra") {

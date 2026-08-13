@@ -20,6 +20,7 @@ export function cpfMascarado(cpf: unknown): string | null {
 export function respostaOrigemDeterministica(dados: {
   primeiroNome?: string | null;
   cpf?: string | null;
+  processo?: string | null;
   vencimento?: string | null;
 }): string {
   const nome = String(dados.primeiroNome ?? "").trim();
@@ -35,10 +36,10 @@ export function respostaOrigemDeterministica(dados: {
     if (!aniversarioPassou) anos--;
     data = `A data de vencimento registrada é ${dt.toLocaleDateString("pt-BR", { timeZone: "UTC" })}, há aproximadamente ${Math.max(0, anos)} ano(s).`;
   } else {
-    data = "A base recebida não informa a data da compra, do vencimento ou da distribuição. Por isso, não consigo afirmar o ano nem há quanto tempo a dívida existe sem inventar uma informação.";
+    data = "O cadastro disponível neste atendimento não informa a data da compra, do vencimento ou da distribuição. Por isso, não consigo afirmar o ano nem há quanto tempo a dívida existe sem consultar a documentação de origem.";
   }
   return [
-    `${prefixo}${cpf ? ` Ele está vinculado ao CPF ${cpf}.` : ""}`,
+    `${prefixo}${cpf ? ` Ele está vinculado ao CPF ${cpf}.` : ""}${dados.processo ? ` O processo registrado é ${dados.processo}.` : ""}`,
     data,
     "A MC Cred adquiriu a carteira de recebíveis da SAVAN e hoje é a responsável por esta quitação.",
     "Por isso, o pagamento não é feito na loja SAVAN: ele deve ser realizado pelo Pix da MC Cred ou presencialmente no endereço oficial informado neste WhatsApp.",

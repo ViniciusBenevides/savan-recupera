@@ -14,10 +14,11 @@ Deno.test("detecta perguntas de ano e desconhecimento da compra", () => {
 
 Deno.test("explica ausencia de data, cpf mascarado e cessao", () => {
   assertEquals(cpfMascarado("23353253882"), "***.***.***-82");
-  const resposta = respostaOrigemDeterministica({ primeiroNome: "Julia", cpf: "23353253882", vencimento: null });
+  const resposta = respostaOrigemDeterministica({ primeiroNome: "Julia", cpf: "23353253882", processo: "34/26467", vencimento: null });
   assertMatch(resposta, /não informa a data/);
   assertMatch(resposta, /não consigo afirmar o ano/);
   assertMatch(resposta, /MC Cred adquiriu a carteira/);
+  assertMatch(resposta, /processo registrado é 34\/26467/);
   assertMatch(resposta, /não é feito na loja SAVAN/);
   assert(!resposta.includes("23353253882"));
 });
