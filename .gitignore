@@ -21,6 +21,7 @@ dashboard/next-env.d.ts
 
 # === Tooling local e material de referência (não é o trabalho / bloat) ===
 .claude/
+.agents/
 Documentacao/
 referencias/
 conversa_com_claude.md
