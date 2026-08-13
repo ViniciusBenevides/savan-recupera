@@ -7,12 +7,29 @@ import { EscalacoesLista } from "./escalacoes-lista";
  */
 export async function Escaladas() {
   const sb = await supabaseServer();
-  const { data } = await sb.from("escalacoes")
-    .select("*, devedores(nome, cpf_cnpj), chips(nome), pagamentos(valor, status), carteiras(nome)")
-    .order("criado_em", { ascending: false })
-    .limit(200);
+  const [{ data, error }, { data: cfg }] = await Promise.all([
+    sb.from("escalacoes")
+      .select(`
+        *,
+        devedores(nome, cpf_cnpj),
+        chip_bot:chips!escalacoes_chip_id_fkey(nome),
+        escalador:chips!escalacoes_equipe_chip_id_fkey(nome),
+        pagamentos(valor, status),
+        carteiras(nome),
+        conversas(chatwoot_conversation_id)
+      `)
+      .order("criado_em", { ascending: false })
+      .limit(200),
+    sb.from("configuracoes").select("valor")
+      .eq("chave", "chatwoot").is("cobrador_id", null).maybeSingle(),
+  ]);
 
-  return <EscalacoesLista inicial={data ?? []} />;
+  const chatwoot = (cfg?.valor as { url?: string; account_id?: number } | null) ?? null;
+  const chatwootBase = chatwoot?.url
+    ? `${chatwoot.url.replace(/\/$/, "")}/app/accounts/${chatwoot.account_id ?? 1}/conversations`
+    : "";
+
+  return <EscalacoesLista inicial={data ?? []} chatwootBase={chatwootBase} erro={error?.message ?? null} />;
 }
 
 /** Quantas escalações estão abertas — vira o contador da aba. */

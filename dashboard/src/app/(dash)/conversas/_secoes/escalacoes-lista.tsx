@@ -24,7 +24,11 @@ const FILTROS = [
   { k: "fechadas", t: "Fechadas" },
 ] as const;
 
-export function EscalacoesLista({ inicial }: { inicial: any[] }) {
+export function EscalacoesLista({ inicial, chatwootBase, erro }: {
+  inicial: any[];
+  chatwootBase: string;
+  erro: string | null;
+}) {
   const router = useRouter();
   const [filtro, setFiltro] = React.useState<(typeof FILTROS)[number]["k"]>("abertas");
 
@@ -46,6 +50,14 @@ export function EscalacoesLista({ inicial }: { inicial: any[] }) {
 
   return (
     <div className="space-y-4">
+      <Card className="border-violet/25 bg-violet/5 p-4">
+        <div className="text-sm font-medium text-chalk">Como usar esta fila</div>
+        <p className="mt-1 text-xs leading-relaxed text-mist">
+          Assuma o caso, abra a conversa no Chatwoot para atender a pessoa e, ao terminar,
+          registre aqui se houve acordo ou se foi encerrado sem acordo.
+        </p>
+      </Card>
+
       <div className="flex flex-wrap items-center gap-2">
         {FILTROS.map((f) => (
           <button key={f.k} onClick={() => setFiltro(f.k)}
@@ -56,19 +68,25 @@ export function EscalacoesLista({ inicial }: { inicial: any[] }) {
         {nAbertas > 0 && <Badge tone="amber"><Clock className="h-3.5 w-3.5" /> {nAbertas} aguardando atendimento</Badge>}
       </div>
 
-      {itens.length === 0 && (
+      {erro && (
+        <Card className="border-rose/30 bg-rose/5 py-6 text-center text-sm text-rose">
+          Não foi possível carregar os casos. Atualize a página ou tente novamente em instantes.
+        </Card>
+      )}
+
+      {!erro && itens.length === 0 && (
         <Card className="py-10 text-center text-sm text-mist">
           <Headset className="mx-auto mb-2 h-6 w-6 text-mist" />
           Nenhuma escalação {filtro === "abertas" ? "em aberto" : filtro === "fechadas" ? "fechada" : ""}.
         </Card>
       )}
 
-      {itens.map((e) => <ItemEscalacao key={e.id} e={e} />)}
+      {itens.map((e) => <ItemEscalacao key={e.id} e={e} chatwootBase={chatwootBase} />)}
     </div>
   );
 }
 
-function ItemEscalacao({ e }: { e: any }) {
+function ItemEscalacao({ e, chatwootBase }: { e: any; chatwootBase: string }) {
   const router = useRouter();
   const [aberto, setAberto] = React.useState(false);
   const [pend, setPend] = React.useState(false);
@@ -79,6 +97,8 @@ function ItemEscalacao({ e }: { e: any }) {
   const st = STATUS[e.status] ?? STATUS.aberta;
   const aberta = e.status === "aberta" || e.status === "em_atendimento";
   const hist = e.contexto_snapshot?.historico ?? [];
+  const chatwootId = e.conversas?.chatwoot_conversation_id;
+  const chatwootHref = chatwootBase && chatwootId ? `${chatwootBase}/${chatwootId}` : null;
 
   async function atualizar(body: any) {
     setPend(true);
@@ -105,7 +125,8 @@ function ItemEscalacao({ e }: { e: any }) {
             </div>
             <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-mist">
               {e.carteiras?.nome && <span>Carteira: {e.carteiras.nome}</span>}
-              <span className="inline-flex items-center gap-1"><Smartphone className="h-3 w-3" /> {e.chips?.nome ?? "chip removido"}</span>
+              <span className="inline-flex items-center gap-1"><Smartphone className="h-3 w-3" /> {e.chip_bot?.nome ?? "chip removido"}</span>
+              {e.escalador?.nome && <span className="inline-flex items-center gap-1"><User className="h-3 w-3" /> {e.escalador.nome}</span>}
               <span className="inline-flex items-center gap-1"><Clock className="h-3 w-3" /> {dataHoraBR(e.criado_em)}</span>
               {e.assumido_por && <span className="inline-flex items-center gap-1"><User className="h-3 w-3" /> {e.assumido_por}</span>}
               {e.atendente_numero && <span className="inline-flex items-center gap-1 text-violet"><Smartphone className="h-3 w-3" /> cobrador: {e.atendente_numero}</span>}
@@ -140,6 +161,13 @@ function ItemEscalacao({ e }: { e: any }) {
       {/* ações */}
       {aberta && (
         <div className="flex flex-wrap items-center gap-2">
+          {chatwootHref && (
+            <a href={chatwootHref} target="_blank" rel="noreferrer">
+              <Button variant="outline" size="sm">
+                <ExternalLink className="h-4 w-4" /> Abrir atendimento
+              </Button>
+            </a>
+          )}
           {e.status === "aberta" && (
             <Button variant="outline" size="sm" onClick={() => atualizar({ status: "em_atendimento" })} disabled={pend}>
               <User className="h-4 w-4" /> Assumir
