@@ -76,6 +76,7 @@ Deno.serve(async (req) => {
   } catch { _role = ""; }
   if (_role !== "service_role") return json({ ok: false, erro: "nao_autorizado" }, 401);
 
+  try {
   const sb = admin();
   const cfg = await getConfig(sb);
   const b = await req.json();
@@ -182,4 +183,9 @@ Deno.serve(async (req) => {
   }
 
   return json({ ok: true, simulacao, pagamento_id: payId, valor_final: valorFinal, desconto_pct: descontoPct, pix_copia_cola: pixPayload, invoice_url: invoiceUrl, valido_ate: dueDate.split("-").reverse().join("/") });
+  } catch (e) {
+    const detalhe = e instanceof Error ? e.message : String(e);
+    console.error("gerar-pix:", detalhe);
+    return json({ ok: false, erro: "falha_gerar_pix", detalhe: detalhe.slice(0, 600) }, 502);
+  }
 });

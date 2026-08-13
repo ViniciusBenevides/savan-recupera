@@ -88,6 +88,7 @@ function chatwootTemplateBody(tpl: TplMeta) {
 // Chaves de config que existem "por cobrador" (o resto é só global/infra).
 const CHAVES_POR_COBRADOR = new Set([
   "campanha_ativa", "modo_simulacao", "janela_envio", "intervalo_min_segundos", "intervalo_max_segundos", "aquecimento", "faixas_desconto", "ia",
+  "meta_abordagem_template", "meta_abordagem_template_candidato",
 ]);
 
 // Carrega TODA a tabela e devolve um resolvedor: resolve(cobradorId) = global + overlay do cobrador.
@@ -212,6 +213,22 @@ function agoraNaTz(tz: string): { minutos: number; dow: number } {
   return { minutos: h * 60 + m, dow };
 }
 
+function saudacaoNaTz(tz: string): string {
+  const hora = new Date(new Date().toLocaleString("en-US", { timeZone: tz })).getHours();
+  if (hora < 12) return "Bom dia";
+  if (hora < 18) return "Boa tarde";
+  return "Boa noite";
+}
+
+function referenciaPorHorario(ref: any, tz: string): any {
+  const variantes = ref?.variantes_horario;
+  if (!variantes || typeof variantes !== "object") return ref;
+  const saudacao = saudacaoNaTz(tz);
+  const chave = saudacao === "Bom dia" ? "dia" : saudacao === "Boa tarde" ? "tarde" : "noite";
+  const name = String(variantes[chave] ?? "").trim();
+  return name ? { ...ref, name, variantes_horario: undefined } : ref;
+}
+
 function dentroDaJanela(janela: any): boolean {
   const tz = janela?.tz ?? "America/Sao_Paulo";
   if (ehFeriadoHoje(janela, tz)) return false;
@@ -297,10 +314,25 @@ Deno.serve(async (req) => {
     // A abordagem ABRE a conversa, então está sempre fora da janela de 24h: a Cloud API só aceita
     // modelo aprovado. Sem template configurado (ou ainda em análise na Meta) o chip é pulado com o
     // motivo — melhor lote vazio explicado do que envio fantasma marcado como "enviado".
-    const refTpl = cfg.meta_abordagem_template;
+    const tzAbordagem = cfg.janela_envio?.tz ?? "America/Sao_Paulo";
+    const refAtivo = referenciaPorHorario(cfg.meta_abordagem_template, tzAbordagem);
+    const refCandidato = referenciaPorHorario(cfg.meta_abordagem_template_candidato, tzAbordagem);
+    let refTpl = refAtivo;
+    // Rollout sem interrupcao: candidato so substitui o modelo atual quando o cache da Meta
+    // confirmar APPROVED. PENDING/REJECTED/ausente mantem o modelo anterior funcionando.
+    if (String(refCandidato?.name ?? "").trim()) {
+      let qCand = sb.from("meta_templates").select("status")
+        .eq("name", refCandidato.name).eq("language", refCandidato.language ?? "pt_BR")
+        .eq("status", "APPROVED");
+      qCand = chip.cobrador_id ? qCand.eq("cobrador_id", chip.cobrador_id) : qCand.is("cobrador_id", null);
+      const { data: candAprovado } = await qCand.maybeSingle();
+      if (candAprovado) refTpl = refCandidato;
+    }
     if (!String(refTpl?.name ?? "").trim()) { pulados.meta_template_ausente = (pulados.meta_template_ausente ?? 0) + 1; continue; }
-    const { data: aprov } = await sb.from("meta_templates").select("status")
-      .eq("cobrador_id", chip.cobrador_id).eq("name", refTpl.name).eq("status", "APPROVED").maybeSingle();
+    let qAprov = sb.from("meta_templates").select("status")
+      .eq("name", refTpl.name).eq("language", refTpl.language ?? "pt_BR").eq("status", "APPROVED");
+    qAprov = chip.cobrador_id ? qAprov.eq("cobrador_id", chip.cobrador_id) : qAprov.is("cobrador_id", null);
+    const { data: aprov } = await qAprov.maybeSingle();
     if (!aprov) { pulados.meta_template_nao_aprovado = (pulados.meta_template_nao_aprovado ?? 0) + 1; continue; }
 
     const simulacao = cfg.modo_simulacao === true || cfg.modo_simulacao === "true";
@@ -388,12 +420,14 @@ Deno.serve(async (req) => {
       const primeiroNome = (dev?.nome ?? "").split(" ")[0];
       const primeiroNomeCap = primeiroNome.charAt(0) + primeiroNome.slice(1).toLowerCase();
       const nomeCompleto = formatarNomeCompleto(dev?.nome);
+      const tzMensagem = cfg.janela_envio?.tz ?? "America/Sao_Paulo";
       // ATENÇÃO (§32 x §35): a 1ª mensagem NÃO é o bloco de disparo do fluxo da carteira — a Meta
       // exige modelo aprovado por ela, palavra por palavra. O fluxo volta a mandar assim que a
       // pessoa responde e a janela de 24h abre. `conteudo` = o modelo já renderizado, para que o
       // histórico do painel e do atendente mostre exatamente o que a pessoa recebeu.
       const tplMeta = await montarTemplate(sb, chip.cobrador_id ?? null, refTpl, {
         primeiro_nome: primeiroNomeCap, nome: nomeCompleto, credor: credor ?? "", nome_bot: nomeBot,
+        saudacao: saudacaoNaTz(tzMensagem),
       });
       if (!tplMeta) {
         // sumiu do cache ou faltou valor para alguma variável: devolve à fila em vez de virar
@@ -404,7 +438,15 @@ Deno.serve(async (req) => {
       }
       const conteudo = tplMeta.texto;
 
-      await sb.from("fila_envios").update({ mensagem_renderizada: conteudo }).eq("id", item.id);
+      const { data: cartFluxo } = item.carteira_id
+        ? await sb.from("carteiras").select("fluxo_versao_ativa_id").eq("id", item.carteira_id).maybeSingle()
+        : { data: null };
+      await sb.from("fila_envios").update({
+        mensagem_renderizada: conteudo,
+        fluxo_versao_id: cartFluxo?.fluxo_versao_ativa_id ?? null,
+        meta_template_name: tplMeta.name,
+        meta_template_language: tplMeta.language,
+      }).eq("id", item.id);
 
       // "digitando" curto e proporcional ao texto (parece humano); espera até o próximo envio = sorteio anti-ban
       const delayTyping = Math.min(8, 3 + Math.floor(conteudo.length / 60) + Math.floor(Math.random() * 3));
@@ -415,6 +457,8 @@ Deno.serve(async (req) => {
         devedor_id: dev?.id, devedor_nome: dev?.nome, processo: dev?.processo, valor_divida: dev?.saldo,
         telefone_id: tel.id, telefone_e164: tel.telefone_e164, contato_existente: dev?.chatwoot_contact_id ?? null,
         mensagem: conteudo, delay_typing: delayTyping, delay_proximo: delayProximo, simulacao,
+        fluxo_versao_id: cartFluxo?.fluxo_versao_ativa_id ?? null,
+        meta_template_name: tplMeta.name,
         // o W01 repassa isto como `template_params` ao Chatwoot (canal whatsapp_cloud)
         template: chatwootTemplateBody(tplMeta).template_params,
       });

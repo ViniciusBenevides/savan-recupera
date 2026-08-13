@@ -62,13 +62,21 @@ Deno.serve(async (req) => {
       const { data: d } = await sb.from("devedores").select("carteira_id").eq("id", b.devedor_id).maybeSingle();
       carteiraId = d?.carteira_id ?? null;
     }
+    const { data: filaAtribuicao } = b.fila_id
+      ? await sb.from("fila_envios")
+        .select("fluxo_versao_id, meta_template_name, meta_template_language, mensagem_renderizada")
+        .eq("id", b.fila_id).maybeSingle()
+      : { data: null };
+    const fluxoVersaoId = b.fluxo_versao_id ?? filaAtribuicao?.fluxo_versao_id ?? null;
 
     // Quando o 1º reenvio sai: pelo bloco de follow-up do fluxo da carteira (§35), que é onde o
     // operador enxerga o tempo de espera. Carteira sem fluxo cai no intervalo global de sempre.
     let horas = (cfg.followup?.intervalos_horas ?? [24, 72, 168])[0];
-    if (carteiraId) {
-      const { data: cart } = await sb.from("carteiras").select("roteiro").eq("id", carteiraId).maybeSingle();
-      const primeiro = (cart?.roteiro?.etapas ?? []).find((e: any) => e?.tipo === "followup");
+    if (carteiraId || fluxoVersaoId) {
+      const { data: fluxo } = fluxoVersaoId
+        ? await sb.from("fluxo_versoes").select("roteiro").eq("id", fluxoVersaoId).maybeSingle()
+        : await sb.from("carteiras").select("roteiro").eq("id", carteiraId).maybeSingle();
+      const primeiro = (fluxo?.roteiro?.etapas ?? []).find((e: any) => e?.tipo === "followup");
       if (Number(primeiro?.espera_horas) > 0) horas = Number(primeiro.espera_horas);
     }
     const prox = new Date(Date.now() + horas * 3600 * 1000).toISOString();
@@ -76,6 +84,7 @@ Deno.serve(async (req) => {
     if (b.chatwoot_conversation_id) {
       const { data: convUp } = await sb.from("conversas").upsert({
         devedor_id: b.devedor_id, carteira_id: carteiraId, chip_id: b.chip_id, telefone_id: b.telefone_id,
+        fluxo_versao_id: fluxoVersaoId,
         chatwoot_conversation_id: b.chatwoot_conversation_id,
         chatwoot_contact_id: b.chatwoot_contact_id ?? null,
         estado: "aguardando_resposta", ultima_msg_em: new Date().toISOString(),
@@ -90,8 +99,7 @@ Deno.serve(async (req) => {
       if (conversaLocalId) {
         let texto: string | null = b.mensagem ?? null;
         if (!texto && b.fila_id) {
-          const { data: filaRow } = await sb.from("fila_envios").select("mensagem_renderizada").eq("id", b.fila_id).maybeSingle();
-          texto = filaRow?.mensagem_renderizada ?? null;
+          texto = filaAtribuicao?.mensagem_renderizada ?? null;
         }
         if (texto) {
           const { data: existe } = await sb.from("mensagens")
@@ -124,7 +132,15 @@ Deno.serve(async (req) => {
       await sb.rpc("fn_inc_chip_metrica_hora", { p_chip: b.chip_id, p_dia: diaLocal, p_hora: hora, p_msgs: 1, p_resp: 0 });
     }
     await sb.from("chips").update({ ultimo_envio_em: new Date().toISOString() }).eq("id", b.chip_id);
-    await sb.from("eventos_campanha").insert({ tipo: "envio", devedor_id: b.devedor_id, chip_id: b.chip_id, carteira_id: carteiraId, payload: { simulacao: sim } });
+    await sb.from("eventos_campanha").insert({
+      tipo: "envio", devedor_id: b.devedor_id, chip_id: b.chip_id, carteira_id: carteiraId,
+      payload: {
+        simulacao: sim,
+        fluxo_versao_id: fluxoVersaoId,
+        meta_template_name: filaAtribuicao?.meta_template_name ?? b.meta_template_name ?? null,
+        meta_template_language: filaAtribuicao?.meta_template_language ?? null,
+      },
+    });
   } else if (b.status === "sem_whatsapp") {
     await sb.from("fila_envios").update({ status: "sem_whatsapp", erro: b.erro ?? "on_whatsapp_false" }).eq("id", b.fila_id);
     let carteiraId = b.carteira_id ?? null;

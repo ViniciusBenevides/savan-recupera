@@ -42,7 +42,7 @@ async function configESegredos(sb: SupabaseClient) {
   const url = String(cfg.chatwoot?.url ?? "").replace(/\/$/, "");
   const accountId = Number(cfg.chatwoot?.account_id ?? 1);
   if (!url || !seg.CHATWOOT_TOKEN) throw new Error("chatwoot_nao_configurado");
-  return { url, accountId, token: seg.CHATWOOT_TOKEN };
+  return { url, accountId, token: seg.CHATWOOT_TOKEN, openAiKey: seg.OPENAI_API_KEY ?? "" };
 }
 
 async function cwGet(base: string, token: string, path: string): Promise<any> {
@@ -78,6 +78,51 @@ function tipoMensagem(v: unknown): "entrada" | "saida" | null {
 
 async function conversaDetalhe(base: string, token: string, accountId: number, convId: number) {
   return await cwGet(base, token, `/api/v1/accounts/${accountId}/conversations/${convId}`);
+}
+
+type AnexoMensagem = {
+  id?: number;
+  file_type?: string;
+  extension?: string;
+  data_url?: string;
+  thumb_url?: string;
+};
+
+function anexosSeguros(anexos: AnexoMensagem[]): any[] {
+  return anexos.map((a) => ({
+    id: a.id ?? null,
+    file_type: a.file_type ?? null,
+    extension: a.extension ?? null,
+    data_url: a.data_url ?? null,
+    thumb_url: a.thumb_url ?? null,
+  }));
+}
+
+async function transcreverAudio(
+  anexo: AnexoMensagem,
+  tokenChatwoot: string,
+  openAiKey: string,
+): Promise<string | null> {
+  if (!anexo.data_url || !openAiKey) return null;
+  const audio = await fetch(anexo.data_url, { headers: { api_access_token: tokenChatwoot } });
+  if (!audio.ok) throw new Error(`audio_download_http_${audio.status}`);
+  const blob = await audio.blob();
+  const extensao = String(anexo.extension ?? "ogg").replace(/[^a-z0-9]/gi, "") || "ogg";
+  const form = new FormData();
+  form.append("file", blob, `audio.${extensao}`);
+  form.append("model", "gpt-4o-mini-transcribe");
+  form.append("language", "pt");
+  form.append("response_format", "json");
+  form.append("prompt", "Conversa brasileira sobre atendimento e negociacao. Preserve nomes proprios, valores e datas exatamente como falados.");
+  const r = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${openAiKey}` },
+    body: form,
+  });
+  if (!r.ok) throw new Error(`openai_transcricao_http_${r.status}`);
+  const d = await r.json();
+  const texto = String(d?.text ?? "").trim();
+  return texto || null;
 }
 
 async function garantirConversa(
@@ -151,6 +196,9 @@ async function garantirConversa(
   const estado = resolvida
     ? (["pago", "optout"].includes(estadoAnterior) ? estadoAnterior : "encerrada")
     : "aguardando_resposta";
+  const { data: carteiraFluxo } = dev.carteira_id
+    ? await sb.from("carteiras").select("fluxo_versao_ativa_id").eq("id", dev.carteira_id).maybeSingle()
+    : { data: null };
 
   const { data: criada, error: erroCriar } = await sb.from("conversas").upsert({
     devedor_id: devedorId,
@@ -159,6 +207,7 @@ async function garantirConversa(
     telefone_id: telefoneId,
     chatwoot_conversation_id: convId,
     chatwoot_contact_id: contactId,
+    fluxo_versao_id: carteiraFluxo?.fluxo_versao_ativa_id ?? null,
     estado,
     ultima_msg_em: quando,
     ultima_msg_de: "sistema",
@@ -170,15 +219,33 @@ async function garantirConversa(
   return criada;
 }
 
-async function espelharMensagem(sb: SupabaseClient, conv: any, msg: any): Promise<"gravada" | "ignorada"> {
-  if (msg?.private === true) return "ignorada";
+async function espelharMensagem(
+  sb: SupabaseClient,
+  conv: any,
+  msg: any,
+  cw: { token: string; openAiKey?: string },
+): Promise<{ status: "gravada" | "ignorada"; conteudo: string | null; transcricao: string | null }> {
+  if (msg?.private === true) return { status: "ignorada", conteudo: null, transcricao: null };
   const direcao = tipoMensagem(msg?.message_type);
-  if (!direcao) return "ignorada";
+  if (!direcao) return { status: "ignorada", conteudo: null, transcricao: null };
   const messageId = numero(msg?.id ?? msg?.chatwoot_message_id);
-  if (!messageId) return "ignorada";
+  if (!messageId) return { status: "ignorada", conteudo: null, transcricao: null };
 
   const criadoEm = iso(msg?.created_at);
-  const conteudo = String(msg?.content ?? msg?.conteudo ?? "");
+  const anexos = (Array.isArray(msg?.attachments) ? msg.attachments : []) as AnexoMensagem[];
+  const anexoAudio = anexos.find((a) => String(a?.file_type ?? "").toLowerCase() === "audio");
+  const tipoConteudo = anexoAudio ? "audio" : String(msg?.content_type ?? "text");
+  let transcricao: string | null = null;
+  let conteudo = String(msg?.content ?? msg?.conteudo ?? "").trim();
+  if (direcao === "entrada" && anexoAudio && !conteudo) {
+    try {
+      transcricao = await transcreverAudio(anexoAudio, cw.token, cw.openAiKey ?? "");
+      conteudo = transcricao ?? "[Audio recebido - transcricao indisponivel]";
+    } catch (e) {
+      console.error(`chatwoot-sync: falha ao transcrever mensagem ${messageId}:`, e instanceof Error ? e.message : String(e));
+      conteudo = "[Audio recebido - transcricao indisponivel]";
+    }
+  }
   const senderType = String(msg?.sender?.type ?? msg?.sender_type ?? "").toLowerCase();
   const origem = direcao === "entrada" ? "devedor" : (senderType === "user" ? "humano" : "bot");
 
@@ -187,7 +254,8 @@ async function espelharMensagem(sb: SupabaseClient, conv: any, msg: any): Promis
   if (erroId) throw erroId;
   if (porId) {
     const { error } = await sb.from("mensagens").update({
-      conversa_id: conv.id, direcao, conteudo, criado_em: criadoEm, simulacao: conv.simulacao === true,
+      conversa_id: conv.id, direcao, conteudo, tipo_conteudo: tipoConteudo,
+      anexos: anexosSeguros(anexos), transcricao, criado_em: criadoEm, simulacao: conv.simulacao === true,
     }).eq("id", porId.id);
     if (error) throw error;
   } else {
@@ -216,13 +284,17 @@ async function espelharMensagem(sb: SupabaseClient, conv: any, msg: any): Promis
         direcao,
         origem,
         conteudo,
+        tipo_conteudo: tipoConteudo,
+        anexos: anexosSeguros(anexos),
+        transcricao,
         chatwoot_message_id: messageId,
         criado_em: criadoEm,
         simulacao: conv.simulacao === true,
       });
       if (error?.code === "23505") {
         const { error: erroCorrida } = await sb.from("mensagens").update({
-          conversa_id: conv.id, direcao, conteudo, criado_em: criadoEm,
+          conversa_id: conv.id, direcao, conteudo, tipo_conteudo: tipoConteudo,
+          anexos: anexosSeguros(anexos), transcricao, criado_em: criadoEm,
           simulacao: conv.simulacao === true,
         }).eq("chatwoot_message_id", messageId);
         if (erroCorrida) throw erroCorrida;
@@ -238,7 +310,7 @@ async function espelharMensagem(sb: SupabaseClient, conv: any, msg: any): Promis
     ultima_msg_de: ultimaMsgDe,
   }).eq("id", conv.id).or(`ultima_msg_em.is.null,ultima_msg_em.lte.${criadoEm}`);
   if (erroConv) throw erroConv;
-  return "gravada";
+  return { status: "gravada", conteudo, transcricao };
 }
 
 async function mensagensDaConversa(
@@ -290,7 +362,7 @@ async function executarBackfill(
       if (!conv) { semVinculo++; continue; }
       conversas++;
       for (const m of await mensagensDaConversa(cw, convId)) {
-        if (await espelharMensagem(sb, conv, m) === "gravada") mensagens++;
+        if ((await espelharMensagem(sb, conv, m, cw)).status === "gravada") mensagens++;
         else ignoradas++;
       }
     }
@@ -323,7 +395,7 @@ Deno.serve(async (req) => {
     const conv = await garantirConversa(sb, cw, convId, detalhe, body?.simulacao);
     if (!conv) return json({ ok: true, ignorado: "conversa_sem_vinculo_local" });
     if (evento === "conversation_created") return json({ ok: true, conversa_id: conv.id, mensagem: "ignorada" });
-    const resultado = await espelharMensagem(sb, conv, {
+    let mensagemEvento: any = {
       id: body?.chatwoot_message_id ?? body?.id,
       message_type: body?.message_type,
       private: body?.private,
@@ -332,8 +404,25 @@ Deno.serve(async (req) => {
       created_at: body?.created_at,
       sender_type: body?.sender_type,
       sender: body?.sender,
+      attachments: body?.attachments,
+    };
+    // O normalizador antigo do n8n nao enviava attachments. Busca a mensagem no Chatwoot
+    // para que audio continue funcionando durante a transicao do workflow.
+    if (!Array.isArray(mensagemEvento.attachments) || mensagemEvento.attachments.length === 0) {
+      const idAlvo = numero(mensagemEvento.id);
+      if (idAlvo) {
+        const encontrada = (await mensagensDaConversa(cw, convId)).find((m) => numero(m?.id) === idAlvo);
+        if (encontrada) mensagemEvento = { ...encontrada, ...mensagemEvento, attachments: encontrada.attachments };
+      }
+    }
+    const resultado = await espelharMensagem(sb, conv, mensagemEvento, cw);
+    return json({
+      ok: true,
+      conversa_id: conv.id,
+      mensagem: resultado.status,
+      conteudo_processado: resultado.conteudo,
+      transcricao: resultado.transcricao,
     });
-    return json({ ok: true, conversa_id: conv.id, mensagem: resultado });
   } catch (e) {
     console.error("chatwoot-sync erro:", e instanceof Error ? e.message : String(e));
     return json({ ok: false, erro: "falha_sincronizacao" }, 500);

@@ -23,6 +23,9 @@ export default async function CarteiraPage({ params, searchParams }: { params: P
     .select("id, arquivo_nome, status, linhas_total, linhas_importadas, linhas_ignoradas, criado_em")
     .eq("carteira_id", Number(id)).order("criado_em", { ascending: false });
 
+  const { data: fluxos } = await sb.from("v_desempenho_fluxos")
+    .select("*").eq("carteira_id", Number(id)).order("versao", { ascending: false });
+
   // padrão global do robô/asaas só é necessário para quem edita; credor/visualizador não veem chaves
   const padrao: Record<string, any> = {};
   let conhecimento: any[] = [];
@@ -53,7 +56,7 @@ export default async function CarteiraPage({ params, searchParams }: { params: P
       </Link>
       <SectionTitle title={carteira.nome} sub={carteira.credor ? `Credor: ${carteira.credor}` : "Acompanhe os envios e o robô desta carteira."} />
       <CarteiraPainel carteira={carteiraView} importacoes={importacoes ?? []} padrao={padrao}
-                      conhecimento={conhecimento} tabInicial={tab} podeEditar={podeEditar} />
+                      conhecimento={conhecimento} fluxos={fluxos ?? []} tabInicial={tab} podeEditar={podeEditar} />
     </>
   );
 }

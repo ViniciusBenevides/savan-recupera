@@ -183,12 +183,13 @@ Deno.serve(async (req) => {
     (ativas ?? []).map((c) => [c.id, { credor: c.credor, cobrador_id: c.cobrador_id, blocos: followupsDoFluxo(c.roteiro) }]));
 
   const { data: convs } = await sb.from("conversas")
-    .select("id, devedor_id, carteira_id, chatwoot_conversation_id, followups_enviados")
+    .select("id, devedor_id, carteira_id, chatwoot_conversation_id, followups_enviados, fluxo_versao_id")
     .eq("estado", "aguardando_resposta").in("carteira_id", idsAtivas)
     .lte("proximo_followup_em", new Date().toISOString())
     .order("proximo_followup_em").limit(30);
 
   let enviados = 0, encerrados = 0, gated = 0, semTemplate = 0, falhas = 0;
+  const fluxoCache = new Map<number, BlocoFollowup[]>();
   for (const c of convs ?? []) {
     const cart = cartMap.get(c.carteira_id) ?? { credor: null, cobrador_id: null, blocos: [] };
     const cfg = resolverCfg(cart.cobrador_id);
@@ -198,7 +199,15 @@ Deno.serve(async (req) => {
 
     // Com fluxo, quem manda no número de reenvios é o desenho da carteira (3 blocos = 3 reenvios);
     // sem fluxo, continua o teto global.
-    const blocos = cart.blocos;
+    let blocos = cart.blocos;
+    if (c.fluxo_versao_id) {
+      if (!fluxoCache.has(c.fluxo_versao_id)) {
+        const { data: fv } = await sb.from("fluxo_versoes").select("roteiro")
+          .eq("id", c.fluxo_versao_id).maybeSingle();
+        fluxoCache.set(c.fluxo_versao_id, followupsDoFluxo(fv?.roteiro));
+      }
+      blocos = fluxoCache.get(c.fluxo_versao_id) ?? blocos;
+    }
     const n = c.followups_enviados ?? 0;
     if (n >= (blocos.length || maxFu)) {
       await sb.from("conversas").update({

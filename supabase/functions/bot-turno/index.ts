@@ -147,7 +147,7 @@ async function resolverConversaPorEntrada(sb: SupabaseClient, cfg: any, seg: Rec
   }
 
   let q = sb.from("conversas")
-    .select("id, devedor_id, carteira_id, estado, chip_id, simulacao, telefone_id, etapa_roteiro")
+    .select("id, devedor_id, carteira_id, estado, chip_id, simulacao, telefone_id, etapa_roteiro, fluxo_versao_id, identidade_confirmada_em")
     .in("estado", ["aguardando_resposta", "bot_ativo"])
     .order("ultima_msg_em", { ascending: false, nullsFirst: false })
     .order("id", { ascending: false })
@@ -234,7 +234,14 @@ function blocoRoteiro(etapa: any, interp: (t: unknown) => string): string[] {
   ];
 }
 
-function montarSystemPrompt(cfg: any, carteira: any, prop: any, conhecimento: string[] = [], etapa: any = null): string {
+function montarSystemPrompt(
+  cfg: any,
+  carteira: any,
+  prop: any,
+  conhecimento: string[] = [],
+  etapa: any = null,
+  identidadeConfirmada = false,
+): string {
   const nomeBot = cfg.ia?.nome_bot ?? "Ana";
   const primeiroNome = prop?.primeiro_nome ?? "a pessoa";
   const interp = (t: unknown) =>
@@ -249,9 +256,13 @@ function montarSystemPrompt(cfg: any, carteira: any, prop: any, conhecimento: st
   if (nuncaCitar.length) regras.push(`NUNCA mencione ${nuncaCitar.join(", ")}, nem QUALQUER consequência por não pagar.`);
   regras.push("NUNCA invente valores. Use SOMENTE os números retornados pela tool consultar_divida.");
   if (g.responder_prescricao_honestamente !== false) regras.push("Se perguntarem sobre prescrição ou se ainda precisa pagar: responda com honestidade que, por ser dívida antiga, pode estar prescrita e o pagamento é voluntário; a proposta é um encerramento definitivo com termo de quitação. Nunca pressione.");
-  if (g.confirmar_identidade !== false) regras.push(`CONFIRME A IDENTIDADE antes de revelar qualquer dado. Pergunte se fala com ${primeiroNome}. Se não for a pessoa / número errado: peça desculpas, chame a tool pessoa_errada e encerre. NUNCA revele CPF, valor da dívida ou outros dados antes da confirmação.`);
+  if (g.confirmar_identidade !== false) regras.push(identidadeConfirmada
+    ? "A IDENTIDADE JÁ FOI CONFIRMADA nesta conversa. NUNCA volte a pedir nome ou confirmação de identidade."
+    : `CONFIRME A IDENTIDADE antes de revelar qualquer dado. Pergunte se fala com ${primeiroNome}. Se não for a pessoa / número errado: peça desculpas, chame a tool pessoa_errada e encerre. NUNCA revele CPF, valor da dívida ou outros dados antes da confirmação.`);
   regras.push("Se pedir para não ser mais contatada: chame a tool nao_perturbe, confirme educadamente e encerre.");
-  regras.push("Se contestar a dívida, não reconhecer, citar advogado/Procon/justiça, ou for hostil: chame a tool escalar_humano.");
+  regras.push("Se disser que não lembra, não reconhece, acha que é golpe ou perguntar a origem/ano: NÃO escale ainda. Chame consultar_origem, explique os dados disponíveis, ofereça comprovação documental e o canal oficial. Se a data estiver ausente, diga isso claramente; nunca invente.");
+  regras.push("Só chame escalar_humano se a pessoa pedir um atendente, fizer contestação formal depois da explicação, solicitar um documento indisponível, ou citar advogado/Procon/Justiça.");
+  regras.push("A carteira de recebíveis da SAVAN foi cedida à MC Cred, atual detentora. NUNCA diga que o pagamento pode ser feito na loja SAVAN. Ofereça o Pix da MC Cred ou atendimento presencial em: Ed Central Sector, Condomínio Edifício Parthenon Center - R. 4, 515 - sala 1619 - Setor Central, Goiânia - GO, 74020-045. O endereço também consta na bio do WhatsApp.");
   const maxRodadas = Number(g.max_rodadas_desconto ?? 1);
   regras.push(`Desconto extra: no máximo ${maxRodadas} vez(es), e somente após recusa explícita da primeira proposta. Use a tool desconto_extra. Nunca ofereça abaixo do valor mínimo.`);
   if (g.regras_extras) regras.push(String(g.regras_extras));
@@ -282,6 +293,7 @@ function montarSystemPrompt(cfg: any, carteira: any, prop: any, conhecimento: st
 function tools() {
   return [
     { type: "function", function: { name: "consultar_divida", description: "Retorna os números oficiais da dívida e a proposta. Use SEMPRE antes de citar qualquer valor.", parameters: { type: "object", properties: {}, required: [] } } },
+    { type: "function", function: { name: "consultar_origem", description: "Retorna dados verificáveis para explicar uma dívida que a pessoa não lembra ou suspeita ser golpe. Use somente depois da identidade confirmada.", parameters: { type: "object", properties: {}, required: [] } } },
     { type: "function", function: { name: "gerar_pix", description: "Gera o Pix de quitação quando a pessoa aceitar. Retorna o copia-e-cola.", parameters: { type: "object", properties: { desconto_extra: { type: "boolean" } }, required: [] } } },
     { type: "function", function: { name: "desconto_extra", description: "Aplica UMA única margem extra de desconto, após recusa explícita da primeira proposta.", parameters: { type: "object", properties: {}, required: [] } } },
     { type: "function", function: { name: "escalar_humano", description: "Transfere para atendente humano (contestação, advogado, hostilidade).", parameters: { type: "object", properties: { motivo: { type: "string" } }, required: ["motivo"] } } },
@@ -393,7 +405,9 @@ Deno.serve(async (req) => {
   const convId = b.chatwoot_conversation_id;
   const incomingMessageId = Number(b.chatwoot_message_id ?? 0) || null;
 
-  let { data: conv } = await sb.from("conversas").select("id, devedor_id, carteira_id, estado, chip_id, simulacao, telefone_id, etapa_roteiro").eq("chatwoot_conversation_id", convId).maybeSingle();
+  let { data: conv } = await sb.from("conversas")
+    .select("id, devedor_id, carteira_id, estado, chip_id, simulacao, telefone_id, etapa_roteiro, fluxo_versao_id, identidade_confirmada_em")
+    .eq("chatwoot_conversation_id", convId).maybeSingle();
   if (!conv) {
     conv = await resolverConversaPorEntrada(sb, cfg, seg, convId);
     if (!conv) return json({ ok: false, erro: "conversa_desconhecida" }, 404);
@@ -444,7 +458,12 @@ Deno.serve(async (req) => {
     const { data: d } = await sb.from("devedores").select("carteira_id").eq("id", conv.devedor_id).maybeSingle();
     carteiraId = d?.carteira_id ?? null;
   }
-  const carteira = await getCarteira(sb, carteiraId);
+  let carteira = await getCarteira(sb, carteiraId);
+  if (conv.fluxo_versao_id) {
+    const { data: versaoFluxo } = await sb.from("fluxo_versoes")
+      .select("roteiro").eq("id", conv.fluxo_versao_id).maybeSingle();
+    if (versaoFluxo?.roteiro && carteira) carteira = { ...carteira, roteiro: versaoFluxo.roteiro };
+  }
   const cobradorId = carteira?.cobrador_id ?? null;
   cfg = await getConfig(sb, cobradorId);
   seg = await carregarSegredos(sb, cobradorId);
@@ -455,10 +474,7 @@ Deno.serve(async (req) => {
   const { data: histRaw } = await sb.from("mensagens").select("origem, direcao, conteudo, chatwoot_message_id").in("conversa_id", convIds.length ? convIds : [conv.id]).order("criado_em", { ascending: false }).limit(21);
   const hist = (histRaw ?? []).filter((m: any) => !incomingMessageId || Number(m.chatwoot_message_id) !== incomingMessageId).slice(0, 20).reverse();
   const conhecimento = await carregarConhecimento(sb, carteiraId ?? null);
-  const etapaAtual = etapaDoRoteiro(carteira, conv.etapa_roteiro ?? null);
-  const messages: any[] = [{ role: "system", content: montarSystemPrompt(cfg, carteira, prop, conhecimento, etapaAtual) }];
-  for (const m of hist) messages.push({ role: m.direcao === "entrada" ? "user" : "assistant", content: m.conteudo ?? "" });
-  messages.push({ role: "user", content: b.mensagem ?? "" });
+  let etapaAtual = etapaDoRoteiro(carteira, conv.etapa_roteiro ?? null);
 
   await sb.from("mensagens").upsert({
     conversa_id: conv.id, direcao: "entrada", origem: "devedor", conteudo: b.mensagem,
@@ -478,6 +494,78 @@ Deno.serve(async (req) => {
       await sb.rpc("fn_inc_chip_metrica_hora", { p_chip: conv.chip_id, p_dia: diaLocal, p_hora: horaLocal, p_msgs: 0, p_resp: 1 });
     }
   }
+
+  // Barreira determinística: enquanto a identidade não estiver confirmada, nenhuma chamada ao
+  // modelo recebe autorização para falar de origem, CPF ou valores. Isso evita que "oi" seja
+  // interpretado como confirmação. Conversas antigas que já tiveram valores revelados são
+  // marcadas como confirmadas para o robô não voltar atrás no meio da negociação.
+  const normalizar = (v: unknown) => String(v ?? "").normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ").trim();
+  const entradaNormal = normalizar(b.mensagem);
+  const confirmouAgora = /^(sim|sim sou eu|sou eu|isso|isso mesmo|correto|correta|pode sim|pode falar|e ela|e ele|eu mesma|eu mesmo)$/.test(entradaNormal);
+  const negouIdentidade = /^(nao|nao sou eu|nao e ela|nao e ele|numero errado)$/.test(entradaNormal)
+    || /\b(nao conheco|pessoa errada|telefone errado|ligou errado|mensagem errada|numero reciclado)\b/.test(entradaNormal);
+  const jaHouveDetalhe = hist.some((m: any) => m.direcao === "saida"
+    && /R\$|valor original|valor final|desconto de \d/i.test(String(m.conteudo ?? "")));
+  let identidadeConfirmada = !!conv.identidade_confirmada_em || jaHouveDetalhe;
+
+  if (!identidadeConfirmada && confirmouAgora) {
+    identidadeConfirmada = true;
+    const confirmadoEm = new Date().toISOString();
+    const proximaEtapa = etapaAtual?.id === "identificar" ? "proposta" : conv.etapa_roteiro;
+    await sb.from("conversas").update({
+      identidade_confirmada_em: confirmadoEm,
+      identidade_confirmada_por: "resposta_explicita",
+      etapa_roteiro: proximaEtapa,
+    }).eq("id", conv.id);
+    conv.identidade_confirmada_em = confirmadoEm;
+    conv.etapa_roteiro = proximaEtapa;
+    if (proximaEtapa === "proposta") etapaAtual = etapaDoRoteiro(carteira, "proposta");
+  } else if (identidadeConfirmada && !conv.identidade_confirmada_em) {
+    await sb.from("conversas").update({
+      identidade_confirmada_em: new Date().toISOString(),
+      identidade_confirmada_por: "legado_dados_ja_revelados",
+    }).eq("id", conv.id);
+  }
+
+  if (!identidadeConfirmada && etapaAtual?.id === "identificar") {
+    let respostaIdentidade: string;
+    let acaoIdentidade = "responder";
+    let encerrarIdentidade = false;
+    if (negouIdentidade) {
+      respostaIdentidade = "Desculpe pelo incômodo. Vou retirar este número do contato destinado a essa pessoa. Tenha um bom dia!";
+      acaoIdentidade = "encerrar";
+      encerrarIdentidade = true;
+      await concluirPessoaErrada(sb, conv, carteiraId, simulacao);
+    } else {
+      const nomeCompleto = String(prop?.nome ?? "a pessoa procurada");
+      respostaIdentidade = `Entendo. Antes de falar sobre qualquer registro, preciso proteger os dados da pessoa procurada. Você é ${nomeCompleto}?`;
+    }
+    await sb.from("mensagens").insert({
+      conversa_id: conv.id, direcao: "saida", origem: "bot", conteudo: respostaIdentidade, simulacao,
+    });
+    await sb.from("conversas").update({
+      ultima_msg_em: new Date().toISOString(), ultima_msg_de: "bot", etapa_roteiro: "identificar",
+    }).eq("id", conv.id);
+    await marcarFila(sb, incomingMessageId, "concluida");
+    return json({
+      ok: true, acao: acaoIdentidade, encerrar: encerrarIdentidade, simulacao,
+      enviado_direto: false, mensagens: [respostaIdentidade],
+    });
+  }
+
+  const { data: origemDev } = await sb.from("devedores")
+    .select("nome, cpf_cnpj, processo, saldo, vencimento, grupo_credor, carteira_credor")
+    .eq("id", conv.devedor_id).maybeSingle();
+  const messages: any[] = [{
+    role: "system",
+    content: montarSystemPrompt(cfg, carteira, prop, conhecimento, etapaAtual, identidadeConfirmada),
+  }];
+  for (const m of hist) messages.push({
+    role: m.direcao === "entrada" ? "user" : "assistant", content: m.conteudo ?? "",
+  });
+  messages.push({ role: "user", content: b.mensagem ?? "" });
 
   const apiKey = seg.OPENAI_API_KEY;
   if (!apiKey) {
@@ -508,7 +596,31 @@ Deno.serve(async (req) => {
       try { args = JSON.parse(tc.function.arguments || "{}"); } catch { /**/ }
       let resultado: any = { ok: true };
       if (nome === "consultar_divida") {
-        resultado = { valor_original: prop.valor_original, desconto_pct: prop.desconto_pct, valor_final: prop.valor_final, ano_divida: prop.ano_divida, valido_ate: prop.valido_ate };
+        resultado = {
+          valor_original: prop.valor_original,
+          desconto_pct: prop.desconto_pct,
+          valor_final: prop.valor_final,
+          ano_divida: prop.ano_divida ?? null,
+          data_vencimento: origemDev?.vencimento ?? null,
+          valido_ate: prop.valido_ate,
+        };
+      } else if (nome === "consultar_origem") {
+        const cpfDigitos = String(origemDev?.cpf_cnpj ?? "").replace(/\D/g, "");
+        resultado = {
+          origem: "SAVAN Calçados",
+          atual_detentora: "MC Cred",
+          cpf_mascarado: cpfDigitos.length >= 2 ? `***.***.***-${cpfDigitos.slice(-2)}` : null,
+          referencia: origemDev?.processo ?? null,
+          data_vencimento: origemDev?.vencimento ?? null,
+          ano_divida: origemDev?.vencimento
+            ? new Date(`${origemDev.vencimento}T00:00:00`).getUTCFullYear()
+            : null,
+          valor_registrado: origemDev?.saldo ?? prop.valor_original,
+          aviso_data_ausente: origemDev?.vencimento
+            ? null
+            : "A base recebida não informa a data da compra ou vencimento. Não invente um ano; ofereça solicitar o documento de origem.",
+          pagamento: "Somente à MC Cred, por Pix ou no escritório informado; não orientar pagamento na loja SAVAN.",
+        };
       } else if (nome === "desconto_extra") {
         const { data: jaUsou } = await sb.from("negociacoes").select("id").eq("devedor_id", conv.devedor_id).eq("desconto_extra_usado", true).limit(1);
         if (jaUsou && jaUsou.length) { resultado = { ok: false, motivo: "desconto_extra_ja_usado", valor_final: prop.valor_final }; }
@@ -527,6 +639,18 @@ Deno.serve(async (req) => {
         const pix = await pixResp.json();
         resultado = pix.ok ? { ok: true, pix_copia_cola: pix.pix_copia_cola, valor_final: pix.valor_final, valido_ate: pix.valido_ate } : { ok: false, erro: "falha_gerar_pix" };
       } else if (nome === "escalar_humano") {
+        const motivoNormal = normalizar(args.motivo);
+        const apenasDuvidaOrigem = /nao (lembra|reconhece)|golpe|origem|ano da divida/.test(motivoNormal);
+        const entradaDuvidaOrigem = /nao (lembro|lembra|reconheco|reconhece)|golpe|que ano|em que ano|compra na savan/.test(entradaNormal);
+        const pediuEscalacaoReal = /atendente|humano|advogad|procon|justica|documento|comprovante|contestacao formal/.test(entradaNormal);
+        if ((apenasDuvidaOrigem || entradaDuvidaOrigem) && !pediuEscalacaoReal) {
+          toolsExecutadas.delete("escalar_humano");
+          resultado = {
+            ok: false,
+            motivo: "duvida_de_origem_nao_exige_humano",
+            instrucao: "Nao escale. Chame consultar_origem, explique a cessao da carteira para a MC Cred e continue a conversa.",
+          };
+        } else {
         acao = "escalar"; escalarMotivo = args.motivo ?? "nao_especificado"; encerrar = true;
         equipe = await escolherEscalador(sb, carteira, cfg, conv.devedor_id);
         await sb.from("devedores").update({ status_cobranca: "contestado" }).eq("id", conv.devedor_id).neq("status_cobranca", "pago");
@@ -565,6 +689,7 @@ Deno.serve(async (req) => {
         resultado = equipe?.numero
           ? { ok: true, instrucao: `Encerre com naturalidade e empatia: avise que vai passar o caso para a empresa ${equipe.nome ?? "responsavel pelo atendimento"} e que a pessoa pode falar diretamente com a equipe pelo WhatsApp ${equipe.numero}. Nao invente outros dados nem prometa prazos.` }
           : { ok: true, instrucao: "Encerre com naturalidade: avise que vai transferir para um atendente humano da equipe, que dara sequencia por aqui mesmo. Nao invente dados." };
+        }
       } else if (nome === "nao_perturbe") {
         acao = "encerrar"; encerrar = true;
         await concluirNaoPerturbe(sb, conv, carteiraId, simulacao);

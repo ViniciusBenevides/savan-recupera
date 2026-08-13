@@ -12,8 +12,11 @@ dividas_savan.xlsx
 # === Build / dependências ===
 node_modules/
 .next/
+.next-stale-*/
 *.tsbuildinfo
 dashboard/next-env.d.ts
+supabase/.temp/
+supabase/.temp-legacy/
 
 # === Vínculo de conta Vercel (orgId/projectId) ===
 .vercel/

@@ -7,6 +7,7 @@ import { brl, dataHoraBR } from "@/lib/utils";
 import {
   Search, MessageSquareText, ExternalLink, FileText, ArrowLeft, RefreshCw,
   Bot, Headset, User, Cog, Loader2, FlaskConical, Smartphone, X, CornerDownRight,
+  AudioLines,
 } from "lucide-react";
 
 type Conversa = {
@@ -38,6 +39,9 @@ type Msg = {
   direcao: string;
   origem: string;
   conteudo: string | null;
+  tipo_conteudo: string | null;
+  transcricao: string | null;
+  anexos: { data_url?: string | null; file_type?: string | null }[] | null;
   criado_em: string;
 };
 
@@ -177,7 +181,7 @@ export function Inbox({ lista, chips, chipPadrao, cwUrl }: {
     }
     const { data } = await sb
       .from("mensagens")
-      .select("id, direcao, origem, conteudo, criado_em")
+      .select("id, direcao, origem, conteudo, tipo_conteudo, transcricao, anexos, criado_em")
       .eq("conversa_id", convId)
       .order("criado_em", { ascending: true })
       .limit(800);
@@ -515,7 +519,25 @@ export function Inbox({ lista, chips, chipPadrao, cwUrl }: {
                                       : `bg-emerald/12 text-chalk ring-1 ring-inset ring-emerald/20 ${inicio ? "rounded-2xl rounded-tr-md" : "rounded-2xl rounded-r-md"}`
                                 }`}
                               >
-                                {m.conteudo}
+                                {m.tipo_conteudo === "audio" ? (
+                                  <div className="min-w-[220px] space-y-2">
+                                    <div className="flex items-center gap-2 text-xs font-600 text-mist">
+                                      <AudioLines className="h-4 w-4" /> Audio recebido
+                                    </div>
+                                    {m.anexos?.find((a) => a.file_type === "audio")?.data_url && (
+                                      <audio
+                                        controls
+                                        preload="metadata"
+                                        src={m.anexos.find((a) => a.file_type === "audio")!.data_url!}
+                                        className="h-9 w-full max-w-[320px]"
+                                      />
+                                    )}
+                                    <p className="whitespace-pre-wrap break-words">
+                                      {m.transcricao || m.conteudo || "Transcricao indisponivel."}
+                                    </p>
+                                    {m.transcricao && <span className="text-[10px] text-mist">Transcricao automatica</span>}
+                                  </div>
+                                ) : m.conteudo}
                               </div>
                               {fim && (
                                 <div

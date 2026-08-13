@@ -12,6 +12,7 @@ import { ImportadorIA, ModoSeletor } from "../importador-ia";
 import {
   Play, Pause, Archive, Trash2, Save, CheckCircle2, Loader2, Upload, Users, FileSpreadsheet, AlertTriangle,
   CreditCard, Headset, ChevronRight,
+  History, RotateCcw,
 } from "lucide-react";
 import { AbaRoteiro } from "./roteiro";
 import { ConhecimentoCarteira } from "./conhecimento";
@@ -27,7 +28,7 @@ const TABS = [
 ] as const;
 type Tab = typeof TABS[number]["k"];
 
-export function CarteiraPainel({ carteira, importacoes, padrao, conhecimento, tabInicial, podeEditar = true }: { carteira: any; importacoes: any[]; padrao: Record<string, any>; conhecimento: any[]; tabInicial?: string; podeEditar?: boolean }) {
+export function CarteiraPainel({ carteira, importacoes, padrao, conhecimento, fluxos, tabInicial, podeEditar = true }: { carteira: any; importacoes: any[]; padrao: Record<string, any>; conhecimento: any[]; fluxos: any[]; tabInicial?: string; podeEditar?: boolean }) {
   // credor/visualizador só veem o andamento, sem editar nem ver chaves
   const tabs = podeEditar ? TABS : TABS.filter((t) => t.k === "visao");
   // ?tab=robo era a aba de prompt/descontos, que virou um card dentro do Fluxo — link antigo não quebra
@@ -53,6 +54,7 @@ export function CarteiraPainel({ carteira, importacoes, padrao, conhecimento, ta
       {tab === "fluxo" && podeEditar && (
         <div className="space-y-4">
           <AjustesDoRobo carteira={carteira} padrao={padrao} />
+          <HistoricoFluxos carteira={carteira} fluxos={fluxos} />
           <AbaRoteiroLigado carteira={carteira} padrao={padrao} />
         </div>
       )}
@@ -61,6 +63,70 @@ export function CarteiraPainel({ carteira, importacoes, padrao, conhecimento, ta
       )}
       {tab === "recebimento" && podeEditar && <AbaAsaas carteira={carteira} padrao={padrao} />}
     </>
+  );
+}
+
+function HistoricoFluxos({ carteira, fluxos }: { carteira: any; fluxos: any[] }) {
+  const router = useRouter();
+  const [restaurando, setRestaurando] = React.useState<number | null>(null);
+  const [erro, setErro] = React.useState<string | null>(null);
+
+  async function restaurar(v: any) {
+    if (!confirm(`Restaurar o fluxo da versão ${v.versao}? Uma nova versão será criada e a campanha continuará ativa.`)) return;
+    setRestaurando(v.fluxo_versao_id); setErro(null);
+    const r = await fetch(`/api/carteiras/${carteira.id}/fluxos/${v.fluxo_versao_id}/restaurar`, { method: "POST" });
+    const d = await r.json().catch(() => ({}));
+    setRestaurando(null);
+    if (!r.ok) { setErro(d.erro ?? "Falha ao restaurar."); return; }
+    router.refresh();
+  }
+
+  return (
+    <Card>
+      <div className="flex items-start gap-3">
+        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-blue/12 text-blue"><History className="h-4 w-4" /></span>
+        <div>
+          <h4 className="font-display text-base font-600 text-chalk">Versões e desempenho</h4>
+          <p className="mt-0.5 text-xs text-mist">Cada salvamento cria um retrato imutável. Conversas que começaram numa versão continuam nela.</p>
+        </div>
+      </div>
+      <div className="mt-4 overflow-x-auto rounded-xl border border-line">
+        <table className="w-full min-w-[720px] text-left text-xs">
+          <thead className="bg-ink-850 text-mist"><tr>
+            <th className="px-3 py-2">Versão</th><th className="px-3 py-2">Enviados</th>
+            <th className="px-3 py-2">Responderam</th><th className="px-3 py-2">Pessoa errada</th>
+            <th className="px-3 py-2">Pagaram</th><th className="px-3 py-2">Recuperado</th><th className="px-3 py-2" />
+          </tr></thead>
+          <tbody className="divide-y divide-line">
+            {fluxos.map((v) => {
+              const ativo = Number(carteira.fluxo_versao_ativa_id) === Number(v.fluxo_versao_id);
+              const enviados = Number(v.envios ?? 0), responderam = Number(v.responderam ?? 0);
+              return <tr key={v.fluxo_versao_id}>
+                <td className="px-3 py-2.5">
+                  <span className="font-600 text-chalk">v{v.versao}</span>{ativo && <Badge tone="green">Atual</Badge>}
+                  <div className="text-[10px] text-mist">{v.nome}</div>
+                  <div className="mt-1 flex max-w-[260px] flex-wrap gap-1">
+                    {(Array.isArray(v.modelos) ? v.modelos : []).map((m: any) => (
+                      <span key={`${m.nome}-${m.idioma}`} className="rounded bg-ink-800 px-1.5 py-0.5 font-mono text-[9px] text-mist">
+                        {m.nome} · {m.quantidade}
+                      </span>
+                    ))}
+                  </div>
+                </td>
+                <td className="px-3 py-2.5 tabnums">{enviados}</td>
+                <td className="px-3 py-2.5 tabnums">{responderam} <span className="text-mist">({enviados ? Math.round(100 * responderam / enviados) : 0}%)</span></td>
+                <td className="px-3 py-2.5 tabnums">{v.pessoas_erradas ?? 0}</td>
+                <td className="px-3 py-2.5 tabnums">{v.pagamentos ?? 0}</td>
+                <td className="px-3 py-2.5 tabnums">{brl(v.valor_recuperado ?? 0)}</td>
+                <td className="px-3 py-2.5 text-right">{!ativo && <Button variant="outline" disabled={restaurando === v.fluxo_versao_id} onClick={() => restaurar(v)}><RotateCcw className="h-3.5 w-3.5" /> Restaurar</Button>}</td>
+              </tr>;
+            })}
+            {fluxos.length === 0 && <tr><td colSpan={7} className="px-3 py-6 text-center text-mist">O primeiro histórico será criado ao salvar o fluxo.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+      {erro && <p className="mt-2 text-xs text-rose">{erro}</p>}
+    </Card>
   );
 }
 
