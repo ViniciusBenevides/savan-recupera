@@ -428,7 +428,7 @@ Deno.serve(async (req) => {
           // Nao ha ping no WhatsApp do cobrador (saia pela instancia nao-oficial, e a API oficial
           // nao manda texto livre a um numero fora da janela de 24h). Nem precisa: quem passa o
           // contato e o proprio bot, na conversa aberta com o devedor — a instrucao da ferramenta
-          // escalar manda dizer "fale com <nome> no WhatsApp <numero>". Aqui fica so o rastro
+          // escalar manda dizer "fale com a empresa <nome> no WhatsApp <numero>". Aqui fica so o rastro
           // interno: nota privada no Chatwoot + linha em escalacoes p/ a aba "Precisam de voce".
           try {
             const cwUrl = cfg.chatwoot?.url ?? "https://chatwoot.example.com";
@@ -447,7 +447,7 @@ Deno.serve(async (req) => {
           } catch (_e) { /* nao bloqueia a escalacao */ }
         }
         resultado = equipe?.numero
-          ? { ok: true, instrucao: `Encerre com naturalidade e empatia: avise que vai passar o caso para o especialista ${equipe.nome ?? "da equipe"} e que a pessoa pode falar direto com ele pelo WhatsApp ${equipe.numero}. Nao invente outros dados nem prometa prazos.` }
+          ? { ok: true, instrucao: `Encerre com naturalidade e empatia: avise que vai passar o caso para a empresa ${equipe.nome ?? "responsavel pelo atendimento"} e que a pessoa pode falar diretamente com a equipe pelo WhatsApp ${equipe.numero}. Nao invente outros dados nem prometa prazos.` }
           : { ok: true, instrucao: "Encerre com naturalidade: avise que vai transferir para um atendente humano da equipe, que dara sequencia por aqui mesmo. Nao invente dados." };
       } else if (nome === "nao_perturbe") {
         acao = "encerrar"; encerrar = true;
