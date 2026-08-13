@@ -1,0 +1,33 @@
+# O projeto Vercel usa `dashboard` como Root Directory. Envie somente os
+# arquivos necessarios para construir esse app; o restante do monorepo contem
+# dados, referencias e configuracoes que nao pertencem ao deployment.
+/.agents/**
+/.agents
+/.claude/**
+/.claude
+/docs/**
+/docs
+/Guias Operacionais/**
+/Guias Operacionais
+/import/**
+/import
+/instagram_mc_cred/**
+/instagram_mc_cred
+/n8n/**
+/n8n
+/referencias/**
+/referencias
+/ref_sites_bancarios/**
+/ref_sites_bancarios
+/site-mccred/**
+/site-mccred
+/supabase/**
+/supabase
+/WORKFLOWS/**
+/WORKFLOWS
+/.env
+/.env.*
+/*.xlsx
+/contexto-projeto.md
+/conversa_com_claude.md
+/README.md

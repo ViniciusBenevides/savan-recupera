@@ -9,7 +9,7 @@ export async function Dialogos() {
   // (ultima_msg_em nula) caem no fim.
   const { data: convs } = await sb
     .from("conversas")
-    .select("id, devedor_id, carteira_id, chip_id, estado, simulacao, ultima_msg_em, ultima_msg_de, chatwoot_conversation_id, criado_em")
+    .select("id, devedor_id, carteira_id, chip_id, estado, motivo_encerramento, simulacao, ultima_msg_em, ultima_msg_de, chatwoot_conversation_id, criado_em")
     .order("ultima_msg_em", { ascending: false, nullsFirst: false })
     .limit(300);
 
@@ -58,6 +58,7 @@ export async function Dialogos() {
       id: c.id,
       devedor_id: c.devedor_id,
       estado: c.estado as string,
+      motivo_encerramento: (c.motivo_encerramento as string | null) ?? null,
       simulacao: !!c.simulacao,
       ultima_msg_em: c.ultima_msg_em as string | null,
       ultima_msg_de: c.ultima_msg_de as string | null,

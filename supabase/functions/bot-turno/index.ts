@@ -297,7 +297,7 @@ async function concluirNaoPerturbe(
   simulacao: boolean,
 ) {
   const { data: alterada, error } = await sb.from("conversas")
-    .update({ estado: "optout", proximo_followup_em: null })
+    .update({ estado: "optout", motivo_encerramento: "nao_perturbe", proximo_followup_em: null })
     .eq("id", conv.id).neq("estado", "optout").select("id").maybeSingle();
   if (error) throw error;
   if (!alterada) return;
@@ -320,8 +320,10 @@ async function concluirPessoaErrada(
   simulacao: boolean,
 ) {
   const { data: alterada, error } = await sb.from("conversas")
-    .update({ estado: "encerrada", proximo_followup_em: null })
-    .eq("id", conv.id).neq("estado", "encerrada").select("id").maybeSingle();
+    .update({ estado: "encerrada", motivo_encerramento: "pessoa_errada", proximo_followup_em: null })
+    .eq("id", conv.id)
+    .or("motivo_encerramento.is.null,motivo_encerramento.neq.pessoa_errada")
+    .select("id").maybeSingle();
   if (error) throw error;
   if (!alterada) return;
 

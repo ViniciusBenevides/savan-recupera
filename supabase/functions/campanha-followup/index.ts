@@ -201,7 +201,9 @@ Deno.serve(async (req) => {
     const blocos = cart.blocos;
     const n = c.followups_enviados ?? 0;
     if (n >= (blocos.length || maxFu)) {
-      await sb.from("conversas").update({ estado: "encerrada", proximo_followup_em: null }).eq("id", c.id);
+      await sb.from("conversas").update({
+        estado: "encerrada", motivo_encerramento: "sem_resposta", proximo_followup_em: null,
+      }).eq("id", c.id);
       encerrados++; continue;
     }
     const { data: dev } = await sb.from("devedores").select("nome").eq("id", c.devedor_id).single();

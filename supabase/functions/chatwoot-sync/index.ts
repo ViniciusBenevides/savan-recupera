@@ -138,13 +138,19 @@ async function garantirConversa(
   }
 
   const { data: semelhante } = await sb.from("conversas")
-    .select("simulacao").eq("devedor_id", devedorId).eq("chip_id", chip.id)
+    .select("simulacao, estado").eq("devedor_id", devedorId).eq("chip_id", chip.id)
     .order("criado_em", { ascending: false }).limit(1).maybeSingle();
   const simulacao = typeof simulacaoRecebida === "boolean"
     ? simulacaoRecebida
     : semelhante?.simulacao === true;
   const quando = iso(detalhe?.last_activity_at ?? detalhe?.created_at);
-  const estado = String(detalhe?.status ?? "open") === "resolved" ? "encerrada" : "aguardando_resposta";
+  const resolvida = String(detalhe?.status ?? "open") === "resolved";
+  // Resolver no Chatwoot nao pode apagar um desfecho mais especifico que ja
+  // veio do pagamento ou do opt-out.
+  const estadoAnterior = String(semelhante?.estado ?? "");
+  const estado = resolvida
+    ? (["pago", "optout"].includes(estadoAnterior) ? estadoAnterior : "encerrada")
+    : "aguardando_resposta";
 
   const { data: criada, error: erroCriar } = await sb.from("conversas").upsert({
     devedor_id: devedorId,

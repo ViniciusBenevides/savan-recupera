@@ -13,6 +13,7 @@ type Conversa = {
   id: number;
   devedor_id: number;
   estado: string;
+  motivo_encerramento: string | null;
   simulacao: boolean;
   ultima_msg_em: string | null;
   ultima_msg_de: string | null;
@@ -47,19 +48,29 @@ const ESTADO: Record<string, { tone: any; label: string; ring: string; dot: stri
   bot_ativo:           { tone: "green",   label: "Respondeu",     ring: "ring-emerald/40", dot: "bg-emerald", texto: "text-emerald-soft" },
   humano:              { tone: "violet",  label: "Com humano",    ring: "ring-violet/40",  dot: "bg-violet",  texto: "text-violet" },
   pix_enviado:         { tone: "amber",   label: "Pix enviado",   ring: "ring-amber/40",   dot: "bg-amber",   texto: "text-amber" },
-  pago:                { tone: "green",   label: "Pagou",         ring: "ring-emerald/50", dot: "bg-emerald", texto: "text-emerald-soft" },
-  encerrada:           { tone: "neutral", label: "Encerrada",     ring: "ring-line",       dot: "bg-mist",    texto: "text-mist" },
+  pago:                { tone: "green",   label: "Pagamento confirmado", ring: "ring-emerald/50", dot: "bg-emerald", texto: "text-emerald-soft" },
+  encerrada:           { tone: "neutral", label: "Outro encerramento",   ring: "ring-line",       dot: "bg-mist",    texto: "text-mist" },
+  "encerrada:pessoa_errada": { tone: "rose",    label: "Pessoa errada",      ring: "ring-rose/40",  dot: "bg-rose",  texto: "text-rose" },
+  "encerrada:sem_resposta":  { tone: "amber",   label: "Sem resposta",       ring: "ring-amber/40", dot: "bg-amber", texto: "text-amber" },
+  "encerrada:outro":         { tone: "neutral", label: "Outro encerramento", ring: "ring-line",     dot: "bg-mist",  texto: "text-mist" },
   optout:              { tone: "rose",    label: "Pediu p/ parar", ring: "ring-rose/40",   dot: "bg-rose",    texto: "text-rose" },
 };
 const ESTADO_FALLBACK = { tone: "neutral" as any, label: "—", ring: "ring-line", dot: "bg-mist", texto: "text-mist" };
-const estadoDe = (e: string) => ESTADO[e] ?? { ...ESTADO_FALLBACK, label: e };
+const chaveEstado = (c: Pick<Conversa, "estado" | "motivo_encerramento">) =>
+  c.estado === "encerrada" ? `encerrada:${c.motivo_encerramento ?? "outro"}` : c.estado;
+const estadoDe = (c: Pick<Conversa, "estado" | "motivo_encerramento">) => {
+  const chave = chaveEstado(c);
+  return ESTADO[chave] ?? ESTADO[c.estado] ?? { ...ESTADO_FALLBACK, label: c.estado };
+};
 
 const FILTROS: { v: string; label: string }[] = [
   { v: "", label: "Todas" },
   { v: "aguardando_resposta", label: "Aguardando" },
   { v: "bot_ativo", label: "Responderam" },
   { v: "humano", label: "Com humano" },
-  { v: "encerrada", label: "Encerradas" },
+  { v: "encerrada:pessoa_errada", label: "Pessoa errada" },
+  { v: "encerrada:sem_resposta", label: "Sem resposta" },
+  { v: "encerrada:outro", label: "Outros" },
   { v: "optout", label: "Não perturbe" },
   { v: "pix_enviado", label: "Pix" },
   { v: "pago", label: "Pagaram" },
@@ -130,14 +141,17 @@ export function Inbox({ lista, chips, chipPadrao, cwUrl }: {
 
   const contagem = useMemo(() => {
     const m: Record<string, number> = { "": base.length };
-    for (const c of base) m[c.estado] = (m[c.estado] ?? 0) + 1;
+    for (const c of base) {
+      const chave = chaveEstado(c);
+      m[chave] = (m[chave] ?? 0) + 1;
+    }
     return m;
   }, [base]);
 
   const filtradas = useMemo(() => {
     const q = busca.trim().toLowerCase();
     return base.filter((c) => {
-      if (filtro && c.estado !== filtro) return false;
+      if (filtro && chaveEstado(c) !== filtro) return false;
       if (!q) return true;
       return (
         c.nome.toLowerCase().includes(q) ||
@@ -318,7 +332,7 @@ export function Inbox({ lista, chips, chipPadrao, cwUrl }: {
               </div>
             )}
             {filtradas.map((c) => {
-              const e = estadoDe(c.estado);
+              const e = estadoDe(c);
               const ativo = c.id === sel;
               return (
                 <button
@@ -396,14 +410,14 @@ export function Inbox({ lista, chips, chipPadrao, cwUrl }: {
                     <ArrowLeft className="h-4 w-4" />
                   </button>
                   <div
-                    className={`grid h-9 w-9 shrink-0 place-items-center rounded-full bg-ink-800 font-display text-sm font-700 text-chalk ring-2 ${estadoDe(atual.estado).ring}`}
+                    className={`grid h-9 w-9 shrink-0 place-items-center rounded-full bg-ink-800 font-display text-sm font-700 text-chalk ring-2 ${estadoDe(atual).ring}`}
                   >
                     {atual.nome.charAt(0).toUpperCase()}
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <span className="truncate text-sm font-semibold text-chalk">{atual.nome}</span>
-                      <Badge tone={estadoDe(atual.estado).tone}>{estadoDe(atual.estado).label}</Badge>
+                      <Badge tone={estadoDe(atual).tone}>{estadoDe(atual).label}</Badge>
                       {atual.simulacao && <Badge tone="amber">Teste</Badge>}
                     </div>
                     <div className="truncate text-[11px] text-mist">
