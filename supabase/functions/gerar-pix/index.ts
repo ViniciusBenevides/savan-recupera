@@ -185,7 +185,8 @@ Deno.serve(async (req) => {
   await sb.from("pagamentos").insert({ negociacao_id: neg?.id ?? null, devedor_id: dev.id, asaas_payment_id: payId, asaas_customer_id: customerId, valor: valorFinal, comissao_operador: comissao, repasse_savan: Math.round((valorFinal - comissao) * 100) / 100, pix_payload: pixPayload, pix_qrcode_base64: pixImg, invoice_url: invoiceUrl, status: "pendente", due_date: dueDate, simulacao });
 
   await sb.from("devedores").update({ status_cobranca: "pix_gerado" }).eq("id", dev.id);
-  if (b.conversa_id) await sb.from("conversas").update({ estado: "pix_enviado" }).eq("id", b.conversa_id);
+  // Gerar nao significa entregar. `chatwoot-sync` muda para pix_enviado somente
+  // quando o copia-e-cola aparecer como mensagem de saida realmente aceita pelo canal.
   await sb.from("eventos_campanha").insert({ tipo: "pix_gerado", devedor_id: dev.id, carteira_id: dev.carteira_id ?? null, payload: { pagamento: payId, valor: valorFinal, desconto_pct: descontoPct, simulacao } });
   if (!simulacao) await sb.rpc("fn_inc_metrica_dia", { p_dia: new Date().toISOString().slice(0, 10), p_campo: "pix_gerados", p_n: 1 });
 

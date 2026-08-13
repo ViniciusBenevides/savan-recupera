@@ -305,6 +305,25 @@ async function espelharMensagem(
   }
 
   const ultimaMsgDe = direcao === "entrada" ? "devedor" : origem;
+  if (direcao === "saida" && conteudo) {
+    const { data: pagamentoPix, error: erroPix } = await sb.from("pagamentos")
+      .select("id, pix_payload")
+      .eq("devedor_id", conv.devedor_id)
+      .in("status", ["pendente", "recebido", "confirmado"])
+      .not("pix_payload", "is", null)
+      .order("criado_em", { ascending: false })
+      .limit(1).maybeSingle();
+    if (erroPix) throw erroPix;
+    // O código pode ser a mensagem inteira ou estar dentro de uma explicação.
+    // A presença do payload EMV completo comprova a entrega nos dois formatos.
+    if (pagamentoPix?.pix_payload && conteudo.includes(pagamentoPix.pix_payload.trim())) {
+      const { error: erroEstadoPix } = await sb.from("conversas")
+        .update({ estado: "pix_enviado" })
+        .eq("id", conv.id)
+        .in("estado", ["aguardando_resposta", "bot_ativo", "pix_enviado"]);
+      if (erroEstadoPix) throw erroEstadoPix;
+    }
+  }
   const { error: erroConv } = await sb.from("conversas").update({
     ultima_msg_em: criadoEm,
     ultima_msg_de: ultimaMsgDe,

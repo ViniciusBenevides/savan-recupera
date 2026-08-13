@@ -76,8 +76,8 @@ const FILTROS: { v: string; label: string }[] = [
   { v: "encerrada:sem_resposta", label: "Sem resposta" },
   { v: "encerrada:outro", label: "Outros" },
   { v: "optout", label: "Não perturbe" },
-  { v: "pix_enviado", label: "Pix" },
-  { v: "pago", label: "Pagaram" },
+  { v: "pix_enviado", label: "Pix enviado" },
+  { v: "pago", label: "Pix pago" },
 ];
 
 function relativo(iso: string | null): string {

@@ -532,7 +532,10 @@ Deno.serve(async (req) => {
     conversa_id: conv.id, direcao: "entrada", origem: "devedor", conteudo: b.mensagem,
     chatwoot_message_id: incomingMessageId, simulacao,
   }, incomingMessageId ? { onConflict: "chatwoot_message_id" } : undefined);
-  await sb.from("conversas").update({ estado: "bot_ativo", ultima_msg_em: new Date().toISOString(), ultima_msg_de: "devedor", proximo_followup_em: null }).eq("id", conv.id);
+  await sb.from("conversas").update({
+    estado: conv.estado === "pix_enviado" ? "pix_enviado" : "bot_ativo",
+    ultima_msg_em: new Date().toISOString(), ultima_msg_de: "devedor", proximo_followup_em: null,
+  }).eq("id", conv.id);
   await sb.from("eventos_campanha").insert({ tipo: "resposta", devedor_id: conv.devedor_id, carteira_id: carteiraId, payload: { simulacao } });
   if (!simulacao) {
     await sb.rpc("fn_inc_metrica_dia", { p_dia: new Date().toISOString().slice(0, 10), p_campo: "respostas", p_n: 1 });
