@@ -121,6 +121,15 @@ function renderTemplate(tpl: string, vars: Record<string, unknown>): string {
   txt = txt.replace(/\{\{\s*([a-z_]+)\s*\}\}/gi, (_m, k) => { const v = vars[k]; return v === undefined || v === null ? "" : String(v); });
   return txt;
 }
+function formatarNomeCompleto(nome: unknown): string {
+  const conectores = new Set(["da", "das", "de", "do", "dos", "e"]);
+  return String(nome ?? "").trim().replace(/\s+/g, " ").toLocaleLowerCase("pt-BR")
+    .split(" ")
+    .map((parte, indice) => indice > 0 && conectores.has(parte)
+      ? parte
+      : parte.charAt(0).toLocaleUpperCase("pt-BR") + parte.slice(1))
+    .join(" ");
+}
 // Template do tipo, escopado ao cobrador (os seus); se não tiver, cai nos modelos GLOBAIS.
 async function escolherTemplate(sb: SupabaseClient, tipo: string, cobradorId: string | null): Promise<{ id: number; conteudo: string } | null> {
   async function buscar(cob: string | null) {
@@ -378,12 +387,13 @@ Deno.serve(async (req) => {
       const credor = await credorDaCarteira(item.carteira_id);
       const primeiroNome = (dev?.nome ?? "").split(" ")[0];
       const primeiroNomeCap = primeiroNome.charAt(0) + primeiroNome.slice(1).toLowerCase();
+      const nomeCompleto = formatarNomeCompleto(dev?.nome);
       // ATENÇÃO (§32 x §35): a 1ª mensagem NÃO é o bloco de disparo do fluxo da carteira — a Meta
       // exige modelo aprovado por ela, palavra por palavra. O fluxo volta a mandar assim que a
       // pessoa responde e a janela de 24h abre. `conteudo` = o modelo já renderizado, para que o
       // histórico do painel e do atendente mostre exatamente o que a pessoa recebeu.
       const tplMeta = await montarTemplate(sb, chip.cobrador_id ?? null, refTpl, {
-        primeiro_nome: primeiroNomeCap, nome: dev?.nome ?? "", credor: credor ?? "", nome_bot: nomeBot,
+        primeiro_nome: primeiroNomeCap, nome: nomeCompleto, credor: credor ?? "", nome_bot: nomeBot,
       });
       if (!tplMeta) {
         // sumiu do cache ou faltou valor para alguma variável: devolve à fila em vez de virar

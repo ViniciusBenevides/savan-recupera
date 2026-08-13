@@ -39,6 +39,15 @@ function render(tpl: string, vars: Record<string, unknown>): string {
   txt = txt.replace(/\{\{\s*([a-z_]+)\s*\}\}/gi, (_m, k) => { const v = vars[k]; return v === undefined || v === null ? "" : String(v); });
   return txt;
 }
+function formatarNomeCompleto(nome: unknown): string {
+  const conectores = new Set(["da", "das", "de", "do", "dos", "e"]);
+  return String(nome ?? "").trim().replace(/\s+/g, " ").toLocaleLowerCase("pt-BR")
+    .split(" ")
+    .map((parte, indice) => indice > 0 && conectores.has(parte)
+      ? parte
+      : parte.charAt(0).toLocaleUpperCase("pt-BR") + parte.slice(1))
+    .join(" ");
+}
 
 // ─── Templates aprovados da Meta (§32) ────────────────────────────────────────────────────────
 // Fora da janela de 24h a Cloud API recusa texto livre: só sai MODELO APROVADO. Estas funcoes
@@ -203,15 +212,16 @@ Deno.serve(async (req) => {
   }
   const nomeBot = cfg.ia?.nome_bot ?? "Ana";
   const primeiroNome = String(dev!.nome ?? "").split(" ")[0];
+  const nomeCompleto = formatarNomeCompleto(dev!.nome);
   const conteudo = bruto
-    ? render(bruto, { primeiro_nome: primeiroNome, nome_bot: nomeBot, nome: dev!.nome, credor: cart!.credor ?? "" })
+    ? render(bruto, { primeiro_nome: primeiroNome, nome_bot: nomeBot, nome: nomeCompleto, credor: cart!.credor ?? "" })
     : `Olá ${primeiroNome}, aqui é a ${nomeBot}. [MENSAGEM DE TESTE] Podemos falar rapidinho sobre uma pendência antiga?`;
 
   // A 1a mensagem abre a conversa: fora da janela de 24h a Cloud API so aceita modelo aprovado.
   // O teste usa o MESMO caminho da campanha de verdade — se ele chegar, a campanha chega.
   const { data: chipDono } = await sb.from("chips").select("cobrador_id").eq("id", chip.id).maybeSingle();
   const tplMeta = await montarTemplate(sb, chipDono?.cobrador_id ?? null, cfg.meta_abordagem_template, {
-    primeiro_nome: primeiroNome, nome: dev!.nome ?? "", credor: cart!.credor ?? "", nome_bot: nomeBot,
+    primeiro_nome: primeiroNome, nome: nomeCompleto, credor: cart!.credor ?? "", nome_bot: nomeBot,
   });
   if (!tplMeta) {
     return json({
