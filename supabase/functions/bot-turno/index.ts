@@ -290,6 +290,46 @@ function tools() {
   ];
 }
 
+type EstadoFila = "pendente" | "processando" | "concluida" | "suplantada" | "falhou";
+
+async function registrarNaFila(
+  sb: SupabaseClient,
+  convId: number,
+  messageId: number,
+  conteudo: string,
+): Promise<EstadoFila> {
+  const { data: criada, error } = await sb.from("bot_fila_mensagens").insert({
+    chatwoot_conversation_id: convId,
+    chatwoot_message_id: messageId,
+    conteudo,
+    tipo: "pendente",
+  }).select("tipo").maybeSingle();
+  if (error && error.code !== "23505") throw error;
+  if (criada?.tipo) return criada.tipo as EstadoFila;
+
+  const { data: existente, error: erroExistente } = await sb.from("bot_fila_mensagens")
+    .select("tipo").eq("chatwoot_message_id", messageId).maybeSingle();
+  if (erroExistente) throw erroExistente;
+  return (existente?.tipo ?? "pendente") as EstadoFila;
+}
+
+async function marcarFila(sb: SupabaseClient, messageId: number | null, tipo: EstadoFila) {
+  if (!messageId) return;
+  const { error } = await sb.from("bot_fila_mensagens").update({ tipo })
+    .eq("chatwoot_message_id", messageId);
+  if (error) throw error;
+}
+
+async function ehUltimaEntrada(sb: SupabaseClient, conversaId: number, messageId: number): Promise<boolean> {
+  const { data, error } = await sb.from("mensagens").select("chatwoot_message_id")
+    .eq("conversa_id", conversaId).eq("direcao", "entrada")
+    .not("chatwoot_message_id", "is", null)
+    .order("criado_em", { ascending: false }).order("id", { ascending: false })
+    .limit(1).maybeSingle();
+  if (error) throw error;
+  return !data?.chatwoot_message_id || Number(data.chatwoot_message_id) === messageId;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   // A1: somente o service_role (n8n W02) pode chamar. A anon key pública é recusada.
@@ -325,6 +365,34 @@ Deno.serve(async (req) => {
     await sb.from("conversas").update({ ultima_msg_em: new Date().toISOString(), ultima_msg_de: "devedor" }).eq("id", conv.id);
     return json({ ok: true, acao: "humano", mensagens: [] });
   }
+
+  if (incomingMessageId) {
+    const estadoFila = await registrarNaFila(sb, convId, incomingMessageId, String(b.mensagem ?? ""));
+    if (estadoFila === "concluida" || estadoFila === "suplantada") {
+      return json({ ok: true, ignorado: estadoFila, mensagens: [] });
+    }
+    if (!(await ehUltimaEntrada(sb, conv.id, incomingMessageId))) {
+      await marcarFila(sb, incomingMessageId, "suplantada");
+      return json({ ok: true, ignorado: "mensagem_suplantada", mensagens: [] });
+    }
+  }
+
+  const { data: lockAdquirido, error: erroLock } = await sb.rpc("fn_bot_tentar_lock", {
+    p_chatwoot_conversation_id: convId,
+    p_expira_segundos: 120,
+  });
+  if (erroLock) throw erroLock;
+  if (lockAdquirido !== true) {
+    return json({ ok: true, adiado: "conversa_ocupada", repetir_em_segundos: 5, mensagens: [] });
+  }
+
+  try {
+    // Uma mensagem pode chegar entre a primeira verificacao e a aquisicao do lock.
+    if (incomingMessageId && !(await ehUltimaEntrada(sb, conv.id, incomingMessageId))) {
+      await marcarFila(sb, incomingMessageId, "suplantada");
+      return json({ ok: true, ignorado: "mensagem_suplantada", mensagens: [] });
+    }
+    await marcarFila(sb, incomingMessageId, "processando");
 
   const { data: prop } = await sb.rpc("fn_proposta", { p_devedor_id: conv.devedor_id });
 
@@ -369,7 +437,10 @@ Deno.serve(async (req) => {
   }
 
   const apiKey = seg.OPENAI_API_KEY;
-  if (!apiKey) return json({ ok: false, erro: "openai_key_ausente" }, 500);
+  if (!apiKey) {
+    await marcarFila(sb, incomingMessageId, "falhou");
+    return json({ ok: false, erro: "openai_key_ausente" }, 500);
+  }
   const modelo = cfg.ia?.modelo ?? "gpt-4.1-mini";
 
   const respostas: string[] = [];
@@ -502,5 +573,12 @@ Deno.serve(async (req) => {
   if (respostas.length) await sb.from("conversas").update({ ultima_msg_em: new Date().toISOString(), ultima_msg_de: "bot" }).eq("id", conv.id);
   await sb.from("devedores").update({ status_cobranca: "em_negociacao" }).eq("id", conv.devedor_id).in("status_cobranca", ["contatado"]);
 
+  await marcarFila(sb, incomingMessageId, "concluida");
   return json({ ok: true, acao, escalar: escalarMotivo, resumo: escalarResumo, equipe: acao === "escalar" ? equipe : undefined, encerrar, simulacao, enviado_direto: false, mensagens: respostas });
+  } finally {
+    // Se a IA ou qualquer integracao falhar, a conversa nao fica presa. O registro da
+    // fila permanece reprocessavel e o lock abandonado tambem expira no banco.
+    const { error } = await sb.from("bot_locks").delete().eq("chatwoot_conversation_id", convId);
+    if (error) console.error("bot-turno: falha ao liberar lock", error.message);
+  }
 });

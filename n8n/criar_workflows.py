@@ -295,14 +295,27 @@ def w02():
         "if (b.evento !== 'message_created' || b.message_type !== 'incoming' || b.private || off || !b.mensagem) return [];\n"
         "return [{ json: b }];"
     )})
-    bot = http_edge("Bot responder", "bot-turno", [1340, 300],
-        '={ "chatwoot_conversation_id": {{ $json.chatwoot_conversation_id }}, '
-        '"chatwoot_message_id": {{ $json.chatwoot_message_id }}, '
-        '"mensagem": {{ JSON.stringify($json.mensagem) }} }')
+    # Debounce: aguarda a pessoa terminar de enviar mensagens curtas em sequencia.
+    # A Edge Function confirma qual message_id e o mais recente e descarta as execucoes antigas.
+    debounce = node("Aguardar mensagens encavaladas", "n8n-nodes-base.wait", 1.1, [1340, 300],
+                    {"resume": "timeInterval", "amount": 20, "unit": "seconds"},
+                    {"webhookId": "savan-w02-debounce"})
+    bot = http_edge("Bot responder", "bot-turno", [1560, 300],
+        '={ "chatwoot_conversation_id": {{ $(\'Filtrar bot\').first().json.chatwoot_conversation_id }}, '
+        '"chatwoot_message_id": {{ $(\'Filtrar bot\').first().json.chatwoot_message_id }}, '
+        '"mensagem": {{ JSON.stringify($(\'Filtrar bot\').first().json.mensagem) }} }')
+    retry = node("Conversa ocupada?", "n8n-nodes-base.if", 2.2, [1780, 300], {
+        "conditions": {"options": {"caseSensitive": True, "typeValidation": "loose"},
+                       "combinator": "and", "conditions": [
+            {"leftValue": "={{ Number($json.repetir_em_segundos || 0) }}", "rightValue": 0,
+             "operator": {"type": "number", "operation": "gt"}}]}})
+    retry_wait = node("Aguardar conversa livre", "n8n-nodes-base.wait", 1.1, [2000, 240],
+                      {"resume": "timeInterval", "amount": "={{ $json.repetir_em_segundos || 5 }}", "unit": "seconds"},
+                      {"webhookId": "savan-w02-lock-wait"})
     # quebra mensagens e envia
-    prep = node("Preparar envios", "n8n-nodes-base.code", 2, [1560, 300], {"jsCode": (
+    prep = node("Preparar envios", "n8n-nodes-base.code", 2, [2000, 360], {"jsCode": (
         "const r = $json;\n"
-        "const conv = $('Filtrar bot').item.json.chatwoot_conversation_id;\n"
+        "const conv = $('Filtrar bot').first().json.chatwoot_conversation_id;\n"
         "const out = [];\n"
         "for (const m of (r.mensagens || [])) {\n"
         "  out.push({ json: { conv, texto: m } });\n"
@@ -310,18 +323,18 @@ def w02():
         "// a escalada (aviso ao cobrador + nota/label/atribuição no Chatwoot) é feita pelo bot-turno\n"
         "return out;"
     )})
-    loop = node("Loop msgs", "n8n-nodes-base.splitInBatches", 3, [1780, 300],
+    loop = node("Loop msgs", "n8n-nodes-base.splitInBatches", 3, [2220, 360],
                 {"batchSize": 1, "options": {}})
-    envia = http_chatwoot("Enviar resposta", [2000, 360],
+    envia = http_chatwoot("Enviar resposta", [2440, 420],
         f"={env('CHATWOOT_URL').rstrip('/')}/api/v1/accounts/1/conversations/{{{{ $json.conv }}}}/messages",
         '={ "content": {{ JSON.stringify($json.texto) }}, "message_type": "outgoing" }')
-    espera = node("Aguardar", "n8n-nodes-base.wait", 1.1, [2220, 360],
+    espera = node("Aguardar", "n8n-nodes-base.wait", 1.1, [2660, 420],
                   {"resume": "timeInterval", "amount": 3, "unit": "seconds"}, {"webhookId": "savan-w02-wait"})
 
     # A escalada (aviso ao cobrador via WhatsApp + nota/label/atribuição ao time no Chatwoot)
     # é feita inteiramente pelo bot-turno (Edge Function), usando o cobrador/número da carteira
     # (config_override.equipe). Não há mais ramo de escalada aqui — evita nota/label duplicados.
-    nodes = [wh, normalizar, sync, sync_ok, filtro, bot, prep, loop, envia, espera]
+    nodes = [wh, normalizar, sync, sync_ok, filtro, debounce, bot, retry, retry_wait, prep, loop, envia, espera]
     connections = {}
     def add(src, dst, idx=0):
         connections.setdefault(src, {}).setdefault("main", [])
@@ -332,8 +345,12 @@ def w02():
     add("Normalizar evento", "Espelhar no painel")
     add("Espelhar no painel", "Sincronizacao ok?")
     add("Sincronizacao ok?", "Filtrar bot", 0)
-    add("Filtrar bot", "Bot responder")
-    add("Bot responder", "Preparar envios")
+    add("Filtrar bot", "Aguardar mensagens encavaladas")
+    add("Aguardar mensagens encavaladas", "Bot responder")
+    add("Bot responder", "Conversa ocupada?")
+    add("Conversa ocupada?", "Aguardar conversa livre", 0)
+    add("Aguardar conversa livre", "Bot responder")
+    add("Conversa ocupada?", "Preparar envios", 1)
     add("Preparar envios", "Loop msgs")
     add("Loop msgs", "Enviar resposta", 1)
     add("Enviar resposta", "Aguardar")

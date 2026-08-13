@@ -29,6 +29,11 @@ processar a mesma mensagem sem criar duplicata. Notas privadas e mensagens de at
 na aba Conversas. Para importar histórico de uma inbox gerenciada, chame a função com
 `{ "backfill": true, "inbox_id": <id> }` usando `service_role`.
 
+Antes de chamar a IA, o W02 aguarda 20 segundos para agrupar mensagens encavaladas. Ao fim da
+janela, apenas o `chatwoot_message_id` recebido mais recentemente continua; os anteriores ficam
+marcados como `suplantada`. A fila idempotente e o lock por conversa também impedem que webhooks
+repetidos ou execuções concorrentes produzam duas respostas.
+
 Nós Wait precisam declarar `resume: timeInterval`. Informar somente `amount/unit` deixa a execução
 aguardando o webhook interno indefinidamente; no W01 isso ocupa concorrência e acaba interrompendo os
 próximos ciclos do schedule.
