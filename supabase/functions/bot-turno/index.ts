@@ -12,6 +12,12 @@ import {
   respostaConfirmacaoIdentidade,
   respostaPessoaErrada,
 } from "../_shared/identity.ts";
+import { detalharPisoProposta, garantirExplicacaoPiso } from "../_shared/proposal.ts";
+import {
+  corrigirOrientacaoPagamento,
+  ehDuvidaDeOrigem,
+  respostaOrigemDeterministica,
+} from "../_shared/origin.ts";
 
 const OPENAI = "https://api.openai.com/v1/chat/completions";
 const cors = {
@@ -155,7 +161,7 @@ async function resolverConversaPorEntrada(sb: SupabaseClient, cfg: any, seg: Rec
   }
 
   let q = sb.from("conversas")
-    .select("id, devedor_id, carteira_id, estado, chip_id, simulacao, telefone_id, etapa_roteiro, fluxo_versao_id, identidade_confirmada_em")
+    .select("id, devedor_id, carteira_id, estado, chip_id, simulacao, telefone_id, etapa_roteiro, fluxo_versao_id, identidade_confirmada_em, identidade_confirmada_por")
     .in("estado", ["aguardando_resposta", "bot_ativo"])
     .order("ultima_msg_em", { ascending: false, nullsFirst: false })
     .order("id", { ascending: false })
@@ -263,6 +269,7 @@ function montarSystemPrompt(
   const nuncaCitar = Array.isArray(g.nunca_citar) ? g.nunca_citar : [];
   if (nuncaCitar.length) regras.push(`NUNCA mencione ${nuncaCitar.join(", ")}, nem QUALQUER consequência por não pagar.`);
   regras.push("NUNCA invente valores. Use SOMENTE os números retornados pela tool consultar_divida.");
+  regras.push("Ao apresentar uma proposta com piso_minimo_aplicado=true, explique obrigatoriamente que a faixa prevê o percentual informado, mas o cálculo cairia abaixo do valor mínimo de quitação; por isso o valor final fica no mínimo indicado. Nunca diga que o valor final é o resultado direto daquele percentual.");
   if (g.responder_prescricao_honestamente !== false) regras.push("Se perguntarem sobre prescrição ou se ainda precisa pagar: responda com honestidade que, por ser dívida antiga, pode estar prescrita e o pagamento é voluntário; a proposta é um encerramento definitivo com termo de quitação. Nunca pressione.");
   if (g.confirmar_identidade !== false) regras.push(identidadeConfirmada
     ? "A IDENTIDADE JÁ FOI CONFIRMADA nesta conversa. NUNCA volte a pedir nome ou confirmação de identidade."
@@ -431,7 +438,7 @@ Deno.serve(async (req) => {
   const incomingMessageId = Number(b.chatwoot_message_id ?? 0) || null;
 
   let { data: conv } = await sb.from("conversas")
-    .select("id, devedor_id, carteira_id, estado, chip_id, simulacao, telefone_id, etapa_roteiro, fluxo_versao_id, identidade_confirmada_em")
+    .select("id, devedor_id, carteira_id, estado, chip_id, simulacao, telefone_id, etapa_roteiro, fluxo_versao_id, identidade_confirmada_em, identidade_confirmada_por")
     .eq("chatwoot_conversation_id", convId).maybeSingle();
   if (!conv) {
     conv = await resolverConversaPorEntrada(sb, cfg, seg, convId);
@@ -509,6 +516,9 @@ Deno.serve(async (req) => {
   const cobradorId = carteira?.cobrador_id ?? null;
   cfg = await getConfig(sb, cobradorId);
   seg = await carregarSegredos(sb, cobradorId);
+  const faixasProposta = carteira?.config_override?.faixas_desconto ?? cfg.faixas_desconto;
+  const valorMinimoProposta = Number(faixasProposta?.valor_minimo_pix ?? 30);
+  let detalhesPiso = detalharPisoProposta(prop, valorMinimoProposta);
   let equipe: { chip_id: number | null; nome: string | null; numero: string | null } | null = null;
 
   const { data: convsDev } = await sb.from("conversas").select("id").eq("devedor_id", conv.devedor_id);
@@ -539,16 +549,14 @@ Deno.serve(async (req) => {
 
   // Barreira determinística: enquanto a identidade não estiver confirmada, nenhuma chamada ao
   // modelo recebe autorização para falar de origem, CPF ou valores. Isso evita que "oi" seja
-  // interpretado como confirmação. Conversas antigas que já tiveram valores revelados são
-  // marcadas como confirmadas para o robô não voltar atrás no meio da negociação.
+  // interpretado como confirmação. Somente resposta explicita libera os dados.
   const entradaNormal = normalizar(b.mensagem);
   const nomeProcurado = prop?.nome ?? prop?.primeiro_nome ?? "a pessoa procurada";
   const classificacaoIdentidade = classificarRespostaIdentidade(b.mensagem, nomeProcurado);
   const confirmouAgora = classificacaoIdentidade === "confirmou";
   const negouIdentidade = classificacaoIdentidade === "negou";
-  const jaHouveDetalhe = hist.some((m: any) => m.direcao === "saida"
-    && /R\$|valor original|valor final|desconto de \d/i.test(String(m.conteudo ?? "")));
-  let identidadeConfirmada = !!conv.identidade_confirmada_em || jaHouveDetalhe;
+  let identidadeConfirmada = !!conv.identidade_confirmada_em
+    && conv.identidade_confirmada_por !== "legado_dados_ja_revelados";
 
   if (!identidadeConfirmada && confirmouAgora) {
     identidadeConfirmada = true;
@@ -562,14 +570,9 @@ Deno.serve(async (req) => {
     conv.identidade_confirmada_em = confirmadoEm;
     conv.etapa_roteiro = proximaEtapa;
     if (proximaEtapa === "proposta") etapaAtual = etapaDoRoteiro(carteira, "proposta");
-  } else if (identidadeConfirmada && !conv.identidade_confirmada_em) {
-    await sb.from("conversas").update({
-      identidade_confirmada_em: new Date().toISOString(),
-      identidade_confirmada_por: "legado_dados_ja_revelados",
-    }).eq("id", conv.id);
   }
 
-  if (!identidadeConfirmada && etapaAtual?.id === "identificar") {
+  if (!identidadeConfirmada) {
     let respostaIdentidade: string;
     let acaoIdentidade = "responder";
     let encerrarIdentidade = false;
@@ -604,6 +607,22 @@ Deno.serve(async (req) => {
   const { data: origemDev } = await sb.from("devedores")
     .select("nome, cpf_cnpj, processo, saldo, vencimento, grupo_credor, carteira_credor")
     .eq("id", conv.devedor_id).maybeSingle();
+
+  if (ehDuvidaDeOrigem(b.mensagem)) {
+    const respostaOrigem = respostaOrigemDeterministica({
+      primeiroNome: prop?.primeiro_nome ?? null,
+      cpf: origemDev?.cpf_cnpj ?? null,
+      vencimento: origemDev?.vencimento ?? null,
+    });
+    await sb.from("mensagens").insert({
+      conversa_id: conv.id, direcao: "saida", origem: "bot", conteudo: respostaOrigem, simulacao,
+    });
+    await sb.from("conversas").update({
+      ultima_msg_em: new Date().toISOString(), ultima_msg_de: "bot",
+    }).eq("id", conv.id);
+    await marcarFila(sb, incomingMessageId, "concluida");
+    return json({ ok: true, acao: "responder", encerrar: false, simulacao, enviado_direto: false, mensagens: [respostaOrigem] });
+  }
   const messages: any[] = [{
     role: "system",
     content: montarSystemPrompt(cfg, carteira, prop, conhecimento, etapaAtual, identidadeConfirmada),
@@ -626,6 +645,7 @@ Deno.serve(async (req) => {
   let escalarResumo: string | null = null;
   let encerrar = false;
   const toolsExecutadas = new Set<string>();
+  let pixCopiaCola: string | null = null;
 
   for (let passo = 0; passo < 5; passo++) {
     const r = await fetch(OPENAI, { method: "POST", headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" }, body: JSON.stringify({ model: modelo, messages, tools: tools(), temperature: 0.7 }) });
@@ -649,6 +669,11 @@ Deno.serve(async (req) => {
           ano_divida: prop.ano_divida ?? null,
           data_vencimento: origemDev?.vencimento ?? null,
           valido_ate: prop.valido_ate,
+          valor_calculado_com_desconto: detalhesPiso.valorCalculadoComDesconto,
+          valor_minimo_quitacao: detalhesPiso.valorMinimoQuitacao,
+          piso_minimo_aplicado: detalhesPiso.pisoMinimoAplicado,
+          desconto_efetivo_pct: detalhesPiso.descontoEfetivoPct,
+          explicacao_obrigatoria: detalhesPiso.explicacaoObrigatoria,
         };
       } else if (nome === "consultar_origem") {
         const cpfDigitos = String(origemDev?.cpf_cnpj ?? "").replace(/\D/g, "");
@@ -678,12 +703,26 @@ Deno.serve(async (req) => {
           const minPix = Number(faixas?.valor_minimo_pix ?? 30);
           if (novoValor < minPix) novoValor = Math.min(Number(prop.valor_original), minPix);
           prop.desconto_pct = novoPct; prop.valor_final = novoValor;
-          resultado = { ok: true, novo_desconto_pct: novoPct, novo_valor_final: novoValor };
+          detalhesPiso = detalharPisoProposta(prop, minPix);
+          resultado = {
+            ok: true,
+            novo_desconto_pct: novoPct,
+            novo_valor_final: novoValor,
+            valor_calculado_com_desconto: detalhesPiso.valorCalculadoComDesconto,
+            valor_minimo_quitacao: detalhesPiso.valorMinimoQuitacao,
+            piso_minimo_aplicado: detalhesPiso.pisoMinimoAplicado,
+            desconto_efetivo_pct: detalhesPiso.descontoEfetivoPct,
+            explicacao_obrigatoria: detalhesPiso.explicacaoObrigatoria,
+          };
         }
       } else if (nome === "gerar_pix") {
-        const pixResp = await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/gerar-pix`, { method: "POST", headers: { "Authorization": `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`, "Content-Type": "application/json" }, body: JSON.stringify({ devedor_id: conv.devedor_id, conversa_id: conv.id, desconto_pct: prop.desconto_pct, valor_final: prop.valor_final, desconto_extra: args.desconto_extra ?? false, simulacao }) });
+        const pixResp = await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/gerar-pix`, { method: "POST", headers: { "apikey": Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "", "Content-Type": "application/json" }, body: JSON.stringify({ devedor_id: conv.devedor_id, conversa_id: conv.id, desconto_pct: prop.desconto_pct, valor_final: prop.valor_final, desconto_extra: args.desconto_extra ?? false, simulacao }) });
         const pix = await pixResp.json();
-        resultado = pix.ok ? { ok: true, pix_copia_cola: pix.pix_copia_cola, valor_final: pix.valor_final, valido_ate: pix.valido_ate } : { ok: false, erro: "falha_gerar_pix" };
+        if (!pixResp.ok || !pix.ok) console.error("gerar_pix_falhou", { status: pixResp.status, erro: pix.erro, detalhe: pix.detalhe });
+        pixCopiaCola = pix.ok && typeof pix.pix_copia_cola === "string" ? pix.pix_copia_cola.trim() : null;
+        resultado = pix.ok && pixCopiaCola
+          ? { ok: true, valor_final: pix.valor_final, valido_ate: pix.valido_ate, instrucao: "Confirme o Pix e oriente o pagamento sem reproduzir o codigo; o copia-e-cola sera enviado automaticamente em uma mensagem separada." }
+          : { ok: false, erro: "falha_gerar_pix" };
       } else if (nome === "escalar_humano") {
         const motivoNormal = normalizar(args.motivo);
         const apenasDuvidaOrigem = /nao (lembra|reconhece)|golpe|origem|ano da divida/.test(motivoNormal);
@@ -790,6 +829,24 @@ Deno.serve(async (req) => {
       await concluirNaoPerturbe(sb, conv, carteiraId, simulacao);
     }
   }
+
+  // Segunda barreira, deterministica: se o modelo apresentar a proposta e omitir
+  // a justificativa do piso, acrescente a explicacao antes de gravar/enviar.
+  if (detalhesPiso.pisoMinimoAplicado
+    && (toolsExecutadas.has("consultar_divida") || toolsExecutadas.has("desconto_extra"))
+    && !toolsExecutadas.has("gerar_pix")
+    && respostas.length) {
+    const indice = respostas.length - 1;
+    respostas[indice] = garantirExplicacaoPiso(respostas[indice], detalhesPiso);
+  }
+
+  for (let i = 0; i < respostas.length; i++) {
+    respostas[i] = corrigirOrientacaoPagamento(respostas[i]);
+  }
+
+  // O copia-e-cola vai sozinho na ultima mensagem para permitir copiar com um toque,
+  // sem saudacao, rotulo, aspas, Markdown ou qualquer outro texto ao redor.
+  if (pixCopiaCola) respostas.push(pixCopiaCola);
 
   for (const txt of respostas) {
     await sb.from("mensagens").insert({ conversa_id: conv.id, direcao: "saida", origem: "bot", conteudo: txt, simulacao });

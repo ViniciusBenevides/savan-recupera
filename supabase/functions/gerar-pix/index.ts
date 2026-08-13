@@ -74,17 +74,15 @@ class Asaas {
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
-  // A1: somente o service_role (bot-turno / n8n) gera Pix. A anon key pública é recusada.
-  // Trava revisada (§29): exige JWT de service_role pelo claim `role` (o verify_jwt já validou a
-  // assinatura). Imune à rotação/novo sistema de API keys do Supabase — antes comparava o valor cru
-  // do SERVICE_ROLE_KEY e quebrava (401 em tudo) quando a chave do env divergia do JWT do n8n.
-  let _role = "";
-  try {
-    let _p = ((req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "").split(".")[1] ?? "").replace(/-/g, "+").replace(/_/g, "/");
-    while (_p.length % 4) _p += "=";
-    _role = JSON.parse(atob(_p)).role;
-  } catch { _role = ""; }
-  if (_role !== "service_role") return json({ ok: false, erro: "nao_autorizado" }, 401);
+  // A1: chamada servidor-servidor autenticada pela secret/service_role key exata.
+  // As chaves sb_secret_* não são JWT; por isso verify_jwt fica desligado e a validação
+  // acontece aqui. Authorization exato é aceito apenas para compatibilidade com callers legados.
+  const esperado = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+  const apiKey = req.headers.get("apikey") ?? "";
+  const bearer = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
+  if (!esperado || (apiKey !== esperado && bearer !== esperado)) {
+    return json({ ok: false, erro: "nao_autorizado" }, 401);
+  }
 
   try {
   const sb = admin();

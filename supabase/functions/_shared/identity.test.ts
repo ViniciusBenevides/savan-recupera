@@ -37,6 +37,7 @@ Deno.test("reconhece confirmacoes naturais sem confundir indisponibilidade", () 
   for (const frase of ["Boa tarde!!!", "Não posso falar agora", "Quem gostaria?", "Do que se trata?"]) {
     assertEquals(classificarRespostaIdentidade(frase, "Leandro"), "indefinida", frase);
   }
+  assertEquals(classificarRespostaIdentidade("Pode sim", "Leandro"), "indefinida");
 });
 
 Deno.test("mensagens de confirmacao usam o nome completo e variam", () => {

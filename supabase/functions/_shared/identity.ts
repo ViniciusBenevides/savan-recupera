@@ -65,7 +65,7 @@ export function classificarRespostaIdentidade(
   }
 
   const confirmou = [
-    /^(?:sim|sou eu|isso|isso mesmo|correto|correta|pode sim|pode falar)(?:\b|$)/,
+    /^(?:sim|sou eu|isso|isso mesmo|correto|correta)(?:\b|$)/,
     /\b(?:sim\s+)?sou eu\b/,
     /^(?:e|eh)\s+(?:ele|ela)(?:\b|$)/,
     new RegExp(`\\b${esperado}\\s+(?:falando|aqui)\\b`),
