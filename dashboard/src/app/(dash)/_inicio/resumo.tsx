@@ -17,6 +17,7 @@ import { ChaveCampanha } from "./chave-campanha";
 export async function Resumo({ sessao }: { sessao: Sessao | null }) {
   const sb = await supabaseServer();
   const podeEditar = !!sessao && ["admin", "cobrador"].includes(sessao.role);
+  const podeVerOperacao = !!sessao && sessao.role !== "credor";
 
   const [{ data: funil }, { data: pagosChart }, { data: pagamentos }, cfg, { data: chips }] =
     await Promise.all([
@@ -46,8 +47,9 @@ export async function Resumo({ sessao }: { sessao: Sessao | null }) {
     id: p.id, valor: p.valor, status: p.status, criado_em: p.criado_em, devedor_nome: p.devedores?.nome,
   }));
 
-  // Estado da operação (fila + cota do dia). Só quem opera precisa disso.
-  const operacao = podeEditar ? await estadoDaOperacao(sessao!, cfg) : null;
+  // O visualizador acompanha toda a operação, mas recebe os controles desabilitados.
+  // O credor continua limitado ao andamento das carteiras que pertencem a ele.
+  const operacao = podeVerOperacao ? await estadoDaOperacao(sessao!, cfg) : null;
 
   return (
     <>
@@ -132,7 +134,7 @@ export async function Resumo({ sessao }: { sessao: Sessao | null }) {
  */
 async function estadoDaOperacao(sessao: Sessao, cfg: Record<string, any>) {
   const admin = supabaseAdmin();
-  const cobradorId = sessao.role === "cobrador" ? sessao.user.id : null;
+  const cobradorId = sessao.role === "admin" ? null : sessao.tenant;
 
   let carteiraIds: number[] | null = null;
   if (cobradorId) {

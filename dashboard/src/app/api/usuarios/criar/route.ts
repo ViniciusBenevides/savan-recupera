@@ -32,7 +32,10 @@ export async function POST(req: Request) {
   if (sessao.role === "cobrador") {
     tenant = sessao.user.id;
   } else if (papel === "credor" || papel === "visualizador") {
-    tenant = typeof cobrador_id === "string" && cobrador_id ? cobrador_id : null;
+    // Na conta principal ainda não há um usuário com papel "cobrador": as carteiras
+    // pertencem ao próprio admin. Nesse caso, vincula o leitor ao admin em vez de
+    // deixá-lo sem tenant (o que faria o RLS devolver zero linhas).
+    tenant = typeof cobrador_id === "string" && cobrador_id ? cobrador_id : sessao.user.id;
   }
 
   const admin = supabaseAdmin();

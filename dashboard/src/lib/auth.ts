@@ -6,7 +6,7 @@ import { supabaseServer, supabaseAdmin } from "@/lib/supabase-server";
 //  admin        — plataforma (único). Vê tudo de todos, com atribuição.
 //  cobrador      — operador. Vê/edita só o que é dele (suas carteiras/chips/chaves).
 //  credor        — dono da(s) carteira(s). Só leitura do andamento das suas carteiras.
-//  visualizador  — só leitura, escopo de um cobrador (tenant).
+//  visualizador  — vê todos os dados operacionais do tenant, sempre sem escrita.
 export type Papel = "admin" | "cobrador" | "credor" | "visualizador";
 
 export const PAPEIS: Papel[] = ["admin", "cobrador", "credor", "visualizador"];

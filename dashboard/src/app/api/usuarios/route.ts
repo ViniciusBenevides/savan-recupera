@@ -31,9 +31,13 @@ export async function POST(req: Request) {
   }
 
   const patch: Record<string, unknown> = { role };
-  // admin pode (re)definir o tenant de um credor/visualizador
-  if (sessao.role === "admin" && (role === "credor" || role === "visualizador") && typeof cobrador_id === "string") {
-    patch.cobrador_id = cobrador_id || null;
+  // Admin pode (re)definir o tenant de um credor/visualizador. Se a troca de papel
+  // veio do seletor compacto da lista (sem cobrador_id), preserva o vínculo atual;
+  // se ele ainda não existe, usa a conta principal do próprio admin.
+  if (sessao.role === "admin" && (role === "credor" || role === "visualizador")) {
+    patch.cobrador_id = typeof cobrador_id === "string" && cobrador_id
+      ? cobrador_id
+      : (alvo.cobrador_id ?? sessao.user.id);
   }
   // cobrador vira self-tenant nulo; credor/visualizador no tenant do cobrador atual (se trocou de papel)
   if (role === "cobrador") patch.cobrador_id = null;

@@ -74,7 +74,7 @@ const PERFIS = [
   { nome: "Admin", tone: "green" as const, d: "Dono da plataforma (único). Vê tudo de todas as contas, com atribuição, e cuida da infraestrutura. Ninguém mais pode virar admin." },
   { nome: "Cobrador", tone: "blue" as const, d: "O operador. Vê e edita só o que é dele (suas carteiras, chips, mensagens, descontos e chaves). Cria os próprios credores e visualizadores." },
   { nome: "Credor", tone: "violet" as const, d: "Dono da carteira. Só leitura do andamento das suas carteiras. Nunca vê chaves, wallet ou chips." },
-  { nome: "Visualizador", tone: "neutral" as const, d: "Só leitura (relatórios, devedores), no escopo de um cobrador. Não altera nada." },
+  { nome: "Visualizador", tone: "neutral" as const, d: "Vê todos os dados operacionais da conta vinculada (carteiras, devedores, conversas e relatórios), sempre em modo somente leitura." },
 ];
 
 /* ------------------------------------------------------------------ */

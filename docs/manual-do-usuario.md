@@ -36,7 +36,8 @@ Você controla tudo pelo painel: ligar/desligar, descontos, mensagens, chips e r
   descontos e chaves). Cria os próprios credores e visualizadores.
 - **Credor** — dono da carteira. **Só leitura** do andamento das suas carteiras. Nunca vê chaves,
   wallet ou chips.
-- **Visualizador** — só leitura (relatórios, devedores), no escopo de um cobrador.
+- **Visualizador** — vê todos os dados operacionais da conta vinculada (carteiras, devedores,
+  conversas e relatórios), sempre em modo somente leitura.
 
 > Cada **cobrador** tem a **sua própria** Campanha, Mensagens, Descontos e chaves. O **admin** vê e
 > controla tudo, mas **separado por conta**: nessas telas há um **seletor de conta** ("Padrão global

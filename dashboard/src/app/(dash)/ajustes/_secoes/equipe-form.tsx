@@ -96,10 +96,10 @@ export function EquipeForm({ role, usuarios, carteiras, cobradores, meuId }: {
               <Label>Cobrador responsável (tenant)</Label>
               <select value={novo.cobrador_id} onChange={(e) => setNovo({ ...novo, cobrador_id: e.target.value })}
                       className="h-10 w-full rounded-xl border border-line bg-ink-850 px-3 text-sm text-chalk outline-none">
-                <option value="">— selecione —</option>
+                <option value="">Conta principal (admin)</option>
                 {cobradores.map((c) => <option key={c.id} value={c.id}>{c.nome} ({c.email})</option>)}
               </select>
-              <p className="mt-1 text-[11px] text-mist">O visualizador vê o que este cobrador vê (só leitura).</p>
+              <p className="mt-1 text-[11px] text-mist">O visualizador vê todos os dados operacionais desta conta, sem poder alterá-los.</p>
             </div>
           )}
 

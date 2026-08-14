@@ -19,7 +19,7 @@ const TODOS = ["admin", "cobrador", "credor", "visualizador"];
 const nav = [
   { href: "/", label: "Início", icon: LayoutDashboard, roles: TODOS },
   { href: "/carteiras", label: "Carteiras", icon: FolderUp, roles: TODOS },
-  { href: "/conversas", label: "Conversas", icon: MessagesSquare, roles: ["admin", "cobrador", "credor"] },
+  { href: "/conversas", label: "Conversas", icon: MessagesSquare, roles: TODOS },
   { href: "/ajustes", label: "Ajustes", icon: Settings2, roles: TODOS },
 ];
 
@@ -37,7 +37,7 @@ export function Sidebar({ nome, role }: { nome: string; role: string }) {
 
   return (
     <>
-    <aside className="sticky top-0 hidden h-screen w-[248px] shrink-0 flex-col border-r border-line bg-ink-900/60 px-3 py-5 backdrop-blur lg:flex">
+      <aside className="sticky top-0 hidden h-screen w-[248px] shrink-0 flex-col border-r border-line bg-ink-900/60 px-3 py-5 backdrop-blur lg:flex">
       <div className="px-2"><Logo /></div>
 
       <nav className="mt-8 flex flex-1 flex-col gap-1">
@@ -76,31 +76,31 @@ export function Sidebar({ nome, role }: { nome: string; role: string }) {
           </button>
         </div>
       </div>
-    </aside>
+      </aside>
 
-    <nav
-      aria-label="Navegação principal"
-      className="fixed inset-x-0 bottom-0 z-50 flex border-t border-line bg-ink-900/95 px-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] pt-2 shadow-[0_-12px_36px_rgba(0,0,0,0.24)] backdrop-blur-xl lg:hidden"
-    >
-      {itens.map(({ href, label, icon: Icon }) => {
-        const ativo = href === "/" ? path === "/" : (path === href || path.startsWith(href + "/"));
-        return (
-          <Link
-            key={href}
-            href={href}
-            aria-current={ativo ? "page" : undefined}
-            className={cn(
-              "relative flex min-w-0 flex-1 flex-col items-center gap-1 rounded-xl px-1 py-1.5 text-[11px] font-medium transition-colors",
-              ativo ? "text-emerald" : "text-mist active:bg-ink-800 active:text-chalk",
-            )}
-          >
-            {ativo && <span className="absolute -top-2 h-0.5 w-8 rounded-full bg-emerald shadow-[0_0_12px_rgb(var(--c-emerald)/0.65)]" />}
-            <Icon className="h-5 w-5" aria-hidden="true" />
-            <span className="truncate">{label}</span>
-          </Link>
-        );
-      })}
-    </nav>
+      <nav
+        aria-label="Navegação principal"
+        className="fixed inset-x-0 bottom-0 z-50 flex border-t border-line bg-ink-900/95 px-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] pt-2 shadow-[0_-12px_36px_rgba(0,0,0,0.24)] backdrop-blur-xl lg:hidden"
+      >
+        {itens.map(({ href, label, icon: Icon }) => {
+          const ativo = href === "/" ? path === "/" : (path === href || path.startsWith(href + "/"));
+          return (
+            <Link
+              key={href}
+              href={href}
+              aria-current={ativo ? "page" : undefined}
+              className={cn(
+                "relative flex min-w-0 flex-1 flex-col items-center gap-1 rounded-xl px-1 py-1.5 text-[11px] font-medium transition-colors",
+                ativo ? "text-emerald" : "text-mist active:bg-ink-800 active:text-chalk",
+              )}
+            >
+              {ativo && <span className="absolute -top-2 h-0.5 w-8 rounded-full bg-emerald shadow-[0_0_12px_rgb(var(--c-emerald)/0.65)]" />}
+              <Icon className="h-5 w-5" aria-hidden="true" />
+              <span className="truncate">{label}</span>
+            </Link>
+          );
+        })}
+      </nav>
     </>
   );
 }
