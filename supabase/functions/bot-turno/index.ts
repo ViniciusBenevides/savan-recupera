@@ -7,9 +7,17 @@ import { createClient, SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { ehEstadoTerminal } from "../_shared/conversation-state.ts";
 import {
   classificarRespostaIdentidade,
+  ehObjecaoConfirmacaoIdentidade,
+  ehPedidoDocumentoOrigem,
+  ehPedidoNaoPerturbe,
+  ehPerguntaOrigemContato,
+  ehRecusaSimplesNegociacao,
   ehPerguntaDeIdentidade,
   normalizar,
   respostaConfirmacaoIdentidade,
+  respostaContextoSeguroIdentidade,
+  respostaLimiteIdentidade,
+  respostaNaoPerturbe,
   respostaPessoaErrada,
 } from "../_shared/identity.ts";
 import { detalharPisoProposta, garantirExplicacaoPiso } from "../_shared/proposal.ts";
@@ -280,6 +288,9 @@ function montarSystemPrompt(
     ? "A IDENTIDADE JÁ FOI CONFIRMADA nesta conversa. NUNCA volte a pedir nome ou confirmação de identidade."
     : `CONFIRME A IDENTIDADE antes de revelar qualquer dado. Pergunte se fala com ${primeiroNome}. Se não for a pessoa / número errado: peça desculpas, chame a tool pessoa_errada e encerre. NUNCA revele CPF, valor da dívida ou outros dados antes da confirmação.`);
   regras.push("Se pedir para não ser mais contatada: chame a tool nao_perturbe, confirme educadamente e encerre.");
+  regras.push("Se pedir comprovante, contrato ou documento da compra: não ofereça Pix novamente e não tente convencer. Chame escalar_humano para a equipe localizar a documentação; deixe claro que a pessoa pode conferir antes de decidir sobre pagamento.");
+  regras.push("Se perguntar como a empresa obteve o telefone ou os dados de contato: NUNCA presuma nem afirme que o número veio da SAVAN ou de uma base cedida. Chame escalar_humano para a equipe verificar a fonte específica do dado.");
+  regras.push("Uma recusa simples da proposta, como 'não', encerra a negociação com respeito. Não faça nova oferta, não pressione e não pergunte se a pessoa quer optar por não receber mensagens; só registre não perturbe quando ela pedir isso.");
   regras.push("Se disser que não lembra, não reconhece, acha que é golpe ou perguntar a origem/ano: NÃO escale ainda. Chame consultar_origem, explique os dados disponíveis, ofereça comprovação documental e o canal oficial. Se a data estiver ausente, diga isso claramente; nunca invente.");
   regras.push("Só chame escalar_humano se a pessoa pedir um atendente, fizer contestação formal depois da explicação, solicitar um documento indisponível, ou citar advogado/Procon/Justiça.");
   regras.push("A carteira de recebíveis da SAVAN foi cedida à MC Cred, atual detentora. NUNCA diga que o pagamento pode ser feito na loja SAVAN. Ofereça o Pix da MC Cred ou atendimento presencial em: Ed Central Sector, Condomínio Edifício Parthenon Center - R. 4, 515 - sala 1619 - Setor Central, Goiânia - GO, 74020-045. O endereço também consta na bio do WhatsApp.");
@@ -325,9 +336,10 @@ function tools() {
 
 async function concluirNaoPerturbe(
   sb: SupabaseClient,
-  conv: { id: number; devedor_id: number },
+  conv: { id: number; devedor_id: number; telefone_id?: number | null },
   carteiraId: number | null,
   simulacao: boolean,
+  identidadeConfirmada: boolean,
 ) {
   const { data: alterada, error } = await sb.from("conversas")
     .update({ estado: "optout", motivo_encerramento: "nao_perturbe", proximo_followup_em: null })
@@ -335,9 +347,27 @@ async function concluirNaoPerturbe(
   if (error) throw error;
   if (!alterada) return;
 
-  await sb.from("devedores").update({ status_cobranca: "nao_perturbe" }).eq("id", conv.devedor_id);
+  // Antes da identidade, o pedido vale para este telefone, não para todos os
+  // contatos eventualmente associados ao devedor procurado.
+  if (conv.telefone_id) {
+    const agora = new Date().toISOString();
+    const { error: erroTelefone } = await sb.from("telefones_devedor")
+      .update({ whatsapp_valido: false, verificado_em: agora })
+      .eq("id", conv.telefone_id);
+    if (erroTelefone) throw erroTelefone;
+
+    const { error: erroFila } = await sb.from("fila_envios")
+      .update({ status: "cancelado", erro: "nao_perturbe" })
+      .eq("telefone_id", conv.telefone_id)
+      .in("status", ["aguardando", "processando"]);
+    if (erroFila) throw erroFila;
+  }
+  if (identidadeConfirmada) {
+    await sb.from("devedores").update({ status_cobranca: "nao_perturbe" }).eq("id", conv.devedor_id);
+  }
   await sb.from("eventos_campanha").insert({
-    tipo: "optout", devedor_id: conv.devedor_id, carteira_id: carteiraId, payload: { simulacao },
+    tipo: "optout", devedor_id: conv.devedor_id, carteira_id: carteiraId,
+    payload: { simulacao, escopo: identidadeConfirmada ? "devedor" : "telefone" },
   });
   if (!simulacao) {
     await sb.rpc("fn_inc_metrica_dia", {
@@ -381,6 +411,86 @@ async function concluirPessoaErrada(
   await sb.from("eventos_campanha").insert({
     tipo: "pessoa_errada", devedor_id: conv.devedor_id, carteira_id: carteiraId, payload: { simulacao },
   });
+}
+
+async function concluirEscalacao(
+  sb: SupabaseClient,
+  p: {
+    conv: any;
+    carteira: any;
+    cfg: any;
+    seg: Record<string, string>;
+    carteiraId: number | null;
+    simulacao: boolean;
+    chatwootConversationId: number;
+    historico: any[];
+    mensagem: string;
+    motivo: string;
+    proposta: any;
+  },
+) {
+  const equipe = await escolherEscalador(sb, p.carteira, p.cfg, p.conv.devedor_id);
+  await sb.from("devedores").update({ status_cobranca: "contestado" })
+    .eq("id", p.conv.devedor_id).neq("status_cobranca", "pago");
+  await sb.from("conversas").update({ estado: "humano", proximo_followup_em: null })
+    .eq("id", p.conv.id);
+  await sb.from("eventos_campanha").insert({
+    tipo: "contestacao", devedor_id: p.conv.devedor_id, carteira_id: p.carteiraId,
+    payload: { motivo: p.motivo, simulacao: p.simulacao },
+  });
+
+  const propostaTexto = p.proposta?.valor_final
+    ? `R$ ${p.proposta.valor_final} (${p.proposta.desconto_pct}% off, vale ate ${p.proposta.valido_ate})`
+    : "sem proposta gerada ainda";
+  const resumo = `Devedor: ${p.proposta?.nome ?? ("#" + p.conv.devedor_id)}. Motivo da escalacao: ${p.motivo}. Proposta vigente: ${propostaTexto}. Ultima mensagem do devedor: "${p.mensagem}".`;
+  const { data: existentes } = await sb.from("escalacoes").select("id")
+    .eq("devedor_id", p.conv.devedor_id).in("status", ["aberta", "em_atendimento"]).limit(1);
+  const novaEscalacao = !existentes?.length;
+  if (novaEscalacao) {
+    await sb.from("escalacoes").insert({
+      conversa_id: p.conv.id, devedor_id: p.conv.devedor_id, carteira_id: p.carteiraId,
+      chip_id: p.conv.chip_id ?? null, motivo: p.motivo,
+      contexto_snapshot: { historico: p.historico, mensagem: p.mensagem }, resumo,
+      equipe_chip_id: equipe?.chip_id ?? null, atendente_numero: equipe?.numero ?? null,
+      status: "aberta",
+    });
+  }
+
+  if (!p.simulacao && novaEscalacao) {
+    try {
+      const cwUrl = p.cfg.chatwoot?.url ?? "https://chatwoot.example.com";
+      const cwAcc = p.cfg.chatwoot?.account_id ?? 1;
+      const cwH = { "api_access_token": p.seg.CHATWOOT_TOKEN, "Content-Type": "application/json" };
+      await fetch(`${cwUrl}/api/v1/accounts/${cwAcc}/conversations/${p.chatwootConversationId}/messages`, {
+        method: "POST", headers: cwH,
+        body: JSON.stringify({
+          content: `Escalado pelo robo. ${resumo}${equipe?.numero ? " | Cobrador responsavel: " + equipe.numero : ""}`,
+          message_type: "outgoing", private: true,
+        }),
+      });
+      const labelsResponse = await fetch(
+        `${cwUrl}/api/v1/accounts/${cwAcc}/conversations/${p.chatwootConversationId}/labels`,
+        { headers: cwH },
+      );
+      const labelsBody = await labelsResponse.json().catch(() => ({}));
+      const labelsAtuais = Array.isArray(labelsBody?.payload) ? labelsBody.payload : [];
+      await fetch(`${cwUrl}/api/v1/accounts/${cwAcc}/conversations/${p.chatwootConversationId}/labels`, {
+        method: "POST", headers: cwH,
+        body: JSON.stringify({ labels: [...new Set([...labelsAtuais, "escalado-humano"])] }),
+      });
+      const teamNome = p.cfg.chatwoot?.team_escalacao ?? "Cobranca SAVAN";
+      const teamsResponse = await fetch(`${cwUrl}/api/v1/accounts/${cwAcc}/teams`, { headers: cwH });
+      const teams = await teamsResponse.json().catch(() => []);
+      const team = Array.isArray(teams) ? teams.find((t: any) => t?.name === teamNome) : null;
+      if (team?.id) {
+        await fetch(`${cwUrl}/api/v1/accounts/${cwAcc}/conversations/${p.chatwootConversationId}/assignments`, {
+          method: "POST", headers: cwH, body: JSON.stringify({ team_id: team.id }),
+        });
+      }
+    } catch (_e) { /* a integracao nao bloqueia o registro interno da escalacao */ }
+  }
+
+  return { equipe, resumo };
 }
 
 type EstadoFila = "pendente" | "processando" | "concluida" | "suplantada" | "falhou";
@@ -561,11 +671,33 @@ Deno.serve(async (req) => {
   // interpretado como confirmação. Somente resposta explicita libera os dados.
   const entradaNormal = normalizar(b.mensagem);
   const nomeProcurado = prop?.nome ?? prop?.primeiro_nome ?? "a pessoa procurada";
+  const tentativasAnteriores = hist.filter((m: any) =>
+    m.direcao === "saida" && ehPerguntaDeIdentidade(m.conteudo)
+  ).length;
   const classificacaoIdentidade = classificarRespostaIdentidade(b.mensagem, nomeProcurado);
   const confirmouAgora = classificacaoIdentidade === "confirmou";
   const negouIdentidade = classificacaoIdentidade === "negou";
   let identidadeConfirmada = !!conv.identidade_confirmada_em
     && conv.identidade_confirmada_por !== "legado_dados_ja_revelados";
+
+  // O direito de interromper o contato não depende de confirmar identidade. Esta
+  // regra vem antes de todo o restante para nunca responder "você é Fulano?" a
+  // quem acabou de pedir que as mensagens parem.
+  if (ehPedidoNaoPerturbe(b.mensagem)) {
+    const resposta = respostaNaoPerturbe();
+    await concluirNaoPerturbe(sb, conv, carteiraId, simulacao, identidadeConfirmada);
+    await sb.from("mensagens").insert({
+      conversa_id: conv.id, direcao: "saida", origem: "bot", conteudo: resposta, simulacao,
+    });
+    await sb.from("conversas").update({
+      ultima_msg_em: new Date().toISOString(), ultima_msg_de: "bot",
+    }).eq("id", conv.id);
+    await marcarFila(sb, incomingMessageId, "concluida");
+    return json({
+      ok: true, acao: "encerrar", encerrar: true, simulacao,
+      enviado_direto: false, mensagens: [resposta],
+    });
+  }
 
   if (!identidadeConfirmada && confirmouAgora) {
     identidadeConfirmada = true;
@@ -590,10 +722,22 @@ Deno.serve(async (req) => {
       acaoIdentidade = "encerrar";
       encerrarIdentidade = true;
       await concluirPessoaErrada(sb, conv, carteiraId, simulacao);
+    } else if (tentativasAnteriores >= 2) {
+      // Duas perguntas sem confirmação são o limite. Depois disso, insistir só
+      // aumenta a suspeita de golpe e repete exatamente a falha observada.
+      respostaIdentidade = respostaLimiteIdentidade();
+      acaoIdentidade = "encerrar";
+      encerrarIdentidade = true;
+      await sb.from("conversas").update({
+        estado: "encerrada", motivo_encerramento: "outro", proximo_followup_em: null,
+      }).eq("id", conv.id);
+      await sb.from("eventos_campanha").insert({
+        tipo: "identidade_nao_confirmada", devedor_id: conv.devedor_id,
+        carteira_id: carteiraId, payload: { simulacao, tentativas: tentativasAnteriores },
+      });
+    } else if (ehObjecaoConfirmacaoIdentidade(b.mensagem)) {
+      respostaIdentidade = respostaContextoSeguroIdentidade(nomeProcurado);
     } else {
-      const tentativasAnteriores = hist.filter((m: any) =>
-        m.direcao === "saida" && ehPerguntaDeIdentidade(m.conteudo)
-      ).length;
       respostaIdentidade = respostaConfirmacaoIdentidade(
         nomeProcurado,
         tentativasAnteriores,
@@ -616,6 +760,56 @@ Deno.serve(async (req) => {
   const { data: origemDev } = await sb.from("devedores")
     .select("nome, cpf_cnpj, processo, saldo, vencimento, grupo_credor, carteira_credor")
     .eq("id", conv.devedor_id).maybeSingle();
+
+  // Solicitações que exigem comprovação da equipe não ficam a cargo do modelo.
+  // Além de evitar alucinação sobre a fonte do telefone, esta barreira impede
+  // que um pedido de documento seja seguido por outra oferta de Pix.
+  const pediuDocumento = ehPedidoDocumentoOrigem(b.mensagem);
+  const perguntouOrigemContato = ehPerguntaOrigemContato(b.mensagem);
+  if (pediuDocumento || perguntouOrigemContato) {
+    const motivo = pediuDocumento ? "solicitou_documento_origem" : "solicitou_origem_dado_contato";
+    const escalacao = await concluirEscalacao(sb, {
+      conv, carteira, cfg, seg, carteiraId, simulacao,
+      chatwootConversationId: convId, historico: hist,
+      mensagem: String(b.mensagem ?? ""), motivo, proposta: prop,
+    });
+    const resposta = pediuDocumento
+      ? "Claro. Vou encaminhar para a equipe verificar a documentação de origem da compra. Você pode conferir antes de decidir sobre qualquer pagamento. O atendimento automático fica pausado e a equipe dará sequência por aqui."
+      : "Entendo a preocupação. O atendimento automático não consegue confirmar com segurança a fonte específica deste número, então não vou inventar essa informação. Encaminhei à equipe responsável para verificar a origem do contato. Não é necessário enviar CPF, documento, senha ou código.";
+    await sb.from("mensagens").insert({
+      conversa_id: conv.id, direcao: "saida", origem: "bot", conteudo: resposta, simulacao,
+    });
+    await sb.from("conversas").update({
+      ultima_msg_em: new Date().toISOString(), ultima_msg_de: "bot",
+    }).eq("id", conv.id);
+    await marcarFila(sb, incomingMessageId, "concluida");
+    return json({
+      ok: true, acao: "escalar", escalar: motivo, resumo: escalacao.resumo,
+      equipe: escalacao.equipe, encerrar: true, simulacao,
+      enviado_direto: false, mensagens: [resposta],
+    });
+  }
+
+  if (ehRecusaSimplesNegociacao(b.mensagem)) {
+    const resposta = "Tudo bem. Não vou insistir. Encerrei este atendimento por aqui.";
+    await sb.from("conversas").update({
+      estado: "encerrada", motivo_encerramento: "outro", proximo_followup_em: null,
+      ultima_msg_em: new Date().toISOString(), ultima_msg_de: "bot",
+    }).eq("id", conv.id);
+    await sb.from("devedores").update({ status_cobranca: "recusado" })
+      .eq("id", conv.devedor_id).neq("status_cobranca", "pago");
+    await sb.from("mensagens").insert({
+      conversa_id: conv.id, direcao: "saida", origem: "bot", conteudo: resposta, simulacao,
+    });
+    await sb.from("eventos_campanha").insert({
+      tipo: "recusa", devedor_id: conv.devedor_id, carteira_id: carteiraId, payload: { simulacao },
+    });
+    await marcarFila(sb, incomingMessageId, "concluida");
+    return json({
+      ok: true, acao: "encerrar", encerrar: true, simulacao,
+      enviado_direto: false, mensagens: [resposta],
+    });
+  }
 
   if (ehDuvidaDeOrigem(b.mensagem)) {
     const respostaOrigem = respostaOrigemDeterministica({
@@ -787,7 +981,7 @@ Deno.serve(async (req) => {
         }
       } else if (nome === "nao_perturbe") {
         acao = "encerrar"; encerrar = true;
-        await concluirNaoPerturbe(sb, conv, carteiraId, simulacao);
+        await concluirNaoPerturbe(sb, conv, carteiraId, simulacao, true);
       } else if (nome === "pessoa_errada") {
         acao = "encerrar"; encerrar = true;
         await concluirPessoaErrada(sb, conv, carteiraId, simulacao);
@@ -836,7 +1030,7 @@ Deno.serve(async (req) => {
       await concluirPessoaErrada(sb, conv, carteiraId, simulacao);
     } else if (proxima && instrucaoDestino.includes("nao_perturbe") && !toolsExecutadas.has("nao_perturbe")) {
       acao = "encerrar"; encerrar = true;
-      await concluirNaoPerturbe(sb, conv, carteiraId, simulacao);
+      await concluirNaoPerturbe(sb, conv, carteiraId, simulacao, true);
     }
   }
 

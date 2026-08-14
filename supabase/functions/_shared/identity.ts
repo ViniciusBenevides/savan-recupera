@@ -48,8 +48,12 @@ export function classificarRespostaIdentidade(
     /\bdesconheco\b/,
     /\bnunca\s+(?:ouvi\s+falar|vi)\b/,
     /\b(?:aqui|neste\s+numero)\s+nao\s+tem\b/,
+    /\bnao\s+tem\s+(?:ninguem|nenhuma\s+pessoa)\b.*\b(?:nome|aqui|aki)\b/,
+    /\b(?:sou|e|eh)\s+(?:a\s+|o\s+)?(?:irma|irmao|mae|pai|filha|filho|esposa|marido|tia|tio|sobrinha|sobrinho|cunhada|cunhado|amiga|amigo|vizinha|vizinho)\s+d(?:ele|ela)\b/,
+    /\b(?:vou|irei|posso)\s+(?:passar|encaminhar|repassar|avisar)\b.*\b(?:contato|mensagem|recado)\b.*\bd(?:ele|ela)\b/,
+    /\b(?:fale|fala|mande|manda|envie|envia)\b.*\b(?:para|pro|pra)\s+(?:ele|ela)\b/,
   ].some((padrao) => padrao.test(texto));
-  if (negou || /^(?:nao|negativo|numero errado|pessoa errada)$/.test(texto)) return "negou";
+  if (negou || /^(?:(?:oi|ola|bom dia|boa tarde|boa noite)\s+)?(?:nao|negativo|numero errado|pessoa errada)$/.test(texto)) return "negou";
 
   // Se a pessoa se apresenta com outro primeiro nome, a identidade esta negada
   // mesmo sem usar a palavra "nao".
@@ -71,6 +75,46 @@ export function classificarRespostaIdentidade(
     new RegExp(`\\b${esperado}\\s+(?:falando|aqui)\\b`),
   ].some((padrao) => padrao.test(texto));
   return confirmou ? "confirmou" : "indefinida";
+}
+
+export function ehPedidoNaoPerturbe(entrada: unknown): boolean {
+  const texto = normalizar(entrada);
+  return [
+    /\bnao\s+(?:me\s+)?(?:manda|mande|mandar|envia|envie|enviar|liga|ligue|ligar|chama|chame|chamar|contata|contate|contatar|cobra|cobre|cobrar)\b.*\b(?:mais|novamente|de novo)\b/,
+    /\bnao\s+quero\s+(?:mais\s+)?(?:receber|ser\s+contatad[oa]|mensagem|ligacao|cobranca)/,
+    /\b(?:pare|para|parem|cessar|cessem)\s+(?:de\s+)?(?:me\s+)?(?:mandar|enviar|ligar|cobrar|contatar)/,
+    /\b(?:retire|retira|remova|remove|exclua|exclui|apague|apaga|desvincule|desvincula)\b.*\b(?:meu\s+)?(?:numero|telefone|contato|cadastro)\b/,
+    /\b(?:bloqueie|bloqueia)\b.*\b(?:meu\s+)?(?:numero|telefone|contato)\b/,
+    /\bnao\s+autorizo\b.*\b(?:contato|mensagem|ligacao|cobranca)/,
+  ].some((padrao) => padrao.test(texto));
+}
+
+export function ehObjecaoConfirmacaoIdentidade(entrada: unknown): boolean {
+  const texto = normalizar(entrada);
+  return /\b(?:sobre|do)\s+que\b/.test(texto)
+    || /\bqual\s+(?:e|eh)\s+(?:o\s+)?assunto\b/.test(texto)
+    || /\bque\s+(?:e|eh)\s+o\s+assunto\b/.test(texto)
+    || /\bcomo\s+(?:e|eh)\s+que\s+eu\s+vou\s+confirmar\b/.test(texto)
+    || /\bnao\s+(?:vou|quero)\s+confirmar\b/.test(texto)
+    || /\b(?:mande|manda|explique|explica|fale|fala)\b.*\b(?:primeiro|antes|assunto|devendo|divida)\b/.test(texto)
+    || /\b(?:golpe|fraude|suspeito|estranho)\b/.test(texto);
+}
+
+export function ehPedidoDocumentoOrigem(entrada: unknown): boolean {
+  const texto = normalizar(entrada);
+  return /\b(?:comprovante|documento|contrato|nota fiscal|cupom|carne|duplicata)\b/.test(texto)
+    && /\b(?:compra|divida|debito|pendencia|origem|savan|conta|cobranca)\b/.test(texto);
+}
+
+export function ehPerguntaOrigemContato(entrada: unknown): boolean {
+  const texto = normalizar(entrada);
+  return /\bcomo\b.*\b(?:conseguiu|conseguiram|obteve|obtiveram|achou|acharam|pegou|pegaram)\b.*\b(?:meu\s+)?(?:numero|telefone|contato|dados)\b/.test(texto)
+    || /\b(?:de onde|onde)\b.*\b(?:tirou|tiraram|veio|conseguiu|conseguiram)\b.*\b(?:meu\s+)?(?:numero|telefone|contato|dados)\b/.test(texto);
+}
+
+export function ehRecusaSimplesNegociacao(entrada: unknown): boolean {
+  const texto = normalizar(entrada);
+  return /^(?:nao|nao obrigado|nao obrigada|nao quero|deixa pra la|sem interesse|agora nao)$/.test(texto);
 }
 
 export function ehPerguntaDeIdentidade(conteudo: unknown): boolean {
@@ -114,4 +158,16 @@ export function respostaPessoaErrada(semente: number): string {
     "Obrigado pela informação. Vou retirar este número do cadastro de contato da pessoa procurada. Peço desculpas pelo transtorno.",
   ];
   return opcoes[Math.abs(Math.trunc(semente || 0)) % opcoes.length];
+}
+
+export function respostaNaoPerturbe(): string {
+  return "Entendi. Registrei que este número não quer receber novas mensagens e encerrei o contato automático. Desculpe pelo incômodo.";
+}
+
+export function respostaContextoSeguroIdentidade(nome: unknown): string {
+  return `Entendo a cautela. É um contato da MC Cred relacionado a um atendimento da SAVAN Calçados. Não envie documento, foto, CPF, senha ou código. Para eu saber se posso continuar sem expor dados, responda apenas se você é ${nomeCompletoLegivel(nome)}: sim ou não.`;
+}
+
+export function respostaLimiteIdentidade(): string {
+  return "Como não foi possível confirmar a identidade, encerrei este atendimento automático e não vou informar dados da conta por aqui. Se a mensagem era para você e quiser verificar, procure a MC Cred pelo canal oficial exibido neste perfil.";
 }

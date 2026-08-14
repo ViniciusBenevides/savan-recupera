@@ -1,10 +1,18 @@
 import { assert, assertEquals, assertMatch, assertNotEquals } from "jsr:@std/assert@1";
 import {
   classificarRespostaIdentidade,
+  ehObjecaoConfirmacaoIdentidade,
+  ehPedidoDocumentoOrigem,
+  ehPedidoNaoPerturbe,
+  ehPerguntaOrigemContato,
+  ehRecusaSimplesNegociacao,
   ehPerguntaDeIdentidade,
   nomeCompletoLegivel,
   primeiroNomeLegivel,
   respostaConfirmacaoIdentidade,
+  respostaContextoSeguroIdentidade,
+  respostaLimiteIdentidade,
+  respostaNaoPerturbe,
   respostaPessoaErrada,
 } from "./identity.ts";
 
@@ -24,6 +32,11 @@ Deno.test("reconhece negacoes com texto adicional e outro nome", () => {
     "Não conheço essa pessoa",
     "Vocês mandaram errado",
     "Número reciclado",
+    "É irmã dela",
+    "Sou a mãe dela",
+    "Olá, irei passar o contato dela",
+    "Oi não",
+    "Não tem ninguém com esse nome aki não",
   ];
   for (const frase of negativas) {
     assertEquals(classificarRespostaIdentidade(frase, "Leandro"), "negou", frase);
@@ -54,4 +67,26 @@ Deno.test("detecta tentativas anteriores e varia encerramentos", () => {
   assert(ehPerguntaDeIdentidade("Falo com a pessoa certa?"));
   assert(ehPerguntaDeIdentidade("Você é LEANDRO ARAUJO DA CRUZ?"));
   assertNotEquals(respostaPessoaErrada(0), respostaPessoaErrada(1));
+});
+
+Deno.test("prioriza pedidos naturais de nao perturbacao", () => {
+  for (const frase of [
+    "Não manda mais mensagem no meu telefone",
+    "Parem de me cobrar",
+    "Retira meu número do cadastro",
+    "Não quero mais receber mensagem",
+  ]) assertEquals(ehPedidoNaoPerturbe(frase), true, frase);
+  assertEquals(ehPedidoNaoPerturbe("Não lembro dessa compra"), false);
+  assertMatch(respostaNaoPerturbe(), /encerrei o contato automático/);
+});
+
+Deno.test("identifica objecoes seguras, documentos e origem do telefone", () => {
+  assert(ehObjecaoConfirmacaoIdentidade("Sobre o que é o assunto?"));
+  assert(ehObjecaoConfirmacaoIdentidade("Como vou confirmar sem saber do que se trata?"));
+  assert(ehPedidoDocumentoOrigem("Teria como mandar o comprovante da compra?"));
+  assert(ehPerguntaOrigemContato("Como conseguiu meu número?"));
+  assert(ehRecusaSimplesNegociacao("Não"));
+  assertEquals(ehRecusaSimplesNegociacao("Não reconheço essa compra"), false);
+  assertMatch(respostaContextoSeguroIdentidade("SILVANIA DE SOUSA"), /Silvania de Sousa/);
+  assertMatch(respostaLimiteIdentidade(), /encerrei este atendimento automático/);
 });
