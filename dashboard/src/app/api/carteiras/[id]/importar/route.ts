@@ -5,6 +5,7 @@ import { parsePlanilha, lerGrade, CAMPOS_OBRIGATORIOS, type Receita } from "@/li
 import { validarReceita } from "@/lib/import/mapear-ia";
 
 export const runtime = "nodejs";
+const BUCKET_IMPORTACOES = "importacoes-carteiras";
 
 function pedacos<T>(arr: T[], n: number): T[][] {
   const out: T[][] = [];
@@ -50,17 +51,43 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
 
   // trava de duplicidade: registra a importação (arquivo_nome é UNIQUE global)
-  const { data: imp, error: impErr } = await admin.from("importacoes")
+  const { data: impCriada, error: impErr } = await admin.from("importacoes")
     .insert({ carteira_id: carteiraId, arquivo_nome: arquivoNome, status: "processando", criado_por: user.id })
     .select("id").single();
+  let imp = impCriada;
   if (impErr) {
     if (impErr.code === "23505") {
-      return NextResponse.json({ erro: `Já existe uma planilha importada com o nome "${arquivoNome}". Renomeie o arquivo para subir uma nova versão.` }, { status: 409 });
+      const { data: antiga } = await admin.from("importacoes")
+        .select("id, carteira_id, arquivo_path")
+        .eq("arquivo_nome", arquivoNome)
+        .maybeSingle();
+      if (antiga?.carteira_id === carteiraId && !antiga.arquivo_path) {
+        imp = { id: antiga.id };
+        await admin.from("importacoes").update({ status: "processando" }).eq("id", antiga.id);
+      } else {
+        return NextResponse.json({ erro: `Já existe uma planilha importada com o nome "${arquivoNome}". Renomeie o arquivo para subir uma nova versão.` }, { status: 409 });
+      }
+    } else {
+      return NextResponse.json({ erro: impErr.message }, { status: 400 });
     }
-    return NextResponse.json({ erro: impErr.message }, { status: 400 });
   }
+  if (!imp) return NextResponse.json({ erro: "nao_foi_possivel_registrar_importacao" }, { status: 500 });
 
   try {
+    const nomeSeguro = arquivoNome.normalize("NFKD").replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "planilha.xlsx";
+    const arquivoPath = `${carteiraId}/${imp.id}/${nomeSeguro}`;
+    const mime = file.type || "application/octet-stream";
+    const { error: storageError } = await admin.storage.from(BUCKET_IMPORTACOES).upload(arquivoPath, buf, {
+      contentType: mime,
+      upsert: false,
+    });
+    if (storageError) throw new Error(`arquivo_original: ${storageError.message}`);
+    await admin.from("importacoes").update({
+      arquivo_path: arquivoPath,
+      arquivo_tamanho: file.size,
+      arquivo_mime: mime,
+    }).eq("id", imp.id);
+
     const { devedores, stats, erros } = parsePlanilha(buf, receita);
 
     if (devedores.length === 0) {

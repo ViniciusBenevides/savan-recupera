@@ -7,12 +7,11 @@ import {
 } from "@/components/ui/primitives";
 import { brl, num, dataHoraBR } from "@/lib/utils";
 import { supabaseBrowser } from "@/lib/supabase-browser";
-import { DistribuicaoCard } from "./distribuicao";
 import { ImportadorIA, ModoSeletor } from "../importador-ia";
 import {
   Play, Pause, Archive, Trash2, Save, CheckCircle2, Loader2, Upload, Users, FileSpreadsheet, AlertTriangle,
   CreditCard, Headset, ChevronRight,
-  History, RotateCcw,
+  History, RotateCcw, Eye, Download, X,
 } from "lucide-react";
 import { AbaRoteiro } from "./roteiro";
 import { ConhecimentoCarteira } from "./conhecimento";
@@ -24,7 +23,6 @@ const TABS = [
   { k: "visao", t: "Visão geral" },
   { k: "fluxo", t: "Fluxo do robô" },
   { k: "conhecimento", t: "Conhecimento" },
-  { k: "recebimento", t: "Recebimento" },
 ] as const;
 type Tab = typeof TABS[number]["k"];
 
@@ -46,22 +44,22 @@ export function CarteiraPainel({ carteira, importacoes, padrao, conhecimento, fl
         ))}
       </div>
       {tab === "visao" && (
-        <div className="max-w-2xl space-y-4">
+        <div className="space-y-4">
           <AbaStatus carteira={carteira} podeEditar={podeEditar} />
+          {podeEditar && <AbaAsaas carteira={carteira} padrao={padrao} modo="asaas" />}
           <AbaHistorico carteira={carteira} importacoes={importacoes} podeEditar={podeEditar} />
         </div>
       )}
       {tab === "fluxo" && podeEditar && (
         <div className="space-y-4">
-          <AjustesDoRobo carteira={carteira} padrao={padrao} />
-          <HistoricoFluxos carteira={carteira} fluxos={fluxos} />
           <AbaRoteiroLigado carteira={carteira} padrao={padrao} />
+          <AbaAsaas carteira={carteira} padrao={padrao} modo="escaladores" />
+          <HistoricoFluxos carteira={carteira} fluxos={fluxos} />
         </div>
       )}
       {tab === "conhecimento" && podeEditar && (
-        <ConhecimentoCarteira carteiraId={carteira.id} entradas={conhecimento} />
+        <ConhecimentoCarteira carteira={carteira} padrao={padrao} entradas={conhecimento} />
       )}
-      {tab === "recebimento" && podeEditar && <AbaAsaas carteira={carteira} padrao={padrao} />}
     </>
   );
 }
@@ -237,8 +235,6 @@ function AbaStatus({ carteira, podeEditar = true }: { carteira: any; podeEditar?
           <div className="font-mono text-2xl text-chalk tabnums">{brl(carteira.soma_saldo)}</div>
         </Card>
       </div>
-
-      {podeEditar && <DistribuicaoCard carteira={carteira} />}
 
       {podeEditar && (
         <Card className="flex items-center justify-between border-rose/20">
@@ -445,7 +441,7 @@ function AbaDescontos({ carteira, padrao }: { carteira: any; padrao: Record<stri
 }
 
 /* ---------- Asaas & cobrador ---------- */
-function AbaAsaas({ carteira, padrao }: { carteira: any; padrao: Record<string, any> }) {
+function AbaAsaas({ carteira, padrao, modo }: { carteira: any; padrao: Record<string, any>; modo: "asaas" | "escaladores" }) {
   const { patch, salvando, ok, erro } = useSalvar(carteira.id);
   const over = carteira.config_override ?? {};
   const a0 = over.asaas ?? {};
@@ -467,11 +463,12 @@ function AbaAsaas({ carteira, padrao }: { carteira: any; padrao: Record<string, 
   const [chipsEquipe, setChipsEquipe] = React.useState<any[]>([]);
 
   React.useEffect(() => {
+    if (modo !== "escaladores") return;
     supabaseBrowser().from("chips")
       .select("id, nome, agente_nome, numero_e164, status, regiao_uf, regiao_cidade")
       .eq("papel", "equipe").order("id")
       .then(({ data }) => setChipsEquipe(data ?? []));
-  }, []);
+  }, [modo]);
 
   // selecionados primeiro (em ordem de prioridade), depois o resto — pra o ↑ mover a linha de fato
   const ordenados = React.useMemo(() => {
@@ -492,8 +489,10 @@ function AbaAsaas({ carteira, padrao }: { carteira: any; padrao: Record<string, 
 
   async function salvar() {
     const novoOver: Record<string, any> = { ...over };
-    if (usarGlobal) { delete novoOver.asaas; }
-    else { novoOver.asaas = { wallet: String(wallet).trim(), comissao_pct: Number(comissao || 10) }; }
+    if (modo === "asaas") {
+      if (usarGlobal) { delete novoOver.asaas; }
+      else { novoOver.asaas = { wallet: String(wallet).trim(), comissao_pct: Number(comissao || 10) }; }
+    } else {
     delete novoOver.equipe; // formato antigo (objeto único) deixa de ser usado
     if (selecionados.length) {
       const lista = selecionados.map((id) => {
@@ -501,13 +500,14 @@ function AbaAsaas({ carteira, padrao }: { carteira: any; padrao: Record<string, 
         return { chip_id: id, nome: c?.agente_nome || c?.nome || null, numero: c?.numero_e164 || null };
       });
       novoOver.escaladores = { estrategia, lista };
-    } else { delete novoOver.escaladores; }
+      } else { delete novoOver.escaladores; }
+    }
     await patch({ config_override: Object.keys(novoOver).length ? novoOver : null });
   }
 
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
-      <Card className="space-y-4">
+    <div>
+      {modo === "asaas" && <Card className="space-y-4">
         <h3 className="flex items-center gap-2 font-display text-base font-600 text-chalk">
           <CreditCard className="h-4 w-4 text-emerald" /> Split do Pix desta carteira
         </h3>
@@ -539,9 +539,9 @@ function AbaAsaas({ carteira, padrao }: { carteira: any; padrao: Record<string, 
             Usando o global: credor recebe no Wallet <b className="text-chalk">{asaasGlobal.wallet_savan || asaasGlobal.wallet || "—"}</b>, comissão <b className="text-chalk">{asaasGlobal.comissao_pct ?? 10}%</b>.
           </p>
         )}
-      </Card>
+      </Card>}
 
-      <Card className="space-y-4">
+      {modo === "escaladores" && <Card className="space-y-4">
         <h3 className="flex items-center gap-2 font-display text-base font-600 text-chalk">
           <Headset className="h-4 w-4 text-violet" /> Escaladores (cobradores humanos)
         </h3>
@@ -591,12 +591,12 @@ function AbaAsaas({ carteira, padrao }: { carteira: any; padrao: Record<string, 
             </p>
           )}
         </div>
-      </Card>
+      </Card>}
 
-      <div className="lg:col-span-2 flex items-center gap-3">
+      <div className="mt-3 flex items-center gap-3">
         <Button onClick={salvar} disabled={salvando}>
           {salvando ? <Loader2 className="h-4 w-4 animate-spin" /> : ok ? <CheckCircle2 className="h-4 w-4" /> : <Save className="h-4 w-4" />}
-          {ok ? "Salvo!" : "Salvar"}
+          {ok ? "Salvo!" : modo === "asaas" ? "Salvar split" : "Salvar escaladores"}
         </Button>
         {erro && <span className="text-xs text-rose">{erro}</span>}
       </div>
@@ -612,6 +612,22 @@ function AbaHistorico({ carteira, importacoes, podeEditar = true }: { carteira: 
   const [carregando, setCarregando] = React.useState(false);
   const [erro, setErro] = React.useState<string | null>(null);
   const [okMsg, setOkMsg] = React.useState<string | null>(null);
+  const [importacaoAberta, setImportacaoAberta] = React.useState<any | null>(null);
+  const [preview, setPreview] = React.useState<any | null>(null);
+  const [carregandoPreview, setCarregandoPreview] = React.useState(false);
+  const [erroPreview, setErroPreview] = React.useState<string | null>(null);
+
+  async function carregarPreview(imp: any, aba?: string) {
+    setImportacaoAberta(imp); setCarregandoPreview(true); setErroPreview(null);
+    if (!aba) setPreview(null);
+    const query = new URLSearchParams({ modo: "preview" });
+    if (aba) query.set("aba", aba);
+    const resposta = await fetch(`/api/carteiras/${carteira.id}/importacoes/${imp.id}?${query}`);
+    const dados = await resposta.json().catch(() => ({}));
+    setCarregandoPreview(false);
+    if (!resposta.ok) { setErroPreview(dados.mensagem ?? "Não foi possível abrir esta planilha."); return; }
+    setPreview(dados);
+  }
 
   async function enviar() {
     if (!arquivo) return;
@@ -638,11 +654,11 @@ function AbaHistorico({ carteira, importacoes, podeEditar = true }: { carteira: 
       )}
       {podeEditar && (
         <Card className="space-y-3">
-          <Label className="flex items-center gap-1.5">Subir planilha para esta carteira <HelpHint text="Acrescenta/atualiza devedores. Mesmo CPF é atualizado (não duplica). Não aceita um arquivo com nome já usado." /></Label>
+          <Label className="flex items-center gap-1.5">Subir planilha para esta carteira <HelpHint text="Acrescenta ou atualiza devedores. Mesmo CPF é atualizado. Reenviar um arquivo antigo também libera a visualização do original quando ele ainda não estava armazenado." /></Label>
           <ModoSeletor modo={modo} setModo={setModo} />
           {modo === "modelo" ? (
             <>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                 <a href="/api/carteiras/modelo"><Button variant="outline">Baixar modelo</Button></a>
                 <label className="flex flex-1 cursor-pointer items-center gap-2 rounded-xl border border-dashed border-line bg-ink-900 px-3 py-2 hover:border-emerald/50">
                   <FileSpreadsheet className="h-4 w-4 text-emerald" />
@@ -666,7 +682,8 @@ function AbaHistorico({ carteira, importacoes, podeEditar = true }: { carteira: 
         <h3 className="border-b border-line px-5 py-3 font-display text-sm font-600 text-chalk">
           Importações desta carteira
         </h3>
-        <table className="w-full text-sm">
+        <div className="w-full overflow-x-auto">
+        <table className="w-full min-w-[820px] text-sm">
           <thead>
             <tr className="border-b border-line text-left text-xs uppercase tracking-wider text-mist">
               <th className="px-5 py-3 font-medium">Arquivo</th>
@@ -674,6 +691,7 @@ function AbaHistorico({ carteira, importacoes, podeEditar = true }: { carteira: 
               <th className="px-5 py-3 font-medium">Ignoradas</th>
               <th className="px-5 py-3 font-medium">Data</th>
               <th className="px-5 py-3 font-medium">Status</th>
+              <th className="px-5 py-3 text-right font-medium">Arquivo</th>
             </tr>
           </thead>
           <tbody>
@@ -684,12 +702,67 @@ function AbaHistorico({ carteira, importacoes, podeEditar = true }: { carteira: 
                 <td className="px-5 py-3 font-mono text-mist tabnums">{num(imp.linhas_ignoradas)}</td>
                 <td className="px-5 py-3 text-mist">{dataHoraBR(imp.criado_em)}</td>
                 <td className="px-5 py-3"><Badge tone={imp.status === "concluida" ? "green" : imp.status === "falhou" ? "rose" : "amber"}>{imp.status}</Badge></td>
+                <td className="px-5 py-3">
+                  <div className="flex justify-end gap-1.5">
+                    <Button size="sm" variant="outline" disabled={!imp.arquivo_path} onClick={() => carregarPreview(imp)} title={imp.arquivo_path ? "Visualizar planilha" : "Arquivo original não armazenado nesta importação antiga"}>
+                      <Eye className="h-3.5 w-3.5" /> Visualizar
+                    </Button>
+                    {imp.arquivo_path && (
+                      <a href={`/api/carteiras/${carteira.id}/importacoes/${imp.id}?modo=download`}>
+                        <Button size="sm" variant="ghost"><Download className="h-3.5 w-3.5" /> Baixar</Button>
+                      </a>
+                    )}
+                  </div>
+                </td>
               </tr>
             ))}
-            {importacoes.length === 0 && <tr><td colSpan={5} className="px-5 py-8 text-center text-mist">Nenhuma importação ainda.</td></tr>}
+            {importacoes.length === 0 && <tr><td colSpan={6} className="px-5 py-8 text-center text-mist">Nenhuma importação ainda.</td></tr>}
           </tbody>
         </table>
+        </div>
       </Card>
+
+      {importacaoAberta && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/75 p-3 backdrop-blur-sm sm:p-6" role="dialog" aria-modal="true" aria-label={`Planilha ${importacaoAberta.arquivo_nome}`}>
+          <div className="flex h-[min(86vh,820px)] w-full max-w-[1500px] flex-col overflow-hidden rounded-2xl border border-line bg-ink-950 shadow-2xl">
+            <div className="flex flex-wrap items-center gap-3 border-b border-line px-4 py-3 sm:px-5">
+              <span className="grid h-9 w-9 place-items-center rounded-xl bg-emerald/12 text-emerald"><FileSpreadsheet className="h-4 w-4" /></span>
+              <div className="min-w-0 flex-1">
+                <h3 className="truncate font-display text-sm font-600 text-chalk">{importacaoAberta.arquivo_nome}</h3>
+                <p className="text-[11px] text-mist">Pré-visualização do arquivo original · primeiras 100 linhas e 40 colunas</p>
+              </div>
+              {preview?.abas?.length > 1 && (
+                <select value={preview.aba} onChange={(e) => carregarPreview(importacaoAberta, e.target.value)} className="h-9 rounded-xl border border-line bg-ink-850 px-3 text-xs text-chalk outline-none">
+                  {preview.abas.map((aba: string) => <option key={aba} value={aba}>{aba}</option>)}
+                </select>
+              )}
+              <a href={`/api/carteiras/${carteira.id}/importacoes/${importacaoAberta.id}?modo=download`}><Button size="sm" variant="outline"><Download className="h-3.5 w-3.5" /> Baixar original</Button></a>
+              <button type="button" onClick={() => { setImportacaoAberta(null); setPreview(null); }} className="rounded-xl p-2 text-mist hover:bg-ink-800 hover:text-chalk" aria-label="Fechar"><X className="h-5 w-5" /></button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-auto bg-[#080b10]">
+              {carregandoPreview && <div className="grid h-full place-items-center text-sm text-mist"><span className="flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Lendo planilha…</span></div>}
+              {erroPreview && <div className="grid h-full place-items-center p-6 text-center text-sm text-rose">{erroPreview}</div>}
+              {!carregandoPreview && !erroPreview && preview && (
+                <table className="border-separate border-spacing-0 text-xs">
+                  <tbody>
+                    {preview.linhas.map((linha: any[], indiceLinha: number) => (
+                      <tr key={indiceLinha} className={indiceLinha === 0 ? "bg-ink-800" : "bg-ink-950"}>
+                        <th className="sticky left-0 z-20 min-w-12 border-b border-r border-line bg-ink-900 px-2 py-2 text-right font-mono font-normal text-mist">{indiceLinha + 1}</th>
+                        {Array.from({ length: Math.max(1, Math.min(preview.total_colunas, 40)) }, (_, indiceColuna) => (
+                          <td key={indiceColuna} className={`max-w-[320px] min-w-[140px] whitespace-nowrap border-b border-r border-line px-3 py-2 ${indiceLinha === 0 ? "sticky top-0 z-10 bg-ink-800 font-600 text-chalk" : "text-mist"}`} title={String(linha[indiceColuna] ?? "")}>
+                            <span className="block max-w-[300px] truncate">{String(linha[indiceColuna] ?? "")}</span>
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+            {preview && <div className="flex items-center justify-between border-t border-line px-5 py-2 text-[11px] text-mist"><span>{preview.aba}</span><span>{preview.total_linhas} linhas · {preview.total_colunas} colunas{preview.truncado ? " · visualização resumida" : ""}</span></div>}
+          </div>
+        </div>
+      )}
     </>
   );
 }

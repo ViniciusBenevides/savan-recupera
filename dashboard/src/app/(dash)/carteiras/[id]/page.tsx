@@ -20,7 +20,7 @@ export default async function CarteiraPage({ params, searchParams }: { params: P
   if (!carteira) notFound();
 
   const { data: importacoes } = await sb.from("importacoes")
-    .select("id, arquivo_nome, status, linhas_total, linhas_importadas, linhas_ignoradas, criado_em")
+    .select("id, arquivo_nome, arquivo_path, arquivo_tamanho, arquivo_mime, status, linhas_total, linhas_importadas, linhas_ignoradas, criado_em")
     .eq("carteira_id", Number(id)).order("criado_em", { ascending: false });
 
   const { data: fluxos } = await sb.from("v_desempenho_fluxos")

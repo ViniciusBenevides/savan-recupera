@@ -235,7 +235,12 @@ function blocoRoteiro(etapa: any, interp: (t: unknown) => string): string[] {
   if (!etapa) return [];
   const casos = (etapa.casos ?? [])
     .filter((c: any) => c?.quando && c?.vai_para)
-    .map((c: any) => `  - se ${interp(c.quando)} → responda e informe PROXIMA_ETAPA: ${c.vai_para}`);
+    .map((c: any) => {
+      const exemplos = Array.isArray(c.exemplos) && c.exemplos.length
+        ? ` Exemplos reais: ${c.exemplos.map((exemplo: unknown) => `“${interp(String(exemplo))}”`).join(", ")}.`
+        : "";
+      return `  - se ${interp(c.quando)}.${exemplos} → responda e informe PROXIMA_ETAPA: ${c.vai_para}`;
+    });
   return [
     "",
     `ETAPA ATUAL DA CONVERSA: "${etapa.id}" — ${interp(etapa.objetivo ?? "")}`,
@@ -283,9 +288,10 @@ function montarSystemPrompt(
   if (g.regras_extras) regras.push(String(g.regras_extras));
   const tom = g.tom || "humano, caloroso, brasileiro, frases curtas, no máximo 2 perguntas por vez e 1 emoji por mensagem";
   // O conhecimento vem DEPOIS das regras: é insumo de conteúdo, nunca licença para furá-las.
-  const blocoConhecimento = conhecimento.length
+  const conhecimentoNestaEtapa = etapa?.usa_conhecimento === false ? [] : conhecimento;
+  const blocoConhecimento = conhecimentoNestaEtapa.length
     ? ["", "CONHECIMENTO DO NEGÓCIO (respostas já aprovadas — use quando a dúvida for essa; se não cobrir, " +
-       "responda pelas regras acima e nunca invente):", ...conhecimento.map((c) => `- ${interp(c)}`)]
+       "responda pelas regras acima e nunca invente):", ...conhecimentoNestaEtapa.map((c) => `- ${interp(c)}`)]
     : [];
 
   // Com roteiro ativo, a etapa substitui o "fluxo ideal" genérico: vira instrução do momento, não

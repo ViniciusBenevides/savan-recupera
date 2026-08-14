@@ -13,7 +13,7 @@
 // conversa carregam INSTRUÇÃO para o modelo. É a diferença que fazia existirem duas telas.
 
 export type TipoEtapa = "disparo" | "followup" | "conversa" | "pos_pagamento";
-export type CasoRoteiro = { quando: string; vai_para: string };
+export type CasoRoteiro = { quando: string; vai_para: string; exemplos?: string[] };
 export type EtapaRoteiro = {
   id: string;
   tipo?: TipoEtapa;          // ausente = "conversa" (formato anterior à §35)
@@ -21,6 +21,7 @@ export type EtapaRoteiro = {
   instrucao?: string;        // blocos de conversa
   textos?: string[];         // blocos de mensagem (variações sorteadas)
   espera_horas?: number;     // follow-up: tempo desde a última mensagem
+  usa_conhecimento?: boolean;
   casos?: CasoRoteiro[];
   pos?: { x: number; y: number };
 };
@@ -33,8 +34,8 @@ export type ResultadoImportacaoRoteiro =
 export const FORMATO_TRANSFERENCIA_ROTEIRO = "savan-recupera/carteira-fluxo@1";
 
 export const LARGURA_NO = 260;
-const GAP_X = 340;
-const GAP_Y = 190;
+const GAP_X = 620;
+const GAP_Y = 230;
 const COLUNA_MENSAGENS = -GAP_X * 2;
 
 export const tipoDe = (e: EtapaRoteiro): TipoEtapa => e.tipo ?? "conversa";
@@ -281,6 +282,7 @@ export function importarRoteiro(texto: string): ResultadoImportacaoRoteiro {
       ? item.casos.filter(registro).map((caso) => ({
           quando: typeof caso.quando === "string" ? caso.quando : "",
           vai_para: typeof caso.vai_para === "string" ? caso.vai_para : "",
+          exemplos: Array.isArray(caso.exemplos) ? caso.exemplos.filter((valor): valor is string => typeof valor === "string") : undefined,
         }))
       : [];
     const pos = registro(item.pos) && numeroFinito(item.pos.x) && numeroFinito(item.pos.y)
@@ -293,6 +295,7 @@ export function importarRoteiro(texto: string): ResultadoImportacaoRoteiro {
       instrucao: typeof item.instrucao === "string" ? item.instrucao : undefined,
       textos: Array.isArray(item.textos) ? item.textos.filter((valor): valor is string => typeof valor === "string") : undefined,
       espera_horas: numeroFinito(item.espera_horas) ? Number(item.espera_horas) : undefined,
+      usa_conhecimento: typeof item.usa_conhecimento === "boolean" ? item.usa_conhecimento : undefined,
       casos,
       pos,
     });

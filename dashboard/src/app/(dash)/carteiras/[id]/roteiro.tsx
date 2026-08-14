@@ -6,10 +6,10 @@ import {
   type Node, type Edge, type Connection, type NodeProps,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { Card, Button, Input, Label, Badge, Switch, HelpHint } from "@/components/ui/primitives";
+import { Card, Button, Input, Label, Badge, Switch, HelpHint, Textarea } from "@/components/ui/primitives";
 import { useTheme } from "@/components/ThemeToggle";
 import {
-  Bot, Sparkles, Save, Check, Plus, Trash2, X, MessageSquareText, Flag, CornerDownRight,
+  Bot, Sparkles, Save, Check, Plus, Trash2, X, MessageSquareText, Flag, CornerDownRight, Play,
   Send, Clock, HandCoins, AlertTriangle, ClipboardCopy, ClipboardPaste, Undo2, Redo2,
   Expand, Search, Copy,
   Maximize2,
@@ -18,7 +18,7 @@ import {
   calcularPosicoes, idUnico, diagnosticar, avisos, inalcancaveis, cadeiaDeDisparo, etapaDeEntrada,
   serializarRoteiro, importarRoteiro,
   tipoDe, ehMensagem, ROTULO, LARGURA_NO,
-  type EtapaRoteiro, type TipoEtapa,
+  type EtapaRoteiro, type TipoEtapa, type CasoRoteiro,
 } from "./roteiro-layout";
 
 /* ---------------------------------------------------------------- nó de etapa */
@@ -46,6 +46,10 @@ function NoEtapa({ data }: NodeProps<Node<DadosNo>>) {
   const mensagem = ehMensagem(etapa);
   const textos = (etapa.textos ?? []).filter((t) => t.trim());
   const bolinha = "!h-2.5 !w-2.5 !border-2 !border-ink-900";
+  const etiqueta = tipo === "disparo" ? "Mensagem inicial"
+    : tipo === "followup" ? "Aguardar e reenviar"
+      : tipo === "pos_pagamento" ? "Pós-pagamento"
+        : etapa.usa_conhecimento !== false ? "IA + conhecimento" : "Mensagem pela IA";
 
   return (
     <div
@@ -75,7 +79,7 @@ function NoEtapa({ data }: NodeProps<Node<DadosNo>>) {
         <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-lg ${cor}`}>
           {final && !mensagem ? <Flag className="h-3.5 w-3.5" /> : <Icone className="h-3.5 w-3.5" />}
         </span>
-        <span className="truncate font-mono text-[11px] text-chalk">{etapa.id}</span>
+        <span className="truncate text-[9px] font-600 uppercase tracking-[0.14em] text-mist">{etiqueta}</span>
         {tipo === "disparo" && <Badge tone="green">1ª mensagem</Badge>}
         {tipo === "followup" && <Badge tone="amber">{etapa.espera_horas ?? 24}h depois</Badge>}
         {tipo === "pos_pagamento" && <Badge tone="violet">após o Pix</Badge>}
@@ -85,7 +89,7 @@ function NoEtapa({ data }: NodeProps<Node<DadosNo>>) {
       </div>
 
       <div className="px-3 py-2.5">
-        {etapa.objetivo && <div className="mb-1 truncate text-xs font-600 text-chalk">{etapa.objetivo}</div>}
+        <div className="mb-1 truncate text-xs font-600 text-chalk">{etapa.objetivo || etapa.id}</div>
         <p className="line-clamp-3 text-[11px] leading-snug text-mist">
           {mensagem
             ? (textos[0] || <span className="italic opacity-60">sem texto — clique para escrever</span>)
@@ -110,7 +114,44 @@ function NoEtapa({ data }: NodeProps<Node<DadosNo>>) {
   );
 }
 
-const tiposDeNo = { etapa: NoEtapa };
+type DadosResposta = {
+  quando: string;
+  exemplos: string[];
+  selecionado: boolean;
+  aoAbrir: () => void;
+};
+
+function NoRespostaEsperada({ data }: NodeProps<Node<DadosResposta>>) {
+  return (
+    <button type="button" onClick={data.aoAbrir} className={`w-[230px] rounded-xl border bg-ink-900 text-left shadow-lg transition-colors ${data.selecionado ? "border-blue ring-1 ring-blue/40" : "border-blue/35 hover:border-blue"}`}>
+      <Handle type="target" position={Position.Left} className="!h-2.5 !w-2.5 !border-2 !border-ink-900 !bg-blue" />
+      <div className="flex items-center gap-2 border-b border-line px-3 py-2">
+        <span className="grid h-6 w-6 place-items-center rounded-lg bg-blue/15 text-blue"><CornerDownRight className="h-3.5 w-3.5" /></span>
+        <span className="text-[9px] font-600 uppercase tracking-[0.16em] text-blue">Resposta esperada</span>
+      </div>
+      <div className="px-3 py-2.5">
+        <p className="line-clamp-3 text-[11px] font-600 leading-snug text-chalk">{data.quando || "Defina o sentido desta resposta"}</p>
+        {data.exemplos.length > 0 && <p className="mt-2 truncate text-[10px] text-mist">Ex.: {data.exemplos.join(" · ")}</p>}
+      </div>
+      <Handle type="source" position={Position.Right} className="!h-2.5 !w-2.5 !border-2 !border-ink-900 !bg-blue" />
+    </button>
+  );
+}
+
+type DadosMarco = { fim?: boolean; rotulo: string };
+
+function NoMarco({ data }: NodeProps<Node<DadosMarco>>) {
+  return (
+    <div className={`flex w-[150px] items-center gap-2 rounded-xl border px-3 py-2.5 shadow-lg ${data.fim ? "border-line bg-ink-900 text-mist" : "border-emerald/35 bg-emerald/5 text-emerald"}`}>
+      {data.fim && <Handle type="target" position={Position.Left} className="!h-2.5 !w-2.5 !border-2 !border-ink-900 !bg-mist" />}
+      <span className={`grid h-6 w-6 place-items-center rounded-lg ${data.fim ? "bg-ink-700" : "bg-emerald/15"}`}>{data.fim ? <Flag className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}</span>
+      <span className="text-[10px] font-600 uppercase tracking-[0.14em]">{data.rotulo}</span>
+      {!data.fim && <Handle type="source" position={Position.Right} className="!h-2.5 !w-2.5 !border-2 !border-ink-900 !bg-emerald" />}
+    </div>
+  );
+}
+
+const tiposDeNo = { etapa: NoEtapa, resposta: NoRespostaEsperada, marco: NoMarco };
 
 /* ---------------------------------------------------------------- canvas */
 
@@ -145,15 +186,15 @@ function Canvas({ carteira, padrao, salvar }: {
   );
 
   // ---- grafo derivado das etapas
-  const [nos, setNos, aoMudarNos] = useNodesState<Node<DadosNo>>([]);
+  const [nos, setNos, aoMudarNos] = useNodesState<Node<any>>([]);
   const [arestas, setArestas, aoMudarArestas] = useEdgesState<Edge>([]);
 
   React.useEffect(() => {
     const auto = calcularPosicoes(etapas);
-    setNos(etapas.map((e, i) => ({
+    const nosEtapas: Node<DadosNo>[] = etapas.map((e, i) => ({
       id: e.id,
       type: "etapa",
-      position: e.pos ?? auto[e.id] ?? { x: i * 340, y: 0 },
+      position: e.pos ?? auto[e.id] ?? { x: i * 620, y: 0 },
       data: {
         etapa: e,
         entrada: e.id === entrada,
@@ -162,22 +203,77 @@ function Canvas({ carteira, padrao, salvar }: {
         problema: idsComProblema.has(e.id),
         aoAbrir: () => setAbertaId(e.id),
       },
-    })));
+    }));
+
+    const posicaoEtapa = (id: string) => etapas.find((item) => item.id === id)?.pos ?? auto[id];
+    const nosResposta: Node<DadosResposta>[] = etapas.flatMap((e) =>
+      (e.casos ?? []).map((caso, indice) => {
+        const id = `caso:${e.id}:${indice}`;
+        const origem = posicaoEtapa(e.id) ?? { x: 0, y: 0 };
+        const destino = posicaoEtapa(caso.vai_para) ?? { x: origem.x + 620, y: origem.y };
+        return {
+          id,
+          type: "resposta",
+          draggable: false,
+          deletable: false,
+          position: {
+            x: origem.x + Math.max(300, (destino.x - origem.x) / 2 - 10),
+            y: origem.y + (destino.y - origem.y) / 2 + indice * 34,
+          },
+          data: {
+            quando: caso.quando,
+            exemplos: caso.exemplos ?? [],
+            selecionado: abertaId === id,
+            aoAbrir: () => setAbertaId(id),
+          },
+        };
+      }),
+    );
+    const primeiroId = etapas.find((e) => tipoDe(e) === "disparo")?.id ?? entrada;
+    const primeiraPosicao = primeiroId ? posicaoEtapa(primeiroId) : null;
+    const nosMarco: Node<DadosMarco>[] = primeiraPosicao ? [{
+      id: "__inicio",
+      type: "marco",
+      draggable: false,
+      selectable: false,
+      position: { x: primeiraPosicao.x - 230, y: primeiraPosicao.y + 28 },
+      data: { rotulo: "Início" },
+    }] : [];
+    for (const etapa of etapas.filter((item) => tipoDe(item) === "conversa" && (item.casos ?? []).length === 0)) {
+      const posicao = posicaoEtapa(etapa.id);
+      if (!posicao) continue;
+      nosMarco.push({
+        id: `__fim:${etapa.id}`,
+        type: "marco",
+        draggable: false,
+        selectable: false,
+        position: { x: posicao.x + 350, y: posicao.y + 28 },
+        data: { fim: true, rotulo: "Fim" },
+      });
+    }
+    setNos([...nosEtapas, ...nosResposta, ...nosMarco]);
 
     const doCaso: Edge[] = etapas.flatMap((e) =>
       (e.casos ?? [])
-        .filter((c) => c.vai_para)
-        .map((c, j) => ({
-          id: `${e.id}->${c.vai_para}-${j}`,
-          source: e.id,
-          target: c.vai_para,
-          sourceHandle: ehMensagem(e) ? "resp" : undefined,
-          label: c.quando || "quando…",
-          animated: true,
-          labelBgPadding: [6, 3] as [number, number],
-          labelBgBorderRadius: 6,
-          style: { strokeWidth: 1.5 },
-        })));
+        .flatMap((c, j) => {
+          const respostaId = `caso:${e.id}:${j}`;
+          const entradaCaso: Edge = {
+            id: `${e.id}->${respostaId}`,
+            source: e.id,
+            target: respostaId,
+            sourceHandle: ehMensagem(e) ? "resp" : undefined,
+            animated: true,
+            style: { strokeWidth: 1.5, stroke: "#3daee9" },
+          };
+          if (!c.vai_para) return [entradaCaso];
+          return [entradaCaso, {
+            id: `${respostaId}->${c.vai_para}`,
+            source: respostaId,
+            target: c.vai_para,
+            animated: true,
+            style: { strokeWidth: 1.5, stroke: "#3daee9" },
+          }];
+        }));
 
     // a corrente de reenvio é derivada da ORDEM dos blocos: mostra, mas não se arrasta
     const derivadas: Edge[] = cadeiaDeDisparo(etapas)
@@ -191,7 +287,13 @@ function Canvas({ carteira, padrao, salvar }: {
         style: { strokeWidth: 1.5, strokeDasharray: "5 4" },
       }));
 
-    setArestas([...doCaso, ...derivadas]);
+    const marcos: Edge[] = [];
+    if (primeiroId) marcos.push({ id: `inicio->${primeiroId}`, source: "__inicio", target: primeiroId, selectable: false, deletable: false, style: { strokeWidth: 1.5, stroke: "#2bd98c" } });
+    for (const etapa of etapas.filter((item) => tipoDe(item) === "conversa" && (item.casos ?? []).length === 0)) {
+      marcos.push({ id: `${etapa.id}->fim`, source: etapa.id, target: `__fim:${etapa.id}`, selectable: false, deletable: false, style: { strokeWidth: 1.5 } });
+    }
+
+    setArestas([...doCaso, ...derivadas, ...marcos]);
   }, [etapas, abertaId, entrada, idsComProblema, setNos, setArestas]);
 
   // arrastar o nó guarda a posição na etapa
@@ -224,6 +326,14 @@ function Canvas({ carteira, padrao, salvar }: {
   }, []);
 
   const aberta = etapas.find((e) => e.id === abertaId) ?? null;
+  const referenciaCaso = React.useMemo(() => {
+    const partes = abertaId?.match(/^caso:(.+):(\d+)$/);
+    if (!partes) return null;
+    const etapa = etapas.find((item) => item.id === partes[1]);
+    const indice = Number(partes[2]);
+    const caso = etapa?.casos?.[indice];
+    return etapa && caso ? { etapa, caso, indice } : null;
+  }, [abertaId, etapas]);
 
   function mudarAberta(campo: keyof EtapaRoteiro, valor: any) {
     if (!aberta) return;
@@ -231,6 +341,23 @@ function Canvas({ carteira, padrao, salvar }: {
       (es) => es.map((e) => (e.id === aberta.id ? { ...e, [campo]: valor } : e)),
       `bloco:${aberta.id}:${campo}`,
     );
+  }
+
+  function mudarCaso(campo: "quando" | "vai_para" | "exemplos", valor: any) {
+    if (!referenciaCaso) return;
+    setEtapas((es) => es.map((etapa) => etapa.id !== referenciaCaso.etapa.id ? etapa : {
+      ...etapa,
+      casos: (etapa.casos ?? []).map((caso, indice) => indice === referenciaCaso.indice ? { ...caso, [campo]: valor } : caso),
+    }), `caso:${referenciaCaso.etapa.id}:${referenciaCaso.indice}:${campo}`);
+  }
+
+  function removerCaso() {
+    if (!referenciaCaso) return;
+    setEtapas((es) => es.map((etapa) => etapa.id !== referenciaCaso.etapa.id ? etapa : {
+      ...etapa,
+      casos: (etapa.casos ?? []).filter((_, indice) => indice !== referenciaCaso.indice),
+    }));
+    setAbertaId(null);
   }
 
   function renomearAberta(novoRotulo: string) {
@@ -248,7 +375,7 @@ function Canvas({ carteira, padrao, salvar }: {
     const base: Record<TipoEtapa, Partial<EtapaRoteiro>> = {
       disparo: { objetivo: "Primeira mensagem", textos: [""], casos: entrada ? [{ quando: "a pessoa responder", vai_para: entrada }] : [] },
       followup: { objetivo: `Reenvio ${etapas.filter((e) => tipoDe(e) === "followup").length + 1}`, textos: [""], espera_horas: 24 },
-      conversa: { objetivo: "", instrucao: "", casos: [] },
+      conversa: { objetivo: "", instrucao: "", casos: [], usa_conhecimento: true },
       pos_pagamento: { objetivo: "Depois do pagamento", textos: [""] },
     };
     const semente: Record<TipoEtapa, string> = {
@@ -358,7 +485,8 @@ function Canvas({ carteira, padrao, salvar }: {
       } else if (!digitando && modificador && (tecla === "y" || tecla === "z")) {
         evento.preventDefault(); tecla === "y" ? refazer() : desfazer();
       } else if (!digitando && (evento.key === "Delete" || evento.key === "Backspace") && abertaId) {
-        evento.preventDefault(); removerBloco(abertaId);
+        evento.preventDefault();
+        if (referenciaCaso) removerCaso(); else removerBloco(abertaId);
       } else if (evento.key === "Escape") {
         if (transferencia) setTransferencia(null);
         else setAbertaId(null);
@@ -410,9 +538,7 @@ function Canvas({ carteira, padrao, salvar }: {
 
   return (
     <div ref={editorRef} className="flex flex-col gap-4 fullscreen:overflow-auto fullscreen:bg-ink-950 fullscreen:p-4">
-      <Cabecalho ativo={ativo} setAtivo={setAtivo} />
-
-      <div className="relative h-[680px] overflow-hidden rounded-2xl border border-line bg-ink-900 fullscreen:min-h-[calc(100vh-9rem)] fullscreen:flex-1">
+      <div className="relative h-[760px] overflow-hidden rounded-2xl border border-line bg-ink-900 fullscreen:min-h-[calc(100vh-2rem)] fullscreen:flex-1">
         <ReactFlow
           nodes={nos}
           edges={arestas}
@@ -466,16 +592,14 @@ function Canvas({ carteira, padrao, salvar }: {
           </div>
 
           <div className="pointer-events-auto flex items-center gap-1 rounded-xl border border-line bg-ink-850/95 p-1.5 shadow-lg backdrop-blur">
-            {(["disparo", "followup", "conversa", "pos_pagamento"] as TipoEtapa[])
-              .filter((t) => t !== "disparo" || !temDisparo)
-              .map((t) => {
-                const { icone: Icone } = ESTILO[t];
-                return <Ferramenta key={t} titulo={`Novo bloco de ${ROTULO[t].toLowerCase()}`} texto={ROTULO[t]} aoClicar={() => novoBloco(t)}><Icone className="h-3.5 w-3.5" /></Ferramenta>;
-              })}
+            <span className="px-2 text-[10px] text-mist">IA guiada</span>
+            <Switch checked={ativo} onChange={setAtivo} />
             <span className="mx-0.5 h-5 w-px bg-line" />
-            <Ferramenta titulo="Reorganizar automaticamente" aoClicar={() => setEtapas((es) => es.map((e) => ({ ...e, pos: undefined })))} texto="Organizar"><Sparkles className="h-3.5 w-3.5" /></Ferramenta>
             <Ferramenta titulo="Enquadrar todo o fluxo" aoClicar={() => void fitView({ padding: 0.15, duration: 350 })}><Expand className="h-4 w-4" /></Ferramenta>
             <Ferramenta titulo="Tela cheia" aoClicar={telaCheia}><Maximize2 className="h-4 w-4" /></Ferramenta>
+            <button type="button" onClick={() => void gravar()} disabled={salvando || problemas.length > 0 || !historico.alterado} className="ml-1 flex h-8 items-center gap-1.5 rounded-lg border border-emerald/30 bg-emerald/10 px-3 text-[11px] font-600 text-emerald disabled:border-line disabled:bg-transparent disabled:text-mist">
+              {ok || !historico.alterado ? <Check className="h-3.5 w-3.5" /> : <Save className="h-3.5 w-3.5" />}{ok || !historico.alterado ? "Salvo" : "Salvar"}
+            </button>
           </div>
         </div>
 
@@ -483,6 +607,17 @@ function Canvas({ carteira, padrao, salvar }: {
           <span><b className="text-chalk">{etapas.length}</b> blocos</span><span className="h-3 w-px bg-line" />
           <span className={problemas.length ? "text-rose" : "text-emerald"}><b>{problemas.length}</b> {problemas.length === 1 ? "erro" : "erros"}</span><span className="h-3 w-px bg-line" />
           <span className={historico.alterado ? "text-amber" : "text-emerald"}>{historico.alterado ? "alterações não salvas" : "salvo"}</span>
+        </div>
+
+        <div className="absolute bottom-3 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1 rounded-xl border border-line bg-ink-850/95 p-1.5 shadow-lg backdrop-blur">
+          {(["disparo", "followup", "conversa", "pos_pagamento"] as TipoEtapa[])
+            .filter((t) => t !== "disparo" || !temDisparo)
+            .map((t) => {
+              const { icone: Icone } = ESTILO[t];
+              return <Ferramenta key={t} titulo={`Novo bloco de ${ROTULO[t].toLowerCase()}`} texto={ROTULO[t]} aoClicar={() => novoBloco(t)}><Icone className="h-3.5 w-3.5" /></Ferramenta>;
+            })}
+          <span className="mx-0.5 h-5 w-px bg-line" />
+          <Ferramenta titulo="Reorganizar automaticamente" aoClicar={() => setEtapas((es) => es.map((e) => ({ ...e, pos: undefined })))} texto="Organizar"><Sparkles className="h-3.5 w-3.5" /></Ferramenta>
         </div>
 
         {/* painel lateral do bloco selecionado */}
@@ -494,15 +629,25 @@ function Canvas({ carteira, padrao, salvar }: {
             renomear={renomearAberta}
             duplicar={() => duplicarBloco(aberta)}
             remover={() => removerBloco(aberta.id)}
+            selecionarCaso={(indice) => setAbertaId(`caso:${aberta.id}:${indice}`)}
+            fechar={() => setAbertaId(null)}
+          />
+        )}
+        {referenciaCaso && (
+          <PainelResposta
+            origem={referenciaCaso.etapa}
+            caso={referenciaCaso.caso}
+            etapas={etapas}
+            mudar={mudarCaso}
+            remover={removerCaso}
             fechar={() => setAbertaId(null)}
           />
         )}
       </div>
 
       <p className="text-xs text-mist">
-        Clique num bloco para editar. Arraste da bolinha verde à direita até outro bloco para criar um
-        caminho. A linha tracejada entre as mensagens é a ordem dos reenvios — para mudá-la, mude o
-        tempo de espera de cada follow-up.
+        Clique em qualquer etapa ou resposta esperada para editar. Arraste da bolinha verde até outra etapa
+        para criar uma decisão. A linha tracejada entre mensagens representa a sequência de reenvios.
       </p>
 
       {problemas.map((problema, indice) => (
@@ -522,13 +667,8 @@ function Canvas({ carteira, padrao, salvar }: {
       )}
       {erro && <div className="rounded-xl border border-rose/30 bg-rose/10 px-4 py-3 text-sm text-rose">{erro}</div>}
 
-      <div className="flex items-center gap-3">
-        <Button disabled={salvando || problemas.length > 0 || !historico.alterado} onClick={gravar}>
-          {ok || !historico.alterado ? <><Check className="h-4 w-4" /> Salvo</> : <><Save className="h-4 w-4" /> Salvar fluxo</>}
-        </Button>
-        <button onClick={() => { if (confirm("Apagar o fluxo desta carteira? Ela volta ao texto padrão do sistema e ao robô livre.")) { setEtapas([]); setAtivo(false); setAbertaId(null); } }}
-                className="text-xs text-mist hover:text-rose">apagar o fluxo</button>
-      </div>
+      <button onClick={() => { if (confirm("Apagar o fluxo desta carteira? Ela volta ao texto padrão do sistema e ao robô livre.")) { setEtapas([]); setAtivo(false); setAbertaId(null); } }}
+              className="self-start text-xs text-mist hover:text-rose">apagar o fluxo</button>
 
       {aviso && <div role="status" className="fixed bottom-5 right-5 z-50 flex max-w-sm items-center gap-2 rounded-xl border border-emerald/30 bg-ink-850 px-4 py-3 text-xs text-emerald shadow-2xl"><Check className="h-4 w-4" />{aviso}</div>}
       {transferencia && (
@@ -541,13 +681,86 @@ function Canvas({ carteira, padrao, salvar }: {
 
 /* ---------------------------------------------------------------- painel lateral */
 
-function PainelBloco({ aberta, etapas, mudar, renomear, duplicar, remover, fechar }: {
+function PainelResposta({ origem, caso, etapas, mudar, remover, fechar }: {
+  origem: EtapaRoteiro;
+  caso: CasoRoteiro;
+  etapas: EtapaRoteiro[];
+  mudar: (campo: "quando" | "vai_para" | "exemplos", valor: any) => void;
+  remover: () => void;
+  fechar: () => void;
+}) {
+  const [novoExemplo, setNovoExemplo] = React.useState("");
+  const exemplos = caso.exemplos ?? [];
+  const destinos = etapas.filter((etapa) => tipoDe(etapa) === "conversa" && etapa.id !== origem.id);
+
+  function adicionarExemplo() {
+    const texto = novoExemplo.trim();
+    if (!texto || exemplos.includes(texto)) return;
+    mudar("exemplos", [...exemplos, texto]);
+    setNovoExemplo("");
+  }
+
+  return (
+    <div className="absolute right-0 top-0 z-20 flex h-full w-[390px] flex-col overflow-y-auto border-l border-line bg-ink-850 shadow-2xl">
+      <div className="flex items-start justify-between gap-3 border-b border-line p-5">
+        <div className="flex items-start gap-3">
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-blue/30 bg-blue/12 text-blue"><CornerDownRight className="h-4 w-4" /></span>
+          <div>
+            <span className="text-[9px] font-600 uppercase tracking-[0.18em] text-mist">Depois de {origem.objetivo || origem.id}</span>
+            <h4 className="mt-1 font-display text-base font-600 text-chalk">Resposta esperada</h4>
+          </div>
+        </div>
+        <button onClick={fechar} className="rounded-lg p-1.5 text-mist hover:bg-ink-800 hover:text-chalk" aria-label="Fechar"><X className="h-4 w-4" /></button>
+      </div>
+
+      <div className="flex flex-1 flex-col gap-5 p-5">
+        <div>
+          <Label>O que a resposta deve indicar?</Label>
+          <Textarea rows={5} value={caso.quando} onChange={(e) => mudar("quando", e.target.value)} placeholder="Ex.: confirma que é a pessoa certa ou responde de forma receptiva" />
+          <p className="mt-2 text-[11px] leading-relaxed text-mist">A classificação é por sentido, não por palavra exata. Descreva a intenção como você explicaria a um cobrador novo.</p>
+        </div>
+
+        <div>
+          <Label>Exemplos reais</Label>
+          <p className="mb-2 text-[11px] text-mist">Inclua abreviações e o jeito como seus clientes costumam escrever.</p>
+          <div className="mb-2 flex flex-wrap gap-1.5">
+            {exemplos.map((exemplo, indice) => (
+              <span key={`${exemplo}-${indice}`} className="inline-flex items-center gap-1 rounded-full border border-line bg-ink-900 px-2.5 py-1 text-[11px] text-chalk">
+                {exemplo}
+                <button type="button" onClick={() => mudar("exemplos", exemplos.filter((_, i) => i !== indice))} className="text-mist hover:text-rose" aria-label={`Remover ${exemplo}`}><X className="h-3 w-3" /></button>
+              </span>
+            ))}
+          </div>
+          <div className="flex gap-2">
+            <Input value={novoExemplo} onChange={(e) => setNovoExemplo(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); adicionarExemplo(); } }} placeholder="Ex.: sim, pode mandar…" />
+            <Button type="button" variant="outline" onClick={adicionarExemplo} disabled={!novoExemplo.trim()} aria-label="Adicionar exemplo"><Plus className="h-4 w-4" /></Button>
+          </div>
+        </div>
+
+        <div>
+          <Label>Próxima etapa</Label>
+          <select value={caso.vai_para} onChange={(e) => mudar("vai_para", e.target.value)} className="h-10 w-full rounded-xl border border-line bg-ink-900 px-3 font-mono text-xs text-chalk outline-none focus:border-blue">
+            <option value="">Selecione o destino…</option>
+            {destinos.map((etapa) => <option key={etapa.id} value={etapa.id}>{etapa.objetivo || etapa.id}</option>)}
+          </select>
+        </div>
+
+        <button type="button" onClick={remover} className="mt-auto flex items-center justify-center gap-2 rounded-xl border border-rose/30 px-3 py-2.5 text-xs text-rose hover:bg-rose/10">
+          <Trash2 className="h-3.5 w-3.5" /> Remover resposta esperada
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function PainelBloco({ aberta, etapas, mudar, renomear, duplicar, remover, selecionarCaso, fechar }: {
   aberta: EtapaRoteiro;
   etapas: EtapaRoteiro[];
   mudar: (campo: keyof EtapaRoteiro, valor: any) => void;
   renomear: (rotulo: string) => void;
   duplicar: () => void;
   remover: () => void;
+  selecionarCaso: (indice: number) => void;
   fechar: () => void;
 }) {
   const tipo = tipoDe(aberta);
@@ -619,7 +832,12 @@ function PainelBloco({ aberta, etapas, mudar, renomear, duplicar, remover, fecha
           </div>
         </div>
       ) : (
-        <div>
+        <div className="space-y-3">
+          <div className="flex items-center justify-between rounded-xl border border-line bg-ink-900 px-3 py-2.5">
+            <span className="pr-3 text-xs text-chalk">Consultar a base aprovada nesta etapa</span>
+            <Switch checked={aberta.usa_conhecimento !== false} onChange={(valor) => mudar("usa_conhecimento", valor)} />
+          </div>
+          <div>
           <Label className="text-xs">O que o robô faz aqui</Label>
           <textarea
             value={aberta.instrucao ?? ""} rows={6}
@@ -627,6 +845,7 @@ function PainelBloco({ aberta, etapas, mudar, renomear, duplicar, remover, fecha
             placeholder="Instrução direta para o robô nesta etapa."
             className="w-full rounded-xl border border-line bg-ink-900 px-3 py-2 text-sm text-chalk outline-none placeholder:text-mist focus:border-emerald"
           />
+          </div>
         </div>
       )}
 
@@ -657,39 +876,24 @@ function PainelBloco({ aberta, etapas, mudar, renomear, duplicar, remover, fecha
 
       {tipo === "conversa" && (
         <div>
-          <Label className="text-xs">Caminhos</Label>
+          <Label className="text-xs">Respostas esperadas</Label>
           <div className="mt-1 flex flex-col gap-2">
             {(aberta.casos ?? []).map((c, j) => (
-              <div key={j} className="rounded-xl border border-line bg-ink-900 p-2.5">
-                <div className="flex items-center gap-1.5 text-[11px] text-mist">
-                  <CornerDownRight className="h-3 w-3" /> se…
-                  <button
-                    onClick={() => mudar("casos", (aberta.casos ?? []).filter((_, m) => m !== j))}
-                    className="ml-auto text-mist hover:text-rose" aria-label="remover caminho"
-                  ><Trash2 className="h-3 w-3" /></button>
-                </div>
-                <input
-                  value={c.quando}
-                  onChange={(e) => mudar("casos", (aberta.casos ?? []).map((x, m) => (m === j ? { ...x, quando: e.target.value } : x)))}
-                  placeholder="a pessoa confirmar que é ela"
-                  className="mt-1.5 h-8 w-full rounded-lg border border-line bg-ink-850 px-2.5 text-xs text-chalk outline-none placeholder:text-mist focus:border-emerald"
-                />
-                <select
-                  value={c.vai_para}
-                  onChange={(e) => mudar("casos", (aberta.casos ?? []).map((x, m) => (m === j ? { ...x, vai_para: e.target.value } : x)))}
-                  className="mt-1.5 h-8 w-full rounded-lg border border-line bg-ink-850 px-2 font-mono text-[11px] text-chalk outline-none focus:border-emerald"
-                >
-                  <option value="">vai para…</option>
-                  {conversas.filter((e) => e.id !== aberta.id).map((e) => <option key={e.id} value={e.id}>{e.id}</option>)}
-                </select>
-              </div>
+              <button type="button" key={j} onClick={() => selecionarCaso(j)} className="flex items-center gap-2 rounded-xl border border-blue/25 bg-blue/5 p-2.5 text-left hover:border-blue/50">
+                <CornerDownRight className="h-3.5 w-3.5 shrink-0 text-blue" />
+                <span className="min-w-0 flex-1"><span className="block truncate text-xs text-chalk">{c.quando || "Resposta ainda não definida"}</span><span className="block truncate font-mono text-[10px] text-mist">→ {c.vai_para || "sem destino"}</span></span>
+              </button>
             ))}
             <button
-              onClick={() => mudar("casos", [...(aberta.casos ?? []), { quando: "", vai_para: "" }])}
-              className="self-start text-[11px] text-emerald underline-offset-2 hover:underline"
-            >+ caminho</button>
+              onClick={() => {
+                const indice = (aberta.casos ?? []).length;
+                mudar("casos", [...(aberta.casos ?? []), { quando: "", vai_para: "", exemplos: [] }]);
+                window.setTimeout(() => selecionarCaso(indice), 0);
+              }}
+              className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-blue/30 px-3 py-2 text-[11px] text-blue hover:bg-blue/5"
+            ><Plus className="h-3.5 w-3.5" /> Adicionar resposta esperada</button>
             {(aberta.casos ?? []).length === 0 && (
-              <p className="text-[11px] text-mist">Sem caminhos, este bloco encerra o atendimento.</p>
+              <p className="text-[11px] text-mist">Sem respostas esperadas, esta etapa encerra o atendimento.</p>
             )}
           </div>
         </div>
