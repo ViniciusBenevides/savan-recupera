@@ -10,10 +10,13 @@ import { Card, Button, Input, Label, Badge, Switch, HelpHint } from "@/component
 import { useTheme } from "@/components/ThemeToggle";
 import {
   Bot, Sparkles, Save, Check, Plus, Trash2, X, MessageSquareText, Flag, CornerDownRight,
-  Send, Clock, HandCoins,
+  Send, Clock, HandCoins, AlertTriangle, ClipboardCopy, ClipboardPaste, Undo2, Redo2,
+  Expand, Search, Copy,
+  Maximize2,
 } from "lucide-react";
 import {
-  calcularPosicoes, idUnico, validar, avisos, inalcancaveis, cadeiaDeDisparo, etapaDeEntrada,
+  calcularPosicoes, idUnico, diagnosticar, avisos, inalcancaveis, cadeiaDeDisparo, etapaDeEntrada,
+  serializarRoteiro, importarRoteiro,
   tipoDe, ehMensagem, ROTULO, LARGURA_NO,
   type EtapaRoteiro, type TipoEtapa,
 } from "./roteiro-layout";
@@ -32,11 +35,12 @@ type DadosNo = {
   entrada: boolean;
   final: boolean;
   selecionado: boolean;
+  problema: boolean;
   aoAbrir: () => void;
 };
 
 function NoEtapa({ data }: NodeProps<Node<DadosNo>>) {
-  const { etapa, entrada, final, selecionado, aoAbrir } = data;
+  const { etapa, entrada, final, selecionado, problema, aoAbrir } = data;
   const tipo = tipoDe(etapa);
   const { icone: Icone, cor } = ESTILO[tipo];
   const mensagem = ehMensagem(etapa);
@@ -48,7 +52,7 @@ function NoEtapa({ data }: NodeProps<Node<DadosNo>>) {
       onClick={aoAbrir}
       style={{ width: LARGURA_NO }}
       className={`cursor-pointer rounded-2xl border bg-ink-850 shadow-lg transition-colors ${
-        selecionado ? "border-emerald ring-1 ring-emerald/40" : "border-line hover:border-ink-500"
+        selecionado ? "border-emerald ring-1 ring-emerald/40" : problema ? "border-rose/70" : "border-line hover:border-ink-500"
       }`}
     >
       {/* mensagens se encadeiam de cima para baixo (a linha do tempo); a conversa corre da esquerda
@@ -77,6 +81,7 @@ function NoEtapa({ data }: NodeProps<Node<DadosNo>>) {
         {tipo === "pos_pagamento" && <Badge tone="violet">após o Pix</Badge>}
         {entrada && <Badge tone="green">entrada</Badge>}
         {final && !mensagem && !entrada && <Badge tone="violet">fim</Badge>}
+        {problema && <AlertTriangle className="ml-auto h-3.5 w-3.5 shrink-0 text-rose" aria-label="Bloco com erro" />}
       </div>
 
       <div className="px-3 py-2.5">
@@ -113,22 +118,31 @@ function Canvas({ carteira, padrao, salvar }: {
   carteira: any; padrao: Record<string, any>; salvar: (body: any) => Promise<boolean>;
 }) {
   const tema = useTheme();
-  const { fitView } = useReactFlow();
+  const { fitView, setCenter } = useReactFlow();
+  const editorRef = React.useRef<HTMLDivElement>(null);
   const modelo = padrao.roteiro_modelo ?? null;
   const salvo = carteira.roteiro ?? null;
 
-  const [ativo, setAtivo] = React.useState<boolean>(!!salvo?.ativo);
-  const [etapas, setEtapas] = React.useState<EtapaRoteiro[]>(salvo?.etapas ?? []);
+  const historico = useHistoricoRoteiro({ ativo: !!salvo?.ativo, etapas: salvo?.etapas ?? [] });
+  const { documento, setAtivo, setEtapas, substituir, desfazer, refazer, marcarSalvo } = historico;
+  const { ativo, etapas } = documento;
   const [abertaId, setAbertaId] = React.useState<string | null>(null);
   const [salvando, setSalvando] = React.useState(false);
   const [ok, setOk] = React.useState(false);
   const [erro, setErro] = React.useState("");
+  const [consulta, setConsulta] = React.useState("");
+  const [aviso, setAviso] = React.useState("");
+  const [transferencia, setTransferencia] = React.useState<Transferencia | null>(null);
 
-  const problemas = validar(etapas);
-  const alertas = avisos(etapas);
-  const orfas = inalcancaveis(etapas);
+  const problemas = React.useMemo(() => diagnosticar(etapas), [etapas]);
+  const alertas = React.useMemo(() => avisos(etapas), [etapas]);
+  const orfas = React.useMemo(() => inalcancaveis(etapas), [etapas]);
   const entrada = etapaDeEntrada(etapas);
   const temDisparo = etapas.some((e) => tipoDe(e) === "disparo");
+  const idsComProblema = React.useMemo(
+    () => new Set(problemas.map((problema) => problema.etapaId).filter(Boolean)),
+    [problemas],
+  );
 
   // ---- grafo derivado das etapas
   const [nos, setNos, aoMudarNos] = useNodesState<Node<DadosNo>>([]);
@@ -145,6 +159,7 @@ function Canvas({ carteira, padrao, salvar }: {
         entrada: e.id === entrada,
         final: (e.casos ?? []).length === 0,
         selecionado: abertaId === e.id,
+        problema: idsComProblema.has(e.id),
         aoAbrir: () => setAbertaId(e.id),
       },
     })));
@@ -177,7 +192,7 @@ function Canvas({ carteira, padrao, salvar }: {
       }));
 
     setArestas([...doCaso, ...derivadas]);
-  }, [etapas, abertaId, entrada, setNos, setArestas]);
+  }, [etapas, abertaId, entrada, idsComProblema, setNos, setArestas]);
 
   // arrastar o nó guarda a posição na etapa
   const aoTerminarArraste = React.useCallback((_: unknown, no: Node) => {
@@ -212,7 +227,10 @@ function Canvas({ carteira, padrao, salvar }: {
 
   function mudarAberta(campo: keyof EtapaRoteiro, valor: any) {
     if (!aberta) return;
-    setEtapas((es) => es.map((e) => (e.id === aberta.id ? { ...e, [campo]: valor } : e)));
+    setEtapas(
+      (es) => es.map((e) => (e.id === aberta.id ? { ...e, [campo]: valor } : e)),
+      `bloco:${aberta.id}:${campo}`,
+    );
   }
 
   function renomearAberta(novoRotulo: string) {
@@ -248,13 +266,114 @@ function Canvas({ carteira, padrao, salvar }: {
     if (abertaId === id) setAbertaId(null);
   }
 
+  function duplicarBloco(etapa: EtapaRoteiro) {
+    if (tipoDe(etapa) === "disparo") return;
+    const id = idUnico(`${etapa.objetivo || etapa.id} copia`, etapas.map((item) => item.id));
+    const copia: EtapaRoteiro = {
+      ...etapa,
+      id,
+      objetivo: etapa.objetivo ? `${etapa.objetivo} (cópia)` : "Cópia",
+      textos: etapa.textos ? [...etapa.textos] : undefined,
+      casos: (etapa.casos ?? []).map((caso) => ({ ...caso })),
+      pos: etapa.pos ? { x: etapa.pos.x + 44, y: etapa.pos.y + 44 } : undefined,
+    };
+    setEtapas((es) => [...es, copia]);
+    setAbertaId(id);
+  }
+
+  function focarBloco(id: string) {
+    const no = nos.find((item) => item.id === id);
+    setAbertaId(id);
+    setConsulta("");
+    if (no) void setCenter(no.position.x + LARGURA_NO / 2, no.position.y + 80, { zoom: 1.05, duration: 420 });
+  }
+
+  async function copiarFluxo() {
+    const texto = serializarRoteiro(documento);
+    try {
+      await navigator.clipboard.writeText(texto);
+      mostrarAviso("Fluxo copiado. Agora você pode colá-lo em outra carteira.");
+    } catch {
+      setTransferencia({ modo: "copiar", texto });
+    }
+  }
+
+  async function abrirColagem() {
+    let texto = "";
+    try { texto = await navigator.clipboard.readText(); } catch { /* o campo manual continua disponível */ }
+    setTransferencia({ modo: "colar", texto });
+  }
+
+  function importarTransferencia() {
+    if (!transferencia || transferencia.modo !== "colar") return;
+    const resultado = importarRoteiro(transferencia.texto);
+    if (!resultado.ok) {
+      setTransferencia({ ...transferencia, erro: resultado.erro });
+      return;
+    }
+    substituir({ ativo: resultado.roteiro.ativo !== false, etapas: resultado.roteiro.etapas });
+    setAbertaId(null);
+    setTransferencia(null);
+    mostrarAviso("Fluxo importado. Revise os blocos e salve para criar uma nova versão.");
+  }
+
+  function mostrarAviso(texto: string) {
+    setAviso(texto);
+    window.setTimeout(() => setAviso(""), 3600);
+  }
+
+  function telaCheia() {
+    if (!editorRef.current) return;
+    if (document.fullscreenElement) void document.exitFullscreen();
+    else void editorRef.current.requestFullscreen();
+  }
+
   async function gravar() {
+    if (salvando || problemas.length > 0 || !historico.alterado) return;
     setSalvando(true); setErro(""); setOk(false);
     const sucesso = await salvar({ roteiro: etapas.length ? { ativo, etapas } : null });
-    if (sucesso) { setOk(true); setTimeout(() => setOk(false), 2500); }
+    if (sucesso) { marcarSalvo(); setOk(true); setTimeout(() => setOk(false), 2500); }
     else setErro("Falha ao salvar o fluxo.");
     setSalvando(false);
   }
+
+  const resultadosBusca = React.useMemo(() => {
+    const termo = consulta.trim().toLocaleLowerCase("pt-BR");
+    if (!termo) return [];
+    return etapas.filter((etapa) => [
+      etapa.id, etapa.objetivo, etapa.instrucao, ...(etapa.textos ?? []),
+    ].join(" ").toLocaleLowerCase("pt-BR").includes(termo)).slice(0, 6);
+  }, [consulta, etapas]);
+
+  React.useEffect(() => {
+    const aoTeclar = (evento: KeyboardEvent) => {
+      const digitando = alvoDeDigitacao(evento.target);
+      const modificador = evento.ctrlKey || evento.metaKey;
+      const tecla = evento.key.toLocaleLowerCase("pt-BR");
+      if (modificador && tecla === "s") {
+        evento.preventDefault();
+        void gravar();
+      } else if (!digitando && modificador && tecla === "z" && evento.shiftKey) {
+        evento.preventDefault(); refazer();
+      } else if (!digitando && modificador && (tecla === "y" || tecla === "z")) {
+        evento.preventDefault(); tecla === "y" ? refazer() : desfazer();
+      } else if (!digitando && (evento.key === "Delete" || evento.key === "Backspace") && abertaId) {
+        evento.preventDefault(); removerBloco(abertaId);
+      } else if (evento.key === "Escape") {
+        if (transferencia) setTransferencia(null);
+        else setAbertaId(null);
+      }
+    };
+    window.addEventListener("keydown", aoTeclar);
+    return () => window.removeEventListener("keydown", aoTeclar);
+  });
+
+  React.useEffect(() => {
+    if (!historico.alterado) return;
+    const avisarSaida = (evento: BeforeUnloadEvent) => evento.preventDefault();
+    window.addEventListener("beforeunload", avisarSaida);
+    return () => window.removeEventListener("beforeunload", avisarSaida);
+  }, [historico.alterado]);
 
   /* ---- estado vazio: oferece o modelo pronto ---- */
   if (etapas.length === 0) {
@@ -273,17 +392,27 @@ function Canvas({ carteira, padrao, salvar }: {
               <Sparkles className="h-4 w-4" /> Usar o modelo pronto
             </Button>
             <Button variant="outline" onClick={() => novoBloco("disparo")}><Plus className="h-4 w-4" /> Começar do zero</Button>
+            <Button variant="ghost" onClick={() => void abrirColagem()}><ClipboardPaste className="h-4 w-4" /> Colar fluxo</Button>
           </div>
+          {historico.alterado && (
+            <Button variant="outline" disabled={salvando} onClick={() => void gravar()}>
+              <Save className="h-4 w-4" /> Salvar carteira sem fluxo personalizado
+            </Button>
+          )}
         </Card>
+        {transferencia && (
+          <DialogoTransferencia estado={transferencia} aoMudar={(texto) => setTransferencia({ ...transferencia, texto, erro: undefined })}
+            aoFechar={() => setTransferencia(null)} aoImportar={importarTransferencia} />
+        )}
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div ref={editorRef} className="flex flex-col gap-4 fullscreen:overflow-auto fullscreen:bg-ink-950 fullscreen:p-4">
       <Cabecalho ativo={ativo} setAtivo={setAtivo} />
 
-      <div className="relative h-[600px] overflow-hidden rounded-2xl border border-line bg-ink-900">
+      <div className="relative h-[680px] overflow-hidden rounded-2xl border border-line bg-ink-900 fullscreen:min-h-[calc(100vh-9rem)] fullscreen:flex-1">
         <ReactFlow
           nodes={nos}
           edges={arestas}
@@ -296,6 +425,8 @@ function Canvas({ carteira, padrao, salvar }: {
           colorMode={tema === "light" ? "light" : "dark"}
           fitView
           minZoom={0.2}
+          maxZoom={1.8}
+          deleteKeyCode={null}
           proOptions={{ hideAttribution: true }}
         >
           <Background variant={BackgroundVariant.Dots} gap={18} size={1} />
@@ -303,31 +434,55 @@ function Canvas({ carteira, padrao, salvar }: {
           <MiniMap pannable zoomable className="!bg-ink-850" />
         </ReactFlow>
 
-        {/* barra flutuante */}
-        <div className="absolute right-3 top-3 z-10 flex items-center gap-1.5 rounded-xl border border-line bg-ink-850/95 p-1.5 shadow-lg backdrop-blur">
-          {(["disparo", "followup", "conversa", "pos_pagamento"] as TipoEtapa[])
-            .filter((t) => t !== "disparo" || !temDisparo)
-            .map((t) => {
-              const { icone: Icone } = ESTILO[t];
-              return (
-                <button key={t} onClick={() => novoBloco(t)} title={`Novo bloco de ${ROTULO[t].toLowerCase()}`}
-                        className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-chalk transition-colors hover:bg-ink-800">
-                  <Icone className="h-3.5 w-3.5" /> {ROTULO[t]}
-                </button>
-              );
-            })}
-          <span className="mx-0.5 h-4 w-px bg-line" />
-          <button onClick={() => fitView({ duration: 300 })} title="Enquadrar"
-                  className="rounded-lg px-2.5 py-1.5 text-xs text-mist transition-colors hover:bg-ink-800 hover:text-chalk">
-            Enquadrar
-          </button>
-          <button
-            onClick={() => setEtapas((es) => es.map((e) => ({ ...e, pos: undefined })))}
-            title="Reorganizar automaticamente"
-            className="rounded-lg px-2.5 py-1.5 text-xs text-mist transition-colors hover:bg-ink-800 hover:text-chalk"
-          >
-            Reorganizar
-          </button>
+        {/* barras flutuantes inspiradas no editor da Virtus, usando os blocos reais da cobrança */}
+        <div className="pointer-events-none absolute inset-x-3 top-3 z-10 flex items-start justify-between gap-3">
+          <div className="pointer-events-auto flex items-center gap-1 rounded-xl border border-line bg-ink-850/95 p-1.5 shadow-lg backdrop-blur">
+            <Ferramenta titulo="Desfazer (Ctrl+Z)" desabilitada={!historico.podeDesfazer} aoClicar={desfazer}><Undo2 className="h-4 w-4" /></Ferramenta>
+            <Ferramenta titulo="Refazer (Ctrl+Y)" desabilitada={!historico.podeRefazer} aoClicar={refazer}><Redo2 className="h-4 w-4" /></Ferramenta>
+            <span className="mx-0.5 h-5 w-px bg-line" />
+            <Ferramenta titulo="Copiar o fluxo inteiro" aoClicar={() => void copiarFluxo()}><ClipboardCopy className="h-4 w-4" /></Ferramenta>
+            <Ferramenta titulo="Colar e substituir o fluxo" aoClicar={() => void abrirColagem()}><ClipboardPaste className="h-4 w-4" /></Ferramenta>
+            <Ferramenta titulo="Aplicar o modelo recomendado de cobrança" desabilitada={!modelo} aoClicar={() => {
+              if (confirm("Substituir o desenho atual pelo modelo recomendado? Você poderá desfazer com Ctrl+Z.")) {
+                substituir({ ativo: true, etapas: modelo?.etapas ?? [] }); setAbertaId(null);
+              }
+            }}><Sparkles className="h-4 w-4" /></Ferramenta>
+            <span className="mx-0.5 hidden h-5 w-px bg-line lg:block" />
+            <div className="relative hidden lg:block">
+              <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-mist" />
+              <input value={consulta} onChange={(e) => setConsulta(e.target.value)} placeholder="Ir para um bloco…" aria-label="Buscar bloco no fluxo"
+                className="h-8 w-48 rounded-lg border border-transparent bg-ink-900 pl-7 pr-2 text-xs text-chalk outline-none placeholder:text-mist focus:border-emerald/50" />
+              {consulta.trim() && (
+                <div className="absolute left-0 top-10 w-72 rounded-xl border border-line bg-ink-850 p-1.5 shadow-2xl">
+                  {resultadosBusca.length ? resultadosBusca.map((etapa) => (
+                    <button key={etapa.id} onClick={() => focarBloco(etapa.id)} className="flex w-full items-start gap-2 rounded-lg px-2.5 py-2 text-left hover:bg-ink-800">
+                      <span className="rounded bg-emerald/10 px-1.5 py-0.5 text-[9px] uppercase text-emerald">{ROTULO[tipoDe(etapa)]}</span>
+                      <span className="min-w-0"><span className="block truncate font-mono text-[11px] text-chalk">{etapa.id}</span><span className="block truncate text-[10px] text-mist">{etapa.objetivo || etapa.instrucao || etapa.textos?.[0]}</span></span>
+                    </button>
+                  )) : <p className="px-3 py-4 text-center text-xs text-mist">Nenhum bloco encontrado.</p>}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="pointer-events-auto flex items-center gap-1 rounded-xl border border-line bg-ink-850/95 p-1.5 shadow-lg backdrop-blur">
+            {(["disparo", "followup", "conversa", "pos_pagamento"] as TipoEtapa[])
+              .filter((t) => t !== "disparo" || !temDisparo)
+              .map((t) => {
+                const { icone: Icone } = ESTILO[t];
+                return <Ferramenta key={t} titulo={`Novo bloco de ${ROTULO[t].toLowerCase()}`} texto={ROTULO[t]} aoClicar={() => novoBloco(t)}><Icone className="h-3.5 w-3.5" /></Ferramenta>;
+              })}
+            <span className="mx-0.5 h-5 w-px bg-line" />
+            <Ferramenta titulo="Reorganizar automaticamente" aoClicar={() => setEtapas((es) => es.map((e) => ({ ...e, pos: undefined })))} texto="Organizar"><Sparkles className="h-3.5 w-3.5" /></Ferramenta>
+            <Ferramenta titulo="Enquadrar todo o fluxo" aoClicar={() => void fitView({ padding: 0.15, duration: 350 })}><Expand className="h-4 w-4" /></Ferramenta>
+            <Ferramenta titulo="Tela cheia" aoClicar={telaCheia}><Maximize2 className="h-4 w-4" /></Ferramenta>
+          </div>
+        </div>
+
+        <div className="absolute bottom-3 left-3 z-10 flex items-center gap-2 rounded-xl border border-line bg-ink-850/95 px-3 py-2 text-[10px] text-mist shadow-lg backdrop-blur">
+          <span><b className="text-chalk">{etapas.length}</b> blocos</span><span className="h-3 w-px bg-line" />
+          <span className={problemas.length ? "text-rose" : "text-emerald"}><b>{problemas.length}</b> {problemas.length === 1 ? "erro" : "erros"}</span><span className="h-3 w-px bg-line" />
+          <span className={historico.alterado ? "text-amber" : "text-emerald"}>{historico.alterado ? "alterações não salvas" : "salvo"}</span>
         </div>
 
         {/* painel lateral do bloco selecionado */}
@@ -337,6 +492,7 @@ function Canvas({ carteira, padrao, salvar }: {
             etapas={etapas}
             mudar={mudarAberta}
             renomear={renomearAberta}
+            duplicar={() => duplicarBloco(aberta)}
             remover={() => removerBloco(aberta.id)}
             fechar={() => setAbertaId(null)}
           />
@@ -349,8 +505,12 @@ function Canvas({ carteira, padrao, salvar }: {
         tempo de espera de cada follow-up.
       </p>
 
-      {problemas.map((p) => (
-        <div key={p} className="rounded-xl border border-amber/30 bg-amber/10 px-4 py-3 text-sm text-amber">{p}</div>
+      {problemas.map((problema, indice) => (
+        <button key={`${problema.etapaId ?? "fluxo"}-${indice}`} onClick={() => problema.etapaId && focarBloco(problema.etapaId)}
+          className="flex w-full items-center gap-2 rounded-xl border border-rose/30 bg-rose/10 px-4 py-3 text-left text-sm text-rose">
+          <AlertTriangle className="h-4 w-4 shrink-0" /> {problema.mensagem}
+          {problema.etapaId && <span className="ml-auto text-[10px] underline">abrir bloco</span>}
+        </button>
       ))}
       {alertas.map((a) => (
         <div key={a} className="rounded-xl border border-line bg-ink-850 px-4 py-3 text-sm text-mist">{a}</div>
@@ -363,23 +523,30 @@ function Canvas({ carteira, padrao, salvar }: {
       {erro && <div className="rounded-xl border border-rose/30 bg-rose/10 px-4 py-3 text-sm text-rose">{erro}</div>}
 
       <div className="flex items-center gap-3">
-        <Button disabled={salvando || problemas.length > 0} onClick={gravar}>
-          {ok ? <><Check className="h-4 w-4" /> Salvo</> : <><Save className="h-4 w-4" /> Salvar fluxo</>}
+        <Button disabled={salvando || problemas.length > 0 || !historico.alterado} onClick={gravar}>
+          {ok || !historico.alterado ? <><Check className="h-4 w-4" /> Salvo</> : <><Save className="h-4 w-4" /> Salvar fluxo</>}
         </Button>
         <button onClick={() => { if (confirm("Apagar o fluxo desta carteira? Ela volta ao texto padrão do sistema e ao robô livre.")) { setEtapas([]); setAtivo(false); setAbertaId(null); } }}
                 className="text-xs text-mist hover:text-rose">apagar o fluxo</button>
       </div>
+
+      {aviso && <div role="status" className="fixed bottom-5 right-5 z-50 flex max-w-sm items-center gap-2 rounded-xl border border-emerald/30 bg-ink-850 px-4 py-3 text-xs text-emerald shadow-2xl"><Check className="h-4 w-4" />{aviso}</div>}
+      {transferencia && (
+        <DialogoTransferencia estado={transferencia} aoMudar={(texto) => setTransferencia({ ...transferencia, texto, erro: undefined })}
+          aoFechar={() => setTransferencia(null)} aoImportar={importarTransferencia} />
+      )}
     </div>
   );
 }
 
 /* ---------------------------------------------------------------- painel lateral */
 
-function PainelBloco({ aberta, etapas, mudar, renomear, remover, fechar }: {
+function PainelBloco({ aberta, etapas, mudar, renomear, duplicar, remover, fechar }: {
   aberta: EtapaRoteiro;
   etapas: EtapaRoteiro[];
   mudar: (campo: keyof EtapaRoteiro, valor: any) => void;
   renomear: (rotulo: string) => void;
+  duplicar: () => void;
   remover: () => void;
   fechar: () => void;
 }) {
@@ -528,12 +695,16 @@ function PainelBloco({ aberta, etapas, mudar, renomear, remover, fechar }: {
         </div>
       )}
 
-      <button
-        onClick={remover}
-        className="mt-auto flex items-center justify-center gap-1.5 rounded-xl border border-rose/30 px-3 py-2 text-xs text-rose transition-colors hover:bg-rose/10"
-      >
-        <Trash2 className="h-3.5 w-3.5" /> Remover este bloco
-      </button>
+      <div className="mt-auto grid grid-cols-2 gap-2">
+        <button onClick={duplicar} disabled={tipo === "disparo"}
+          className="flex items-center justify-center gap-1.5 rounded-xl border border-line px-3 py-2 text-xs text-mist transition-colors hover:bg-ink-800 hover:text-chalk disabled:hidden">
+          <Copy className="h-3.5 w-3.5" /> Duplicar
+        </button>
+        <button onClick={remover}
+          className="flex items-center justify-center gap-1.5 rounded-xl border border-rose/30 px-3 py-2 text-xs text-rose transition-colors hover:bg-rose/10">
+          <Trash2 className="h-3.5 w-3.5" /> Remover
+        </button>
+      </div>
     </div>
   );
 }
@@ -570,4 +741,146 @@ export function AbaRoteiro(props: {
 }) {
   // o ReactFlowProvider é necessário para o useReactFlow() do canvas
   return <ReactFlowProvider><Canvas {...props} /></ReactFlowProvider>;
+}
+
+type DocumentoRoteiro = { ativo: boolean; etapas: EtapaRoteiro[] };
+type Atualizador<T> = T | ((anterior: T) => T);
+type Transferencia = { modo: "copiar" | "colar"; texto: string; erro?: string };
+
+/** Histórico local inspirado no editor da Virtus; o banco continua recebendo o mesmo `roteiro`. */
+function useHistoricoRoteiro(inicial: DocumentoRoteiro) {
+  const [documento, setDocumento] = React.useState(inicial);
+  const documentoRef = React.useRef(inicial);
+  const passados = React.useRef<DocumentoRoteiro[]>([]);
+  const futuros = React.useRef<DocumentoRoteiro[]>([]);
+  const ultimoGrupo = React.useRef<{ nome: string; em: number } | null>(null);
+  const [salvo, setSalvo] = React.useState(() => assinatura(inicial));
+
+  const aplicar = React.useCallback((atualizador: Atualizador<DocumentoRoteiro>, grupo?: string) => {
+    const anterior = documentoRef.current;
+    const proximo = typeof atualizador === "function"
+      ? (atualizador as (valor: DocumentoRoteiro) => DocumentoRoteiro)(anterior)
+      : atualizador;
+    if (assinatura(anterior) === assinatura(proximo)) return;
+
+    const agora = Date.now();
+    const agrupado = !!grupo && ultimoGrupo.current?.nome === grupo && agora - ultimoGrupo.current.em < 900;
+    if (!agrupado) passados.current = [...passados.current.slice(-59), anterior];
+    futuros.current = [];
+    ultimoGrupo.current = grupo ? { nome: grupo, em: agora } : null;
+    documentoRef.current = proximo;
+    setDocumento(proximo);
+  }, []);
+
+  const setEtapas = React.useCallback((atualizador: Atualizador<EtapaRoteiro[]>, grupo?: string) => {
+    aplicar((atual) => ({
+      ...atual,
+      etapas: typeof atualizador === "function"
+        ? (atualizador as (valor: EtapaRoteiro[]) => EtapaRoteiro[])(atual.etapas)
+        : atualizador,
+    }), grupo);
+  }, [aplicar]);
+
+  const setAtivo = React.useCallback((ativo: boolean) => aplicar((atual) => ({ ...atual, ativo })), [aplicar]);
+  const substituir = React.useCallback((roteiro: DocumentoRoteiro) => aplicar(roteiro), [aplicar]);
+
+  const desfazer = React.useCallback(() => {
+    const anterior = passados.current.pop();
+    if (!anterior) return;
+    futuros.current = [documentoRef.current, ...futuros.current].slice(0, 60);
+    documentoRef.current = anterior;
+    ultimoGrupo.current = null;
+    setDocumento(anterior);
+  }, []);
+
+  const refazer = React.useCallback(() => {
+    const proximo = futuros.current.shift();
+    if (!proximo) return;
+    passados.current = [...passados.current.slice(-59), documentoRef.current];
+    documentoRef.current = proximo;
+    ultimoGrupo.current = null;
+    setDocumento(proximo);
+  }, []);
+
+  const marcarSalvo = React.useCallback(() => {
+    setSalvo(assinatura(documentoRef.current));
+    ultimoGrupo.current = null;
+  }, []);
+
+  return {
+    documento,
+    setAtivo,
+    setEtapas,
+    substituir,
+    desfazer,
+    refazer,
+    marcarSalvo,
+    podeDesfazer: passados.current.length > 0,
+    podeRefazer: futuros.current.length > 0,
+    alterado: assinatura(documento) !== salvo,
+  };
+}
+
+function assinatura(documento: DocumentoRoteiro): string {
+  return JSON.stringify(documento);
+}
+
+function alvoDeDigitacao(alvo: EventTarget | null): boolean {
+  return alvo instanceof HTMLInputElement || alvo instanceof HTMLTextAreaElement || alvo instanceof HTMLSelectElement ||
+    (alvo instanceof HTMLElement && alvo.isContentEditable);
+}
+
+function Ferramenta({ titulo, texto, aoClicar, desabilitada, children }: {
+  titulo: string;
+  texto?: string;
+  aoClicar: () => void;
+  desabilitada?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <button type="button" title={titulo} aria-label={titulo} onClick={aoClicar} disabled={desabilitada}
+      className="flex h-8 items-center gap-1.5 rounded-lg px-2 text-[11px] text-mist transition-colors hover:bg-ink-800 hover:text-chalk disabled:opacity-35">
+      {children}{texto && <span className="hidden 2xl:inline">{texto}</span>}
+    </button>
+  );
+}
+
+function DialogoTransferencia({ estado, aoMudar, aoFechar, aoImportar }: {
+  estado: Transferencia;
+  aoMudar: (texto: string) => void;
+  aoFechar: () => void;
+  aoImportar: () => void;
+}) {
+  const areaRef = React.useRef<HTMLTextAreaElement>(null);
+  React.useEffect(() => { areaRef.current?.focus(); areaRef.current?.select(); }, []);
+  return (
+    <div role="dialog" aria-modal="true" aria-labelledby="transferencia-titulo" className="fixed inset-0 z-[80] grid place-items-center bg-black/65 p-4 backdrop-blur-sm">
+      <div className="w-full max-w-2xl rounded-2xl border border-line bg-ink-850 p-5 shadow-2xl">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h3 id="transferencia-titulo" className="font-display text-base font-600 text-chalk">
+              {estado.modo === "copiar" ? "Copiar fluxo da carteira" : "Colar fluxo em JSON"}
+            </h3>
+            <p className="mt-1 text-xs text-mist">
+              {estado.modo === "copiar"
+                ? "Copie este conteúdo. Ele inclui blocos, caminhos, textos, tempos e posições."
+                : "Aceita um fluxo exportado por esta tela ou o objeto de roteiro puro. O fluxo atual só muda depois da confirmação."}
+            </p>
+          </div>
+          <button onClick={aoFechar} aria-label="Fechar" className="rounded-lg p-1.5 text-mist hover:bg-ink-800 hover:text-chalk"><X className="h-4 w-4" /></button>
+        </div>
+        <textarea ref={areaRef} value={estado.texto} readOnly={estado.modo === "copiar"} onChange={(e) => aoMudar(e.target.value)} rows={16}
+          className="mt-4 w-full resize-y rounded-xl border border-line bg-ink-950 p-3 font-mono text-[11px] leading-relaxed text-chalk outline-none focus:border-emerald" />
+        {estado.erro && <p role="alert" className="mt-2 flex items-center gap-1.5 text-xs text-rose"><AlertTriangle className="h-3.5 w-3.5" />{estado.erro}</p>}
+        <div className="mt-4 flex justify-end gap-2">
+          <Button variant="ghost" onClick={aoFechar}>Cancelar</Button>
+          {estado.modo === "copiar" ? (
+            <Button onClick={() => { areaRef.current?.select(); void navigator.clipboard.writeText(estado.texto); }}><ClipboardCopy className="h-4 w-4" /> Copiar texto</Button>
+          ) : (
+            <Button onClick={aoImportar} disabled={!estado.texto.trim()}><ClipboardPaste className="h-4 w-4" /> Usar este fluxo</Button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 }
