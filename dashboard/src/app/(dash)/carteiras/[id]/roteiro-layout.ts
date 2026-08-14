@@ -25,7 +25,7 @@ export type EtapaRoteiro = {
   casos?: CasoRoteiro[];
   pos?: { x: number; y: number };
 };
-export type Roteiro = { ativo?: boolean; etapas: EtapaRoteiro[] };
+export type Roteiro = { ativo?: boolean; etapas: EtapaRoteiro[]; pos_inicio?: { x: number; y: number } };
 export type ProblemaRoteiro = { mensagem: string; etapaId?: string };
 export type ResultadoImportacaoRoteiro =
   | { ok: true; roteiro: Roteiro }
@@ -36,7 +36,7 @@ export const FORMATO_TRANSFERENCIA_ROTEIRO = "savan-recupera/carteira-fluxo@1";
 export const LARGURA_NO = 260;
 const GAP_X = 620;
 const GAP_Y = 230;
-const COLUNA_MENSAGENS = -GAP_X * 2;
+const COLUNA_MENSAGENS = -GAP_X;
 
 export const tipoDe = (e: EtapaRoteiro): TipoEtapa => e.tipo ?? "conversa";
 export const ehMensagem = (e: EtapaRoteiro): boolean => tipoDe(e) !== "conversa";
@@ -98,10 +98,12 @@ export function calcularPosicoes(etapas: EtapaRoteiro[]): Record<string, { x: nu
 
   const disparo = etapas.filter((e) => tipoDe(e) === "disparo");
   const fus = followups(etapas);
-  [...disparo, ...fus].forEach((e, i) => { pos[e.id] = { x: COLUNA_MENSAGENS, y: i * GAP_Y }; });
+  const mensagens = [...disparo, ...fus];
+  mensagens.forEach((e, i) => { pos[e.id] = { x: COLUNA_MENSAGENS, y: i * GAP_Y }; });
 
   const conversas = etapas.filter((e) => tipoDe(e) === "conversa");
   const porId = new Map(conversas.map((e) => [e.id, e]));
+  const ordemOriginal = new Map(conversas.map((e, indice) => [e.id, indice]));
   const raiz = etapaDeEntrada(etapas) ?? conversas[0]?.id;
   const nivel = new Map<string, number>();
   const fila: string[] = [];
@@ -120,18 +122,48 @@ export function calcularPosicoes(etapas: EtapaRoteiro[]): Record<string, { x: nu
   const maxNivel = Math.max(0, ...[...nivel.values()]);
   for (const e of conversas) if (!nivel.has(e.id)) nivel.set(e.id, maxNivel + 1);
 
-  const usadosPorNivel: Record<number, number> = {};
+  const maxColuna = Math.max(0, ...nivel.values());
+  const colunas = Array.from({ length: maxColuna + 1 }, () => [] as string[]);
+  for (const e of conversas) colunas[nivel.get(e.id) ?? 0].push(e.id);
+
+  const pais = new Map<string, string[]>();
+  const filhos = new Map<string, string[]>();
   for (const e of conversas) {
-    const n = nivel.get(e.id) ?? 0;
-    const linha = usadosPorNivel[n] ?? 0;
-    usadosPorNivel[n] = linha + 1;
-    pos[e.id] = { x: n * GAP_X, y: linha * GAP_Y };
+    for (const caso of e.casos ?? []) {
+      if (!porId.has(caso.vai_para)) continue;
+      filhos.set(e.id, [...(filhos.get(e.id) ?? []), caso.vai_para]);
+      pais.set(caso.vai_para, [...(pais.get(caso.vai_para) ?? []), e.id]);
+    }
   }
 
-  // pós-pagamento fica depois de tudo, na direita
-  const colunaFinal = (Math.max(0, ...nivel.values()) + 1) * GAP_X;
+  // Sweeps de baricentro aproximam cada bloco de seus vizinhos e reduzem cruzamentos.
+  const ordenarPorVizinhos = (coluna: number, vizinhos: Map<string, string[]>) => {
+    const indiceAtual = new Map<string, number>();
+    for (const ids of colunas) ids.forEach((id, indice) => indiceAtual.set(id, indice));
+    colunas[coluna].sort((a, b) => {
+      const media = (id: string) => {
+        const ligados = (vizinhos.get(id) ?? []).filter((outro) => indiceAtual.has(outro));
+        if (!ligados.length) return indiceAtual.get(id) ?? ordemOriginal.get(id) ?? 0;
+        return ligados.reduce((soma, outro) => soma + (indiceAtual.get(outro) ?? 0), 0) / ligados.length;
+      };
+      return media(a) - media(b) || (ordemOriginal.get(a) ?? 0) - (ordemOriginal.get(b) ?? 0);
+    });
+  };
+  for (let tentativa = 0; tentativa < 4; tentativa++) {
+    for (let coluna = 1; coluna < colunas.length; coluna++) ordenarPorVizinhos(coluna, pais);
+    for (let coluna = colunas.length - 2; coluna >= 0; coluna--) ordenarPorVizinhos(coluna, filhos);
+  }
+
+  // Centralizar cada coluna em torno da entrada deixa os ramos legiveis dos dois lados.
+  for (let coluna = 0; coluna < colunas.length; coluna++) {
+    const ids = colunas[coluna];
+    const deslocamento = ((ids.length - 1) * GAP_Y) / 2;
+    ids.forEach((id, linha) => { pos[id] = { x: coluna * GAP_X, y: linha * GAP_Y - deslocamento }; });
+  }
+
+  // Pós-pagamento é outro gatilho; fica na raia das mensagens, abaixo dos follow-ups.
   etapas.filter((e) => tipoDe(e) === "pos_pagamento")
-    .forEach((e, i) => { pos[e.id] = { x: colunaFinal, y: i * GAP_Y }; });
+    .forEach((e, i) => { pos[e.id] = { x: COLUNA_MENSAGENS, y: (mensagens.length + i + 1) * GAP_Y }; });
 
   return pos;
 }
@@ -301,7 +333,10 @@ export function importarRoteiro(texto: string): ResultadoImportacaoRoteiro {
     });
   }
 
-  return { ok: true, roteiro: { ativo: candidato.ativo !== false, etapas } };
+  const posInicio = registro(candidato.pos_inicio) && numeroFinito(candidato.pos_inicio.x) && numeroFinito(candidato.pos_inicio.y)
+    ? { x: Number(candidato.pos_inicio.x), y: Number(candidato.pos_inicio.y) }
+    : undefined;
+  return { ok: true, roteiro: { ativo: candidato.ativo !== false, etapas, pos_inicio: posInicio } };
 }
 
 function registro(valor: unknown): valor is Record<string, unknown> {

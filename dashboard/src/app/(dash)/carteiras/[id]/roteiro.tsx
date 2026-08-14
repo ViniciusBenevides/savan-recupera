@@ -142,7 +142,7 @@ type DadosMarco = { fim?: boolean; rotulo: string };
 
 function NoMarco({ data }: NodeProps<Node<DadosMarco>>) {
   return (
-    <div className={`flex w-[150px] items-center gap-2 rounded-xl border px-3 py-2.5 shadow-lg ${data.fim ? "border-line bg-ink-900 text-mist" : "border-emerald/35 bg-emerald/5 text-emerald"}`}>
+    <div title={data.fim ? undefined : "Arraste para reposicionar"} className={`flex w-[150px] items-center gap-2 rounded-xl border px-3 py-2.5 shadow-lg ${data.fim ? "border-line bg-ink-900 text-mist" : "cursor-grab border-emerald/35 bg-emerald/5 text-emerald active:cursor-grabbing"}`}>
       {data.fim && <Handle type="target" position={Position.Left} className="!h-2.5 !w-2.5 !border-2 !border-ink-900 !bg-mist" />}
       <span className={`grid h-6 w-6 place-items-center rounded-lg ${data.fim ? "bg-ink-700" : "bg-emerald/15"}`}>{data.fim ? <Flag className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}</span>
       <span className="text-[10px] font-600 uppercase tracking-[0.14em]">{data.rotulo}</span>
@@ -164,9 +164,9 @@ function Canvas({ carteira, padrao, salvar }: {
   const modelo = padrao.roteiro_modelo ?? null;
   const salvo = carteira.roteiro ?? null;
 
-  const historico = useHistoricoRoteiro({ ativo: !!salvo?.ativo, etapas: salvo?.etapas ?? [] });
-  const { documento, setAtivo, setEtapas, substituir, desfazer, refazer, marcarSalvo } = historico;
-  const { ativo, etapas } = documento;
+  const historico = useHistoricoRoteiro({ ativo: !!salvo?.ativo, etapas: salvo?.etapas ?? [], pos_inicio: salvo?.pos_inicio });
+  const { documento, setAtivo, setEtapas, setPosInicio, substituir, desfazer, refazer, marcarSalvo } = historico;
+  const { ativo, etapas, pos_inicio: posInicio } = documento;
   const [abertaId, setAbertaId] = React.useState<string | null>(null);
   const [salvando, setSalvando] = React.useState(false);
   const [ok, setOk] = React.useState(false);
@@ -217,8 +217,8 @@ function Canvas({ carteira, padrao, salvar }: {
           draggable: false,
           deletable: false,
           position: {
-            x: origem.x + Math.max(300, (destino.x - origem.x) / 2 - 10),
-            y: origem.y + (destino.y - origem.y) / 2 + indice * 34,
+            x: origem.x + LARGURA_NO + 42,
+            y: origem.y + (destino.y - origem.y) / 2,
           },
           data: {
             quando: caso.quando,
@@ -229,14 +229,32 @@ function Canvas({ carteira, padrao, salvar }: {
         };
       }),
     );
+
+    // Os casos compartilham uma raia entre duas colunas. Distribui-los nessa raia evita que duas
+    // respostas esperadas fiquem uma em cima da outra sem empurrar todas para baixo.
+    const casosPorRaia = new Map<number, Node<DadosResposta>[]>();
+    for (const no of nosResposta) {
+      const chave = Math.round(no.position.x);
+      casosPorRaia.set(chave, [...(casosPorRaia.get(chave) ?? []), no]);
+    }
+    for (const grupo of casosPorRaia.values()) {
+      grupo.sort((a, b) => a.position.y - b.position.y);
+      if (grupo.length < 2) continue;
+      const meio = Math.floor((grupo.length - 1) / 2);
+      for (let i = meio - 1; i >= 0; i--) {
+        grupo[i].position.y = Math.min(grupo[i].position.y, grupo[i + 1].position.y - 142);
+      }
+      for (let i = meio + 1; i < grupo.length; i++) {
+        grupo[i].position.y = Math.max(grupo[i].position.y, grupo[i - 1].position.y + 142);
+      }
+    }
     const primeiroId = etapas.find((e) => tipoDe(e) === "disparo")?.id ?? entrada;
     const primeiraPosicao = primeiroId ? posicaoEtapa(primeiroId) : null;
     const nosMarco: Node<DadosMarco>[] = primeiraPosicao ? [{
       id: "__inicio",
       type: "marco",
-      draggable: false,
       selectable: false,
-      position: { x: primeiraPosicao.x - 230, y: primeiraPosicao.y + 28 },
+      position: posInicio ?? { x: primeiraPosicao.x - 230, y: primeiraPosicao.y + 28 },
       data: { rotulo: "Início" },
     }] : [];
     for (const etapa of etapas.filter((item) => tipoDe(item) === "conversa" && (item.casos ?? []).length === 0)) {
@@ -294,12 +312,16 @@ function Canvas({ carteira, padrao, salvar }: {
     }
 
     setArestas([...doCaso, ...derivadas, ...marcos]);
-  }, [etapas, abertaId, entrada, idsComProblema, setNos, setArestas]);
+  }, [etapas, abertaId, entrada, idsComProblema, posInicio, setNos, setArestas]);
 
   // arrastar o nó guarda a posição na etapa
   const aoTerminarArraste = React.useCallback((_: unknown, no: Node) => {
+    if (no.id === "__inicio") {
+      setPosInicio({ x: Math.round(no.position.x), y: Math.round(no.position.y) });
+      return;
+    }
     setEtapas((es) => es.map((e) => (e.id === no.id ? { ...e, pos: { x: Math.round(no.position.x), y: Math.round(no.position.y) } } : e)));
-  }, []);
+  }, [setEtapas, setPosInicio]);
 
   // ligar dois nós arrastando = novo caminho. De um bloco de mensagem só sai UM caminho ("respondeu"),
   // e ele tem de cair numa etapa de conversa — o resto do encadeamento é a ordem dos blocos.
@@ -438,7 +460,11 @@ function Canvas({ carteira, padrao, salvar }: {
       setTransferencia({ ...transferencia, erro: resultado.erro });
       return;
     }
-    substituir({ ativo: resultado.roteiro.ativo !== false, etapas: resultado.roteiro.etapas });
+    substituir({
+      ativo: resultado.roteiro.ativo !== false,
+      etapas: resultado.roteiro.etapas,
+      pos_inicio: resultado.roteiro.pos_inicio,
+    });
     setAbertaId(null);
     setTransferencia(null);
     mostrarAviso("Fluxo importado. Revise os blocos e salve para criar uma nova versão.");
@@ -455,10 +481,24 @@ function Canvas({ carteira, padrao, salvar }: {
     else void editorRef.current.requestFullscreen();
   }
 
+  function organizarFluxo() {
+    const auto = calcularPosicoes(etapas);
+    substituir({
+      ...documento,
+      pos_inicio: undefined,
+      etapas: etapas.map((etapa) => ({ ...etapa, pos: auto[etapa.id] })),
+    });
+    setAbertaId(null);
+    mostrarAviso("Fluxo reorganizado por caminhos e enquadrado na tela.");
+    window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+      void fitView({ padding: 0.12, duration: 450 });
+    }));
+  }
+
   async function gravar() {
     if (salvando || problemas.length > 0 || !historico.alterado) return;
     setSalvando(true); setErro(""); setOk(false);
-    const sucesso = await salvar({ roteiro: etapas.length ? { ativo, etapas } : null });
+    const sucesso = await salvar({ roteiro: etapas.length ? { ativo, etapas, pos_inicio: posInicio } : null });
     if (sucesso) { marcarSalvo(); setOk(true); setTimeout(() => setOk(false), 2500); }
     else setErro("Falha ao salvar o fluxo.");
     setSalvando(false);
@@ -617,7 +657,7 @@ function Canvas({ carteira, padrao, salvar }: {
               return <Ferramenta key={t} titulo={`Novo bloco de ${ROTULO[t].toLowerCase()}`} texto={ROTULO[t]} aoClicar={() => novoBloco(t)}><Icone className="h-3.5 w-3.5" /></Ferramenta>;
             })}
           <span className="mx-0.5 h-5 w-px bg-line" />
-          <Ferramenta titulo="Reorganizar automaticamente" aoClicar={() => setEtapas((es) => es.map((e) => ({ ...e, pos: undefined })))} texto="Organizar"><Sparkles className="h-3.5 w-3.5" /></Ferramenta>
+          <Ferramenta titulo="Reorganizar automaticamente" aoClicar={organizarFluxo} texto="Organizar"><Sparkles className="h-3.5 w-3.5" /></Ferramenta>
         </div>
 
         {/* painel lateral do bloco selecionado */}
@@ -947,7 +987,7 @@ export function AbaRoteiro(props: {
   return <ReactFlowProvider><Canvas {...props} /></ReactFlowProvider>;
 }
 
-type DocumentoRoteiro = { ativo: boolean; etapas: EtapaRoteiro[] };
+type DocumentoRoteiro = { ativo: boolean; etapas: EtapaRoteiro[]; pos_inicio?: { x: number; y: number } };
 type Atualizador<T> = T | ((anterior: T) => T);
 type Transferencia = { modo: "copiar" | "colar"; texto: string; erro?: string };
 
@@ -986,6 +1026,8 @@ function useHistoricoRoteiro(inicial: DocumentoRoteiro) {
   }, [aplicar]);
 
   const setAtivo = React.useCallback((ativo: boolean) => aplicar((atual) => ({ ...atual, ativo })), [aplicar]);
+  const setPosInicio = React.useCallback((pos_inicio?: { x: number; y: number }) =>
+    aplicar((atual) => ({ ...atual, pos_inicio })), [aplicar]);
   const substituir = React.useCallback((roteiro: DocumentoRoteiro) => aplicar(roteiro), [aplicar]);
 
   const desfazer = React.useCallback(() => {
@@ -1015,6 +1057,7 @@ function useHistoricoRoteiro(inicial: DocumentoRoteiro) {
     documento,
     setAtivo,
     setEtapas,
+    setPosInicio,
     substituir,
     desfazer,
     refazer,
