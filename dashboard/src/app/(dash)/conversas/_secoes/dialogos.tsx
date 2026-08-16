@@ -1,43 +1,72 @@
 import { supabaseServer } from "@/lib/supabase-server";
 import { Inbox } from "./inbox";
 
+const TAMANHO_PAGINA = 1000;
+const TAMANHO_LOTE = 100;
+
+function emLotes<T>(itens: T[], tamanho = TAMANHO_LOTE): T[][] {
+  const lotes: T[][] = [];
+  for (let i = 0; i < itens.length; i += tamanho) lotes.push(itens.slice(i, i + tamanho));
+  return lotes;
+}
+
 /** Aba "Todas" — a caixa de entrada das conversas do robô. */
 export async function Dialogos() {
   const sb = await supabaseServer();
 
-  // Lista de conversas (mais recentes primeiro). Conversas sem mensagem ainda
-  // (ultima_msg_em nula) caem no fim.
-  const { data: convs } = await sb
-    .from("conversas")
-    .select("id, devedor_id, carteira_id, chip_id, estado, motivo_encerramento, simulacao, ultima_msg_em, ultima_msg_de, chatwoot_conversation_id, criado_em")
-    .order("ultima_msg_em", { ascending: false, nullsFirst: false })
-    .limit(300);
+  // Lista COMPLETA de conversas (mais recentes primeiro). A Data API limita o tamanho
+  // de cada resposta, então percorremos todas as páginas em vez de exibir um total parcial.
+  // Conversas sem mensagem ainda (ultima_msg_em nula) caem no fim.
+  const convs: any[] = [];
+  for (let inicio = 0; ; inicio += TAMANHO_PAGINA) {
+    const { data, error } = await sb
+      .from("conversas")
+      .select("id, devedor_id, carteira_id, chip_id, estado, motivo_encerramento, simulacao, ultima_msg_em, ultima_msg_de, chatwoot_conversation_id, criado_em")
+      .order("ultima_msg_em", { ascending: false, nullsFirst: false })
+      .range(inicio, inicio + TAMANHO_PAGINA - 1);
 
-  const lista0 = convs ?? [];
+    if (error) throw new Error(`Falha ao carregar conversas: ${error.message}`);
+    const pagina = data ?? [];
+    convs.push(...pagina);
+    if (pagina.length < TAMANHO_PAGINA) break;
+  }
+
+  const lista0 = convs;
   const devIds = [...new Set(lista0.map((c) => c.devedor_id).filter(Boolean))];
   const cartIds = [...new Set(lista0.map((c) => c.carteira_id).filter(Boolean))];
   const chipIds = [...new Set(lista0.map((c) => c.chip_id).filter(Boolean))];
   const convIds = lista0.map((c) => c.id);
 
-  const [{ data: devs }, { data: carts }, { data: chipsRaw }, { data: msgs }, { data: cfg }] = await Promise.all([
-    devIds.length
-      ? sb.from("devedores").select("id, nome, cpf_cnpj, saldo, status_cobranca, cidade, uf").in("id", devIds)
-      : Promise.resolve({ data: [] as any[] }),
-    cartIds.length
-      ? sb.from("carteiras").select("id, nome").in("id", cartIds)
-      : Promise.resolve({ data: [] as any[] }),
-    chipIds.length
-      ? sb.from("chips").select("id, nome, numero_e164, papel").in("id", chipIds)
-      : Promise.resolve({ data: [] as any[] }),
-    convIds.length
-      ? sb.from("mensagens")
-          .select("conversa_id, conteudo, criado_em, origem")
-          .in("conversa_id", convIds)
-          .order("criado_em", { ascending: false })
-          .limit(4000)
-      : Promise.resolve({ data: [] as any[] }),
+  // Os relacionamentos também são consultados em lotes. Isso evita URLs enormes no `.in()`
+  // e garante que aumentar o histórico não volte a truncar nomes, carteiras ou prévias.
+  const [devResultados, cartResultados, chipResultados, msgResultados, { data: cfg, error: cfgErro }] = await Promise.all([
+    Promise.all(emLotes(devIds).map((ids) =>
+      sb.from("devedores").select("id, nome, cpf_cnpj, saldo, status_cobranca, cidade, uf").in("id", ids),
+    )),
+    Promise.all(emLotes(cartIds).map((ids) =>
+      sb.from("carteiras").select("id, nome").in("id", ids),
+    )),
+    Promise.all(emLotes(chipIds).map((ids) =>
+      sb.from("chips").select("id, nome, numero_e164, papel").in("id", ids),
+    )),
+    Promise.all(emLotes(convIds).map((ids) =>
+      sb.from("mensagens")
+        .select("conversa_id, conteudo, criado_em, origem")
+        .in("conversa_id", ids)
+        .order("criado_em", { ascending: false })
+        .limit(4000),
+    )),
     sb.from("configuracoes").select("valor").eq("chave", "chatwoot").is("cobrador_id", null).maybeSingle(),
   ]);
+
+  const resultados = [...devResultados, ...cartResultados, ...chipResultados, ...msgResultados];
+  const erroRelacionado = resultados.find((r) => r.error)?.error ?? cfgErro;
+  if (erroRelacionado) throw new Error(`Falha ao carregar dados das conversas: ${erroRelacionado.message}`);
+
+  const devs = devResultados.flatMap((r) => r.data ?? []);
+  const carts = cartResultados.flatMap((r) => r.data ?? []);
+  const chipsRaw = chipResultados.flatMap((r) => r.data ?? []);
+  const msgs = msgResultados.flatMap((r) => r.data ?? []);
 
   const devMap = new Map((devs ?? []).map((d: any) => [d.id, d]));
   const cartMap = new Map((carts ?? []).map((c: any) => [c.id, c.nome]));
