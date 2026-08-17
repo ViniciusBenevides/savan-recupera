@@ -29,12 +29,14 @@ export default async function ConversasPage({ searchParams }: { searchParams: Pr
         title="Conversas"
         sub={aba === "escaladas"
           ? "Casos que o robô passou para atendimento humano — com histórico, status e desfecho."
-          : "A operação real do número oficial. Conversas de teste ficam ocultas até você pedir."}
+          : podeAtender
+            ? "A operação real do número oficial — leia e responda por aqui. Conversas de teste ficam ocultas até você pedir."
+            : "A operação real do número oficial. Conversas de teste ficam ocultas até você pedir."}
       />
 
       <Abas abas={abas} atual={aba} />
 
-      {aba === "todas" && <Dialogos />}
+      {aba === "todas" && <Dialogos podeAtender={podeAtender} />}
       {aba === "escaladas" && <Escaladas />}
     </>
   );

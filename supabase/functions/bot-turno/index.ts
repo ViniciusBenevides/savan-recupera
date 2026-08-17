@@ -7,6 +7,11 @@ import { createClient, SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { ehEstadoTerminal } from "../_shared/conversation-state.ts";
 import {
   classificarRespostaIdentidade,
+  ehAutorespostaComercial,
+  ehAvisoDeFalecimento,
+  ehIndicacaoDeContatoDeTerceiro,
+  ehMencaoJuridica,
+  ehMensagemSemConteudo,
   ehObjecaoConfirmacaoIdentidade,
   ehPedidoDocumentoOrigem,
   ehPedidoNaoPerturbe,
@@ -14,11 +19,18 @@ import {
   ehRecusaSimplesNegociacao,
   ehPerguntaDeIdentidade,
   normalizar,
+  periodoDoDia,
+  respostaAutorespostaComercial,
   respostaConfirmacaoIdentidade,
   respostaContextoSeguroIdentidade,
+  respostaFalecimento,
   respostaLimiteIdentidade,
+  respostaMencaoJuridica,
+  respostaMensagemSemConteudo,
   respostaNaoPerturbe,
   respostaPessoaErrada,
+  respostaTerceiroIndicaContato,
+  saudacaoDoPeriodo,
 } from "../_shared/identity.ts";
 import { detalharPisoProposta, garantirExplicacaoPiso } from "../_shared/proposal.ts";
 import {
@@ -261,6 +273,65 @@ function blocoRoteiro(etapa: any, interp: (t: unknown) => string): string[] {
   ];
 }
 
+// A conversa acontece num horario concreto, e o modelo nao tem relogio. Sem este bloco ele
+// devolvia "Bom dia" as tres da tarde (ecoando a saudacao da pessoa), prometia retorno "ainda
+// hoje" fora da janela de atendimento e tratava sexta 17h59 como se houvesse expediente adiante.
+function blocoAgora(cfg: any): string[] {
+  const tz = cfg.janela_envio?.tz ?? "America/Sao_Paulo";
+  const agora = new Date();
+  const fmt = (o: Intl.DateTimeFormatOptions) =>
+    new Intl.DateTimeFormat("pt-BR", { timeZone: tz, ...o }).format(agora);
+  const periodo = periodoDoDia(agora, tz);
+  const diaSemana = fmt({ weekday: "long" });
+  const janela = cfg.janela_envio ?? {};
+  // Dia da semana NO FUSO da operação (0=domingo), não o do relógio do servidor.
+  const sigla = new Intl.DateTimeFormat("en-US", { timeZone: tz, weekday: "short" }).format(agora);
+  const dow = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(sigla);
+  const faixas = dow >= 0 ? (janela.faixas_por_dia?.[String(dow)] ?? null) : null;
+  const janelaHoje = Array.isArray(faixas) && faixas.length
+    ? faixas.map((f: string[]) => `${f[0]}–${f[1]}`).join(", ")
+    : (janela.inicio && janela.fim ? `${janela.inicio}–${janela.fim}` : "não definida");
+  return [
+    "",
+    `AGORA: ${diaSemana}, ${fmt({ day: "2-digit", month: "2-digit", year: "numeric" })}, ` +
+      `${fmt({ hour: "2-digit", minute: "2-digit", hour12: false })} (${tz}). Período: ${periodo}.`,
+    `A saudação correta neste momento é "${saudacaoDoPeriodo(periodo)}". Use a saudação do RELÓGIO, ` +
+      "nunca a que a pessoa escreveu — se ela disser \"bom dia\" às 15h, responda \"Boa tarde\". " +
+      "Só cumprimente se ela cumprimentou; não abra toda mensagem com saudação.",
+    `A janela de atendimento de hoje é ${janelaHoje}. Nunca prometa retorno, ligação ou envio ` +
+      "em horário específico, nem diga \"em instantes\" ou \"já te retorno\": você não controla isso.",
+  ];
+}
+
+function blocoTom(g: any): string[] {
+  if (g?.perfis_tom === false) return [];
+  return [
+    "",
+    "CALIBRAGEM DE TOM — leia a pessoa antes de escrever. O tom errado é tão grave quanto o dado errado:",
+    "- Pessoa cordial e objetiva → seja igualmente objetiva. Frases curtas, no máximo 1 emoji, sem bajulação.",
+    "- Pessoa desconfiada ou que fala em golpe → nada de emoji, nada de entusiasmo. Transparência e frases " +
+      "diretas. Valide a desconfiança antes de qualquer outra coisa.",
+    "- Pessoa hostil ou que xinga → nunca revide, nunca se defenda, nunca peça calma. Uma frase curta, " +
+      "sem emoji, e encerre.",
+    "- Pessoa em situação difícil (doença, luto, desemprego, internação) → acolhimento genuíno em uma frase, " +
+      "zero linguagem comercial, nunca insista em pagamento. Saúde e luto vêm antes da cobrança, sempre.",
+    "- Pessoa idosa ou com escrita/áudio de transcrição confusa → frases muito curtas, uma ideia por mensagem, " +
+      "sem jargão (\"copia e cola\", \"faixa de desconto\", \"cessão de carteira\" precisam ser explicados). " +
+      "Nunca soe condescendente e nunca corrija a escrita dela.",
+    "- Pessoa que escreve em áudio transcrito → responda por escrito, curto, e não comente a transcrição.",
+    "- Pessoa entusiasmada ou religiosa que puxa assunto → acompanhe em uma frase, no registro dela, e volte " +
+      "ao ponto. Não force intimidade que ela não ofereceu.",
+    "",
+    "REGRAS DE ESTILO QUE VALEM SEMPRE:",
+    "- NUNCA repita uma mensagem sua palavra por palavra. Se precisar dizer a mesma coisa de novo, reescreva. " +
+      "Repetir literalmente é o tique que mais denuncia robô e o que mais gerou acusação de golpe.",
+    "- Uma pergunta por mensagem. No máximo duas em casos excepcionais.",
+    "- Nunca escreva nomes em CAIXA ALTA. Use capitalização normal.",
+    "- Nunca use \"dele(a)\", \"o(a)\" ou qualquer duplicação de gênero: use o nome da pessoa ou reescreva a frase.",
+    "- Não abra mensagem com \"Entendo.\" seguido de algo que não responde ao que foi dito.",
+  ];
+}
+
 function montarSystemPrompt(
   cfg: any,
   carteira: any,
@@ -313,11 +384,13 @@ function montarSystemPrompt(
     : ["", "FLUXO IDEAL: confirmar identidade -> contextualizar -> consultar_divida -> apresentar proposta (valor, desconto, validade) -> tratar objeções -> gerar_pix -> orientar pagamento -> avisar que após o pagamento envia o termo de quitação."];
 
   return [
-    interp(persona), interp(contexto), "",
+    interp(persona), interp(contexto),
+    ...blocoAgora(cfg), "",
     "REGRAS INEGOCIÁVEIS (violar qualquer uma é falha grave):",
     ...regras.map((r, i) => `${i + 1}. ${interp(r)}`),
     ...blocoConhecimento,
-    ...fluxo, "",
+    ...fluxo,
+    ...blocoTom(g), "",
     `ESTILO: ${interp(tom)}. Não soe robótica.`,
   ].join("\n");
 }
@@ -671,63 +744,159 @@ Deno.serve(async (req) => {
   // interpretado como confirmação. Somente resposta explicita libera os dados.
   const entradaNormal = normalizar(b.mensagem);
   const nomeProcurado = prop?.nome ?? prop?.primeiro_nome ?? "a pessoa procurada";
-  const tentativasAnteriores = hist.filter((m: any) =>
-    m.direcao === "saida" && ehPerguntaDeIdentidade(m.conteudo)
-  ).length;
-  const classificacaoIdentidade = classificarRespostaIdentidade(b.mensagem, nomeProcurado);
-  const confirmouAgora = classificacaoIdentidade === "confirmou";
-  const negouIdentidade = classificacaoIdentidade === "negou";
+
+  // A pessoa quase nunca manda UMA mensagem. Ela manda "Sim" e, dois segundos depois, "o que
+  // vocês querem?". O debounce entrega só a última à IA — e uma conversa real foi encerrada por
+  // "identidade não confirmada" logo depois de a pessoa ter escrito "Sim". Toda a rajada desde a
+  // última fala do bot precisa ser considerada em conjunto nas decisões determinísticas.
+  const rajada: string[] = [];
+  for (let i = hist.length - 1; i >= 0 && hist[i].direcao === "entrada"; i--) {
+    rajada.unshift(String(hist[i].conteudo ?? ""));
+  }
+  rajada.push(String(b.mensagem ?? ""));
+  const algumaDaRajada = (fn: (t: string) => boolean) => rajada.some(fn);
+
+  const perguntasJaFeitas = hist
+    .filter((m: any) => m.direcao === "saida" && ehPerguntaDeIdentidade(m.conteudo))
+    .map((m: any) => String(m.conteudo ?? ""));
+  // Mensagem sem conteúdo (emoji, figurinha, teclado) não conta como tentativa gasta.
+  const tentativasAnteriores = perguntasJaFeitas.length;
+
+  const classificacoes = rajada.map((t) => classificarRespostaIdentidade(t, nomeProcurado));
+  const confirmouAgora = classificacoes.includes("confirmou");
+  // Negação só prevalece se ninguém na rajada tiver confirmado.
+  const negouIdentidade = !confirmouAgora && classificacoes.includes("negou");
   let identidadeConfirmada = !!conv.identidade_confirmada_em
     && conv.identidade_confirmada_por !== "legado_dados_ja_revelados";
 
-  // O direito de interromper o contato não depende de confirmar identidade. Esta
-  // regra vem antes de todo o restante para nunca responder "você é Fulano?" a
-  // quem acabou de pedir que as mensagens parem.
-  if (ehPedidoNaoPerturbe(b.mensagem)) {
-    const resposta = respostaNaoPerturbe();
-    await concluirNaoPerturbe(sb, conv, carteiraId, simulacao, identidadeConfirmada);
+  // Encerramento determinístico reaproveitado pelas barreiras abaixo: grava a resposta, marca a
+  // etapa do roteiro correspondente e devolve o turno sem passar pelo modelo.
+  const encerrarComResposta = async (
+    resposta: string,
+    etapa: string,
+    acao: "encerrar" | "escalar" | "responder",
+    extra: Record<string, unknown> = {},
+  ) => {
     await sb.from("mensagens").insert({
       conversa_id: conv.id, direcao: "saida", origem: "bot", conteudo: resposta, simulacao,
     });
     await sb.from("conversas").update({
-      ultima_msg_em: new Date().toISOString(), ultima_msg_de: "bot",
+      ultima_msg_em: new Date().toISOString(), ultima_msg_de: "bot", etapa_roteiro: etapa,
     }).eq("id", conv.id);
     await marcarFila(sb, incomingMessageId, "concluida");
     return json({
-      ok: true, acao: "encerrar", encerrar: true, simulacao,
-      enviado_direto: false, mensagens: [resposta],
+      ok: true, acao, encerrar: acao !== "responder", simulacao,
+      enviado_direto: false, mensagens: [resposta], ...extra,
+    });
+  };
+
+  // O direito de interromper o contato não depende de confirmar identidade. Esta
+  // regra vem antes de todo o restante para nunca responder "você é Fulano?" a
+  // quem acabou de pedir que as mensagens parem.
+  if (algumaDaRajada(ehPedidoNaoPerturbe)) {
+    // Quem pede para parar e, na mesma frase, fala em advogado/Procon/justiça precisa das DUAS
+    // coisas: o contato para de imediato E a equipe fica sabendo. A escalação não manda nada ao
+    // devedor — só abre a nota interna e o registro em `escalacoes`.
+    // ORDEM IMPORTA: concluirEscalacao move a conversa para `humano` e o devedor para
+    // `contestado`; o opt-out precisa vir DEPOIS para que o estado final seja `optout` e o
+    // pedido de não contatar não seja sobrescrito.
+    if (algumaDaRajada(ehMencaoJuridica)) {
+      await concluirEscalacao(sb, {
+        conv, carteira, cfg, seg, carteiraId, simulacao,
+        chatwootConversationId: convId, historico: hist,
+        mensagem: String(b.mensagem ?? ""),
+        motivo: "mencao_juridica_com_optout", proposta: prop,
+      });
+    }
+    await concluirNaoPerturbe(sb, conv, carteiraId, simulacao, identidadeConfirmada);
+    return await encerrarComResposta(respostaNaoPerturbe(), "encerrar_nao_perturbe", "encerrar");
+  }
+
+  // Falecimento do titular. Vem logo depois do opt-out e antes de tudo mais: nenhuma mensagem
+  // sobre valor, dívida ou proposta pode sair a partir daqui, e não se pergunta por inventário,
+  // herdeiro nem documento.
+  if (algumaDaRajada(ehAvisoDeFalecimento)) {
+    await concluirPessoaErrada(sb, conv, carteiraId, simulacao);
+    await sb.from("eventos_campanha").insert({
+      tipo: "titular_falecido", devedor_id: conv.devedor_id,
+      carteira_id: carteiraId, payload: { simulacao },
+    });
+    return await encerrarComResposta(respostaFalecimento(), "titular_falecido", "encerrar");
+  }
+
+  // Advogado, Procon, justiça ou acusação de cobrança indevida encerram o automático na hora.
+  // Argumentar aqui — inclusive para "esclarecer" — é o pior desfecho possível.
+  if (algumaDaRajada(ehMencaoJuridica)) {
+    const escalacao = await concluirEscalacao(sb, {
+      conv, carteira, cfg, seg, carteiraId, simulacao,
+      chatwootConversationId: convId, historico: hist,
+      mensagem: String(b.mensagem ?? ""), motivo: "mencao_juridica", proposta: prop,
+    });
+    return await encerrarComResposta(respostaMencaoJuridica(), "escalar_juridico", "escalar", {
+      escalar: "mencao_juridica", resumo: escalacao.resumo, equipe: escalacao.equipe,
     });
   }
 
   if (!identidadeConfirmada && confirmouAgora) {
     identidadeConfirmada = true;
     const confirmadoEm = new Date().toISOString();
-    const proximaEtapa = etapaAtual?.id === "identificar" ? "proposta" : conv.etapa_roteiro;
+    // Para onde ir depois do "sim" é decisão do FLUXO, não do código: o roteiro v2 manda para
+    // `abrir_assunto` (contextualizar antes de citar número), o anterior mandava direto para
+    // `proposta`. Ler o caso "confirmou" da etapa evita fixar um id que muda a cada versão.
+    const destinoConfirmacao = etapaAtual?.id === "identificar"
+      ? ((etapaAtual.casos ?? []).find((c: any) =>
+        /confirmou|e a pessoa|sim/i.test(String(c?.quando ?? "")))?.vai_para ?? "proposta")
+      : conv.etapa_roteiro;
     await sb.from("conversas").update({
       identidade_confirmada_em: confirmadoEm,
       identidade_confirmada_por: "resposta_explicita",
-      etapa_roteiro: proximaEtapa,
+      etapa_roteiro: destinoConfirmacao,
     }).eq("id", conv.id);
     conv.identidade_confirmada_em = confirmadoEm;
-    conv.etapa_roteiro = proximaEtapa;
-    if (proximaEtapa === "proposta") etapaAtual = etapaDoRoteiro(carteira, "proposta");
+    conv.etapa_roteiro = destinoConfirmacao;
+    if (destinoConfirmacao && destinoConfirmacao !== "identificar") {
+      etapaAtual = etapaDoRoteiro(carteira, destinoConfirmacao) ?? etapaAtual;
+    }
   }
 
   if (!identidadeConfirmada) {
-    let respostaIdentidade: string;
-    let acaoIdentidade = "responder";
-    let encerrarIdentidade = false;
-    if (negouIdentidade) {
-      respostaIdentidade = respostaPessoaErrada(Number(incomingMessageId ?? conv.id));
-      acaoIdentidade = "encerrar";
-      encerrarIdentidade = true;
+    // Terceiro que se oferece para repassar o contato: agradecer, NÃO registrar o número
+    // oferecido e encerrar. Antes esta resposta era ignorada e a conversa voltava a perguntar
+    // "você é Fulano?" a quem tinha acabado de dizer que não era.
+    if (algumaDaRajada(ehIndicacaoDeContatoDeTerceiro)) {
       await concluirPessoaErrada(sb, conv, carteiraId, simulacao);
-    } else if (tentativasAnteriores >= 2) {
+      return await encerrarComResposta(
+        respostaTerceiroIndicaContato(), "terceiro_indica_contato", "encerrar",
+      );
+    }
+
+    if (negouIdentidade) {
+      await concluirPessoaErrada(sb, conv, carteiraId, simulacao);
+      return await encerrarComResposta(
+        respostaPessoaErrada(Number(incomingMessageId ?? conv.id)),
+        "encerrar_pessoa_errada",
+        "encerrar",
+      );
+    }
+
+    // Robô de outra empresa respondendo: uma tentativa neutra, sem revelar o assunto, e sem
+    // tratar o menu automático como se fosse uma pessoa.
+    if (algumaDaRajada(ehAutorespostaComercial)) {
+      return await encerrarComResposta(
+        respostaAutorespostaComercial(nomeProcurado), "autoresposta_comercial", "responder",
+      );
+    }
+
+    // Emoji, figurinha ou teclado apertado sem querer não consomem uma das duas tentativas.
+    if (rajada.every(ehMensagemSemConteudo)) {
+      return await encerrarComResposta(
+        respostaMensagemSemConteudo(nomeProcurado), "mensagem_ininteligivel", "responder",
+      );
+    }
+
+    if (tentativasAnteriores >= 2) {
       // Duas perguntas sem confirmação são o limite. Depois disso, insistir só
       // aumenta a suspeita de golpe e repete exatamente a falha observada.
-      respostaIdentidade = respostaLimiteIdentidade();
-      acaoIdentidade = "encerrar";
-      encerrarIdentidade = true;
       await sb.from("conversas").update({
         estado: "encerrada", motivo_encerramento: "outro", proximo_followup_em: null,
       }).eq("id", conv.id);
@@ -735,26 +904,27 @@ Deno.serve(async (req) => {
         tipo: "identidade_nao_confirmada", devedor_id: conv.devedor_id,
         carteira_id: carteiraId, payload: { simulacao, tentativas: tentativasAnteriores },
       });
-    } else if (ehObjecaoConfirmacaoIdentidade(b.mensagem)) {
-      respostaIdentidade = respostaContextoSeguroIdentidade(nomeProcurado);
-    } else {
-      respostaIdentidade = respostaConfirmacaoIdentidade(
+      return await encerrarComResposta(
+        respostaLimiteIdentidade(), "encerrar_identidade_nao_confirmada", "encerrar",
+      );
+    }
+
+    const respostaIdentidade = algumaDaRajada(ehObjecaoConfirmacaoIdentidade)
+      ? respostaContextoSeguroIdentidade(nomeProcurado)
+      // `perguntasJaFeitas` impede que a mesma frase saia duas vezes: repetir literalmente foi
+      // o que transformou desconfiança em acusação de golpe nas conversas reais.
+      : respostaConfirmacaoIdentidade(
         nomeProcurado,
         tentativasAnteriores,
         b.mensagem,
+        perguntasJaFeitas,
+        periodoDoDia(new Date(), cfg.janela_envio?.tz ?? "America/Sao_Paulo"),
       );
-    }
-    await sb.from("mensagens").insert({
-      conversa_id: conv.id, direcao: "saida", origem: "bot", conteudo: respostaIdentidade, simulacao,
-    });
-    await sb.from("conversas").update({
-      ultima_msg_em: new Date().toISOString(), ultima_msg_de: "bot", etapa_roteiro: "identificar",
-    }).eq("id", conv.id);
-    await marcarFila(sb, incomingMessageId, "concluida");
-    return json({
-      ok: true, acao: acaoIdentidade, encerrar: encerrarIdentidade, simulacao,
-      enviado_direto: false, mensagens: [respostaIdentidade],
-    });
+    return await encerrarComResposta(
+      respostaIdentidade,
+      algumaDaRajada(ehObjecaoConfirmacaoIdentidade) ? "contexto_seguro" : "identificar",
+      "responder",
+    );
   }
 
   const { data: origemDev } = await sb.from("devedores")
@@ -876,8 +1046,14 @@ Deno.serve(async (req) => {
           valor_calculado_com_desconto: detalhesPiso.valorCalculadoComDesconto,
           valor_minimo_quitacao: detalhesPiso.valorMinimoQuitacao,
           piso_minimo_aplicado: detalhesPiso.pisoMinimoAplicado,
+          sem_desconto_possivel: detalhesPiso.semDescontoPossivel,
           desconto_efetivo_pct: detalhesPiso.descontoEfetivoPct,
           explicacao_obrigatoria: detalhesPiso.explicacaoObrigatoria,
+          instrucao: detalhesPiso.semDescontoPossivel
+            ? "PROIBIDO usar as palavras desconto, percentual, condicao especial ou oportunidade: o valor ja esta no piso e nao ha desconto a aplicar. Apresente apenas o encerramento definitivo com termo de quitacao."
+            : detalhesPiso.pisoMinimoAplicado
+            ? "OBRIGATORIO explicar que a faixa previa o percentual informado, que o calculo cairia abaixo do minimo de quitacao e que por isso o valor final e o minimo. Nunca apresente o percentual da faixa como o desconto obtido."
+            : null,
         };
       } else if (nome === "consultar_origem") {
         const cpfDigitos = String(origemDev?.cpf_cnpj ?? "").replace(/\D/g, "");
@@ -1036,7 +1212,7 @@ Deno.serve(async (req) => {
 
   // Segunda barreira, deterministica: se o modelo apresentar a proposta e omitir
   // a justificativa do piso, acrescente a explicacao antes de gravar/enviar.
-  if (detalhesPiso.pisoMinimoAplicado
+  if ((detalhesPiso.pisoMinimoAplicado || detalhesPiso.semDescontoPossivel)
     && (toolsExecutadas.has("consultar_divida") || toolsExecutadas.has("desconto_extra"))
     && !toolsExecutadas.has("gerar_pix")
     && respostas.length) {

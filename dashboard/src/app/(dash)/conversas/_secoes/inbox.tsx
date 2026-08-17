@@ -1,14 +1,16 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import { Card, Badge, Button } from "@/components/ui/primitives";
 import { brl, dataHoraBR } from "@/lib/utils";
 import {
   Search, MessageSquareText, ExternalLink, FileText, ArrowLeft, RefreshCw,
   Bot, Headset, User, Cog, Loader2, FlaskConical, Smartphone, X, CornerDownRight,
-  AudioLines,
+  AudioLines, StickyNote, Hand, Undo2, CheckCircle2, RotateCcw,
 } from "lucide-react";
+import { Composer } from "./composer";
 
 type Conversa = {
   id: number;
@@ -18,6 +20,9 @@ type Conversa = {
   simulacao: boolean;
   ultima_msg_em: string | null;
   ultima_msg_de: string | null;
+  ultima_entrada_em: string | null;
+  lida_em: string | null;
+  atendente_nome: string | null;
   chatwoot_id: number | null;
   chip_id: number | null;
   chip_nome: string | null;
@@ -30,6 +35,7 @@ type Conversa = {
   carteira: string | null;
   preview: string | null;
   preview_de: string | null;
+  preview_privado: boolean;
 };
 
 type Chip = { id: number; nome: string; numero: string | null };
@@ -43,6 +49,8 @@ type Msg = {
   transcricao: string | null;
   anexos: { data_url?: string | null; file_type?: string | null }[] | null;
   criado_em: string;
+  privado: boolean | null;
+  autor_nome: string | null;
 };
 
 // Estado da conversa. `ring`/`dot` desenham o estado no próprio avatar da linha — a lista
@@ -67,8 +75,13 @@ const estadoDe = (c: Pick<Conversa, "estado" | "motivo_encerramento">) => {
   return ESTADO[chave] ?? ESTADO[c.estado] ?? { ...ESTADO_FALLBACK, label: c.estado };
 };
 
+// Recorte que não é um estado: "esperam você" é a fila de trabalho — a pessoa escreveu e ninguém
+// abriu a conversa desde então. Fica com as outras porque o operador escolhe UM recorte por vez.
+const NAO_LIDAS = "@nao_lidas";
+
 const FILTROS: { v: string; label: string }[] = [
   { v: "", label: "Todas" },
+  { v: NAO_LIDAS, label: "Esperam você" },
   { v: "aguardando_resposta", label: "Aguardando" },
   { v: "bot_ativo", label: "Responderam" },
   { v: "humano", label: "Com humano" },
@@ -115,10 +128,29 @@ const ORIGEM_META: Record<string, { Icon: any; label: string }> = {
   sistema: { Icon: Cog, label: "Sistema" },
 };
 
-export function Inbox({ lista, chips, chipPadrao, cwUrl }: {
-  lista: Conversa[]; chips: Chip[]; chipPadrao: number | null; cwUrl: string;
+/** Conversa em que o contato falou por último e ninguém abriu depois disso. */
+const naoLida = (c: Conversa) =>
+  c.ultima_msg_de === "devedor" &&
+  !!c.ultima_msg_em &&
+  (!c.lida_em || new Date(c.lida_em).getTime() < new Date(c.ultima_msg_em).getTime());
+
+// Por que esta conversa não aceita mensagem. É a mesma regra do servidor (rota de envio); aqui
+// serve só para explicar antes de o operador digitar.
+function motivoBloqueio(c: Conversa): string | null {
+  if (c.estado === "optout") {
+    return "Esta pessoa pediu para não ser mais contatada. Escrever para ela não é permitido por aqui.";
+  }
+  if (c.estado === "encerrada" && c.motivo_encerramento === "pessoa_errada") {
+    return "Este número foi marcado como de outra pessoa. Corrija o cadastro do devedor antes de escrever.";
+  }
+  return null;
+}
+
+export function Inbox({ lista, chips, chipPadrao, cwUrl, podeAtender }: {
+  lista: Conversa[]; chips: Chip[]; chipPadrao: number | null; cwUrl: string; podeAtender: boolean;
 }) {
   const sb = useMemo(() => supabaseBrowser(), []);
+  const router = useRouter();
   const [busca, setBusca] = useState("");
   const [filtro, setFiltro] = useState("");
   // Teste é a exceção, não o padrão: a caixa abre com a operação REAL. Quem está testando
@@ -130,6 +162,10 @@ export function Inbox({ lista, chips, chipPadrao, cwUrl }: {
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [carregando, setCarregando] = useState(false);
   const [noThreadMobile, setNoThreadMobile] = useState(false);
+  // Marcar como lida vai ao banco, mas recarregar a página inteira a cada conversa aberta seria
+  // pesado; este conjunto tira o marcador na hora e o servidor confirma no próximo refresh.
+  const [lidasAgora, setLidasAgora] = useState<Set<number>>(new Set());
+  const [acaoPend, setAcaoPend] = useState(false);
   const fimRef = useRef<HTMLDivElement>(null);
 
   // Base = o que sobra depois dos recortes de contexto (número + teste). Os contadores dos
@@ -143,19 +179,25 @@ export function Inbox({ lista, chips, chipPadrao, cwUrl }: {
     [lista, chipFiltro, verTestes],
   );
 
+  const pendente = (c: Conversa) => naoLida(c) && !lidasAgora.has(c.id);
+
   const contagem = useMemo(() => {
-    const m: Record<string, number> = { "": base.length };
+    const m: Record<string, number> = { "": base.length, [NAO_LIDAS]: 0 };
     for (const c of base) {
       const chave = chaveEstado(c);
       m[chave] = (m[chave] ?? 0) + 1;
+      if (pendente(c)) m[NAO_LIDAS] += 1;
     }
     return m;
-  }, [base]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [base, lidasAgora]);
 
   const filtradas = useMemo(() => {
     const q = busca.trim().toLowerCase();
     return base.filter((c) => {
-      if (filtro && chaveEstado(c) !== filtro) return false;
+      if (filtro === NAO_LIDAS) {
+        if (!pendente(c)) return false;
+      } else if (filtro && chaveEstado(c) !== filtro) return false;
       if (!q) return true;
       return (
         c.nome.toLowerCase().includes(q) ||
@@ -163,7 +205,8 @@ export function Inbox({ lista, chips, chipPadrao, cwUrl }: {
         (c.preview ?? "").toLowerCase().includes(q)
       );
     });
-  }, [base, busca, filtro]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [base, busca, filtro, lidasAgora]);
 
   const atual = useMemo(() => lista.find((c) => c.id === sel) ?? null, [lista, sel]);
 
@@ -181,12 +224,42 @@ export function Inbox({ lista, chips, chipPadrao, cwUrl }: {
     }
     const { data } = await sb
       .from("mensagens")
-      .select("id, direcao, origem, conteudo, tipo_conteudo, transcricao, anexos, criado_em")
+      .select("id, direcao, origem, conteudo, tipo_conteudo, transcricao, anexos, criado_em, privado, autor_nome")
       .eq("conversa_id", convId)
       .order("criado_em", { ascending: true })
       .limit(800);
     setMsgs((data as Msg[]) ?? []);
     setCarregando(false);
+  }
+
+  // Abrir a conversa é lê-la — some da fila "esperam você", como em qualquer caixa de entrada.
+  async function marcarLida(convId: number) {
+    setLidasAgora((s) => (s.has(convId) ? s : new Set(s).add(convId)));
+    try {
+      await fetch(`/api/conversas/${convId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ acao: "marcar_lida" }),
+      });
+    } catch { /* marcador visual já caiu; o servidor reconcilia no próximo carregamento */ }
+  }
+
+  // Assumir / devolver ao robô / resolver / reabrir. Muda estado no banco e no Chatwoot, então
+  // recarregamos os dados do servidor para a lista refletir o novo estado.
+  async function acao(convId: number, nome: string) {
+    setAcaoPend(true);
+    try {
+      const r = await fetch(`/api/conversas/${convId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ acao: nome }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok || !d?.ok) { alert(d?.erro ?? "Não foi possível concluir a ação."); return; }
+      router.refresh();
+    } finally {
+      setAcaoPend(false);
+    }
   }
 
   // Carrega ao trocar de conversa + polling + realtime (se publicado).
@@ -213,9 +286,27 @@ export function Inbox({ lista, chips, chipPadrao, cwUrl }: {
     fimRef.current?.scrollIntoView({ behavior: "auto" });
   }, [msgs.length, sel]);
 
+  // Lista viva: qualquer conversa que muda (mensagem nova, estado, atendente) redesenha a caixa.
+  // O refresh é agrupado porque uma rajada de mensagens dispararia um por evento.
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const ch = sb
+      .channel("conversas-inbox")
+      .on("postgres_changes", { event: "*", schema: "public", table: "conversas" }, () => {
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(() => router.refresh(), 1500);
+      })
+      .subscribe();
+    return () => {
+      if (timer) clearTimeout(timer);
+      sb.removeChannel(ch);
+    };
+  }, [sb, router]);
+
   function abrir(id: number) {
     setSel(id);
     setNoThreadMobile(true);
+    if (podeAtender) marcarLida(id);
   }
 
   const chipAtivo = chips.find((c) => c.id === chipFiltro) ?? null;
@@ -338,6 +429,7 @@ export function Inbox({ lista, chips, chipPadrao, cwUrl }: {
             {filtradas.map((c) => {
               const e = estadoDe(c);
               const ativo = c.id === sel;
+              const espera = podeAtender && pendente(c);
               return (
                 <button
                   key={c.id}
@@ -359,15 +451,24 @@ export function Inbox({ lista, chips, chipPadrao, cwUrl }: {
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-baseline gap-2">
-                      <span className="truncate text-sm font-medium text-chalk">{c.nome}</span>
-                      <span className="ml-auto shrink-0 font-mono text-[10px] text-mist tabnums">
+                      <span className={`truncate text-sm text-chalk ${espera ? "font-semibold" : "font-medium"}`}>
+                        {c.nome}
+                      </span>
+                      <span
+                        className={`ml-auto shrink-0 font-mono text-[10px] tabnums ${
+                          espera ? "font-semibold text-emerald-soft" : "text-mist"
+                        }`}
+                      >
                         {relativo(c.ultima_msg_em)}
                       </span>
+                      {espera && <span className="h-2 w-2 shrink-0 rounded-full bg-emerald" title="Não lida" />}
                     </div>
-                    <div className="mt-0.5 flex items-center gap-1 text-xs text-mist">
-                      {c.preview_de && c.preview_de !== "devedor" && (
+                    <div className={`mt-0.5 flex items-center gap-1 text-xs ${espera ? "text-chalk/80" : "text-mist"}`}>
+                      {c.preview_privado ? (
+                        <StickyNote className="h-3 w-3 shrink-0 text-amber opacity-80" />
+                      ) : c.preview_de && c.preview_de !== "devedor" ? (
                         <CornerDownRight className="h-3 w-3 shrink-0 -scale-y-100 opacity-60" />
-                      )}
+                      ) : null}
                       <span className="truncate">
                         {c.preview ?? <span className="italic opacity-60">sem mensagens ainda</span>}
                       </span>
@@ -428,6 +529,9 @@ export function Inbox({ lista, chips, chipPadrao, cwUrl }: {
                       {atual.cpf && <span className="font-mono tabnums">{atual.cpf}</span>}
                       {atual.cidade && <span> · {atual.cidade}{atual.uf ? `/${atual.uf}` : ""}</span>}
                       {atual.chip_nome && <span> · por {atual.chip_nome}</span>}
+                      {atual.atendente_nome && (
+                        <span className="text-violet"> · com {atual.atendente_nome}</span>
+                      )}
                     </div>
                   </div>
                   <div className="flex shrink-0 items-center gap-1.5">
@@ -448,6 +552,50 @@ export function Inbox({ lista, chips, chipPadrao, cwUrl }: {
                     )}
                   </div>
                 </div>
+
+                {/* Quem conduz a conversa. O robô só se cala em `estado = humano`, então assumir
+                    não é enfeite: é o que impede o bot de responder por cima do operador. */}
+                {podeAtender && (
+                  <div className="flex flex-wrap items-center gap-1.5 border-t border-line/60 px-3 py-1.5">
+                    {atual.estado === "humano" ? (
+                      <>
+                        <span className="inline-flex items-center gap-1.5 rounded-full border border-violet/30 bg-violet/10 px-2.5 py-1 text-[11px] text-violet">
+                          <Headset className="h-3 w-3" /> Robô pausado — atendimento humano
+                        </span>
+                        <Button variant="ghost" size="sm" disabled={acaoPend}
+                          onClick={() => acao(atual.id, "devolver_ao_robo")}>
+                          <Undo2 className="h-3.5 w-3.5" /> Devolver ao robô
+                        </Button>
+                      </>
+                    ) : atual.estado === "encerrada" ? (
+                      <Button variant="outline" size="sm" disabled={acaoPend}
+                        onClick={() => acao(atual.id, "reabrir")}>
+                        <RotateCcw className="h-3.5 w-3.5" /> Reabrir conversa
+                      </Button>
+                    ) : ["pago", "optout"].includes(atual.estado) ? (
+                      <span className="text-[11px] text-mist">
+                        Conversa com desfecho registrado — sem ações de atendimento.
+                      </span>
+                    ) : (
+                      <>
+                        <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald/25 bg-emerald/10 px-2.5 py-1 text-[11px] text-emerald-soft">
+                          <Bot className="h-3 w-3" /> Robô conduzindo
+                        </span>
+                        <Button variant="ghost" size="sm" disabled={acaoPend}
+                          onClick={() => acao(atual.id, "assumir")}>
+                          <Hand className="h-3.5 w-3.5" /> Assumir
+                        </Button>
+                      </>
+                    )}
+                    {!["pago", "optout", "encerrada"].includes(atual.estado) && (
+                      <Button variant="ghost" size="sm" className="ml-auto" disabled={acaoPend}
+                        onClick={() => acao(atual.id, "resolver")}>
+                        <CheckCircle2 className="h-3.5 w-3.5" /> Encerrar
+                      </Button>
+                    )}
+                    {acaoPend && <Loader2 className="h-3.5 w-3.5 animate-spin text-mist" />}
+                  </div>
+                )}
 
                 {/* Faixa de contexto: o operador lê a conversa sabendo quanto e de qual carteira */}
                 {(atual.saldo > 0 || atual.carteira) && (
@@ -488,6 +636,32 @@ export function Inbox({ lista, chips, chipPadrao, cwUrl }: {
                               <span className="rounded-full border border-line bg-ink-850 px-3 py-1 text-[11px] text-mist">
                                 {m.conteudo} · {HORA.format(new Date(m.criado_em))}
                               </span>
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      // Nota interna: mesmo lugar da linha do tempo, aparência inconfundível.
+                      // Confundir nota com mensagem enviada é o erro caro desta tela.
+                      if (m.privado) {
+                        return (
+                          <div key={m.id}>
+                            {novoDia && <SeparadorDia iso={m.criado_em} />}
+                            <div className="my-1.5 flex justify-end">
+                              <div className="max-w-[82%] rounded-2xl border border-amber/30 bg-amber/8 px-3.5 py-2 sm:max-w-[72%]">
+                                <div className="mb-1 flex items-center gap-1.5 text-[10px] font-600 uppercase tracking-wider text-amber">
+                                  <StickyNote className="h-3 w-3" /> Nota interna — o contato não vê
+                                </div>
+                                <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-chalk">
+                                  {m.conteudo}
+                                </p>
+                                <div className="mt-1 text-right text-[10px] text-mist">
+                                  {m.autor_nome ?? "equipe"} ·{" "}
+                                  <span className="font-mono tabnums" title={dataHoraBR(m.criado_em)}>
+                                    {HORA.format(new Date(m.criado_em))}
+                                  </span>
+                                </div>
+                              </div>
                             </div>
                           </div>
                         );
@@ -546,7 +720,7 @@ export function Inbox({ lista, chips, chipPadrao, cwUrl }: {
                                   }`}
                                 >
                                   <Icon className="h-3 w-3" />
-                                  {meta.label}
+                                  {m.origem === "humano" && m.autor_nome ? m.autor_nome : meta.label}
                                   <span className="opacity-50">·</span>
                                   <span className="font-mono tabnums" title={dataHoraBR(m.criado_em)}>
                                     {HORA.format(new Date(m.criado_em))}
@@ -562,6 +736,17 @@ export function Inbox({ lista, chips, chipPadrao, cwUrl }: {
                   </div>
                 )}
               </div>
+
+              {/* Responder sem sair daqui. Só quem opera (admin/cobrador) vê a caixa; credor e
+                  visualizador continuam com a leitura que já tinham. */}
+              {podeAtender && (
+                <Composer
+                  key={atual.id}
+                  conversaId={atual.id}
+                  bloqueio={motivoBloqueio(atual)}
+                  onEnviado={() => { carregar(atual.id, true); router.refresh(); }}
+                />
+              )}
             </>
           )}
         </div>

@@ -10,8 +10,8 @@ function emLotes<T>(itens: T[], tamanho = TAMANHO_LOTE): T[][] {
   return lotes;
 }
 
-/** Aba "Todas" — a caixa de entrada das conversas do robô. */
-export async function Dialogos() {
+/** Aba "Todas" — a caixa de entrada das conversas do robô (e do atendimento humano). */
+export async function Dialogos({ podeAtender = false }: { podeAtender?: boolean }) {
   const sb = await supabaseServer();
 
   // Lista COMPLETA de conversas (mais recentes primeiro). A Data API limita o tamanho
@@ -21,7 +21,7 @@ export async function Dialogos() {
   for (let inicio = 0; ; inicio += TAMANHO_PAGINA) {
     const { data, error } = await sb
       .from("conversas")
-      .select("id, devedor_id, carteira_id, chip_id, estado, motivo_encerramento, simulacao, ultima_msg_em, ultima_msg_de, chatwoot_conversation_id, criado_em")
+      .select("id, devedor_id, carteira_id, chip_id, estado, motivo_encerramento, simulacao, ultima_msg_em, ultima_msg_de, ultima_entrada_em, lida_em, atendente_nome, chatwoot_conversation_id, criado_em")
       .order("ultima_msg_em", { ascending: false, nullsFirst: false })
       .range(inicio, inicio + TAMANHO_PAGINA - 1);
 
@@ -51,7 +51,7 @@ export async function Dialogos() {
     )),
     Promise.all(emLotes(convIds).map((ids) =>
       sb.from("mensagens")
-        .select("conversa_id, conteudo, criado_em, origem")
+        .select("conversa_id, conteudo, criado_em, origem, privado")
         .in("conversa_id", ids)
         .order("criado_em", { ascending: false })
         .limit(4000),
@@ -74,9 +74,11 @@ export async function Dialogos() {
 
   // Prévia = primeira mensagem encontrada por conversa (a query veio desc, então
   // a 1ª que aparece de cada conversa é a mais recente).
-  const prev = new Map<number, { texto: string; origem: string }>();
+  const prev = new Map<number, { texto: string; origem: string; privado: boolean }>();
   for (const m of (msgs ?? []) as any[]) {
-    if (!prev.has(m.conversa_id)) prev.set(m.conversa_id, { texto: m.conteudo ?? "", origem: m.origem });
+    if (!prev.has(m.conversa_id)) {
+      prev.set(m.conversa_id, { texto: m.conteudo ?? "", origem: m.origem, privado: m.privado === true });
+    }
   }
 
   const lista = lista0.map((c) => {
@@ -91,6 +93,9 @@ export async function Dialogos() {
       simulacao: !!c.simulacao,
       ultima_msg_em: c.ultima_msg_em as string | null,
       ultima_msg_de: c.ultima_msg_de as string | null,
+      ultima_entrada_em: (c.ultima_entrada_em as string | null) ?? null,
+      lida_em: (c.lida_em as string | null) ?? null,
+      atendente_nome: (c.atendente_nome as string | null) ?? null,
       chatwoot_id: c.chatwoot_conversation_id as number | null,
       chip_id: (c.chip_id as number | null) ?? null,
       chip_nome: (ch.nome as string) ?? null,
@@ -103,6 +108,7 @@ export async function Dialogos() {
       carteira: (cartMap.get(c.carteira_id) as string) ?? null,
       preview: p?.texto ?? null,
       preview_de: p?.origem ?? null,
+      preview_privado: p?.privado ?? false,
     };
   });
 
@@ -121,5 +127,13 @@ export async function Dialogos() {
   // com a conversa mais recente. Com um chip só (o caso normal) é sempre ele.
   const chipPadrao = chips.length ? chips[0].id : null;
 
-  return <Inbox lista={lista} chips={chips} chipPadrao={chipPadrao} cwUrl={(cfg?.valor as any)?.url ?? ""} />;
+  return (
+    <Inbox
+      lista={lista}
+      chips={chips}
+      chipPadrao={chipPadrao}
+      cwUrl={(cfg?.valor as any)?.url ?? ""}
+      podeAtender={podeAtender}
+    />
+  );
 }
