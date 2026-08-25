@@ -1,10 +1,17 @@
 # Contexto do Projeto — SAVAN Recupera
 
 > Documento para retomar o contexto em novas sessões com Claude Code ou Codex.
-> Atualização de **25/08/2026**: o conector não oficial foi removido definitivamente. Código,
-> ambientes, documentação e migrations agora mantêm somente a API oficial da Meta. Bancos já
-> existentes devem aplicar a migration de remoção das credenciais do conector descontinuado.
-> Última atualização: **§38 — BANIMENTO PERMANENTE da conta oficial do WhatsApp da MC CRED em
+> Última atualização: **§39 — REMODELAGEM DO CANAL (25/08/2026). Depois do banimento permanente da
+> conta oficial (§38), a operação migra para **Evolution API (Baileys)** com números virtuais, e o
+> desenho passa a assumir que número cai: a conversa pertence ao **devedor**, não ao chip. Entram
+> **opt-in obrigatório** antes do assunto, fluxo mais suave e **2 mensagens/hora por chip**. O código da
+> Meta é preservado e marcado como canal suspenso. Decisões em `docs/adr/0001` a `0004`, vocabulário em
+> `CONTEXT.md`, canal em `Guias Operacionais/Baileys — Guia Operacional.md`, execução em
+> `docs/superpowers/plans/2026-08-25-remodelagem-canal-roadmap.md`. Ver §39.**
+> ⚠️ **A nota anterior deste cabeçalho dizia que o projeto mantinha "somente a API oficial da Meta".
+> Isso deixou de valer em 25/08/2026** — ela descrevia a limpeza do conector legado, feita antes desta
+> decisão.
+> (Anterior: **§38 — BANIMENTO PERMANENTE da conta oficial do WhatsApp da MC CRED em
 > 17/08/2026. WABA `1367926504833737` REJECTED/BLOCKED, telefone `+55 62 8257-5799` BANNED e
 > revisão rejeitada. Não reatribuir o chip, não desregistrar o número sem avaliação e não criar ativos
 > novos para esconder/evasar o banimento. Preservar as 438 conversas e 3 escaladas no Chatwoot; buscar
@@ -1839,3 +1846,149 @@ nem reduz automaticamente os sinais comportamentais usados pelos modelos antissp
 - O histórico continua preservado no Chatwoot e deve permanecer disponível para atendimento e auditoria.
 - O banimento interrompe o canal oficial Meta; ele não autoriza apagar, reatribuir ou recriar
   silenciosamente a operação.
+
+---
+
+## 39. Remodelagem do canal: Evolution/Baileys, opt-in e continuidade (25/08/2026)
+
+Depois do banimento permanente da conta oficial (§38), o dono decidiu remodelar o canal em vez de
+insistir no caminho oficial. Esta seção registra **o desenho**; a implementação é executada em fatias,
+pelo roadmap linkado no fim.
+
+### O diagnóstico que orientou tudo
+
+O ban da Meta veio com `ban_reason = bm_reactive_scam_model_enforcement_heuristic`: o modelo antifraude
+reagiu ao **padrão da abordagem**, não ao volume. O §31 já apontava na mesma direção — dois chips caíram
+com **3 envios em 3 dias**. Trocar de transporte, sozinho, não resolve nada: remove o juiz
+administrativo e mantém o comportamental, que é o que derrubou as duas vezes. Por isso a remodelagem
+ataca o comportamento, e não só o canal.
+
+### Decisões (22, tomadas em três rodadas de entrevista)
+
+**Transporte.** Evolution API (Baileys por dentro), rodando no Coolify junto do n8n e Chatwoot. Números
+**VoIP**, em quantidade livre, com ritmo por número, trabalhando em conjunto. O envio sai **direto pela
+Evolution** — não pelo Chatwoot — para ter presença, "digitando..." e atraso por mensagem, que são os
+sinais que o WhatsApp lê. Sessões no Postgres da Evolution, com backup testado por restauração real;
+a credencial de sessão **nunca** vem para o Supabase.
+
+**Continuidade.** A conversa pertence ao **devedor**, não ao chip. Uma inbox do Chatwoot por número
+(limite da Evolution e do Chatwoot), com o dossiê costurado no Supabase por `devedor_id`. Troca de
+número é anunciada ao devedor **só se a conversa estava viva**. `401` = morte imediata e automática do
+chip; queda na taxa de entrega = abordagem travada e failover proposto com confirmação.
+
+**Sem o semáforo da Meta.** O índice de qualidade GREEN/YELLOW/RED acabou junto com o canal oficial. O
+substituto é um índice de saúde próprio, construído sobre a **taxa de recibo de entrega** — o sinal que
+o §31 provou ser o honesto ("enviado" != entregue).
+
+**Opt-in e fluxo.** A primeira mensagem deixa de ser cobrança e vira **pedido de permissão**: primeiro
+nome, quem fala, e a saída fácil declarada — sem pergunta de identidade, que é o que gerava o loop. Duas
+portas para o sim: pergunta sobre o assunto destrava; "quem e voce?" vai para esclarecimento, uma vez
+só. Um follow-up, 72h, texto diferente, nunca mais. "Nao" explícito vira **trava de banco** permanente,
+válida para todos os chips. As 31 etapas e 297 falas reais do fluxo v2 são **preservadas**; entra o
+portão na frente e sai o que pressiona.
+
+**Ritmo.** 2 mensagens/hora **por chip**, mais um **freio global** novo (desligado por padrão) para
+desacelerar a operação inteira sem editar chip por chip. A sondagem `on_whatsapp` é **cortada**: custava
+1,25% de desperdício e entregava um padrão de robô, além de ter causado o incidente do §36.
+
+**Base existente.** Três baldes: quem respondeu recebe continuidade explícita; quem nunca respondeu é
+abordado como primeira vez, sem citar o contato anterior; quem recusou não é contatado nunca mais.
+
+**Meta.** Código **preservado**, marcado como canal suspenso e fora do caminho do dia a dia.
+
+### Duas decisões contra a recomendação técnica, registradas de propósito
+
+**Números VoIP** (o WhatsApp detecta origem VoIP no registro e é a categoria que mais recusa; a
+alternativa avaliada era eSIM de MVNO em rede real) e **aquecimento como conselho, não trava** (o
+histórico do §31 pesa a favor da trava). Ambas foram decididas com a evidência na mesa e estão no
+[ADR-0004](docs/adr/0004-numeros-voip-e-aquecimento-como-conselho.md) para que ninguém as desfaça no
+futuro achando que foram descuido. A consequência assumida: o sistema é projetado para **alta
+rotatividade de chips** — número caindo é regime normal, não modo de falha.
+
+### Artefatos desta sessão
+
+| Arquivo | O que é |
+| --- | --- |
+| `Guias Operacionais/Baileys — Guia Operacional.md` | Guia do canal: modelo mental, receitas, sinais de ban documentados, armadilhas. Gerado das 26 páginas de guia do baileys.wiki |
+| `CONTEXT.md` | Glossário do domínio: chip, abordagem, opt-in, dossiê, ritmo, índice de saúde, balde |
+| `docs/adr/0001-conversa-pertence-ao-devedor.md` | Por que o Chatwoot não é a fonte da verdade |
+| `docs/adr/0002-envio-direto-pela-evolution.md` | Por que o envio contorna o Chatwoot |
+| `docs/adr/0003-opt-in-como-portao-obrigatorio.md` | Por que se troca alcance por sobrevivência do canal |
+| `docs/adr/0004-numeros-voip-e-aquecimento-como-conselho.md` | As duas decisões contra a recomendação |
+| `docs/superpowers/plans/2026-08-25-remodelagem-canal-roadmap.md` | As seis fatias, ordem e critério de pronto |
+| `docs/superpowers/plans/2026-08-25-fatia-1-conector-baileys.md` | Plano detalhado da Fatia 1 |
+
+A política de credenciais ganhou a linha `EVOLUTION_*` e uma regra nova: **a sessão do Baileys é a
+credencial e não tem rotação possível** — não existe token para trocar.
+
+### Estado ao fim da sessão
+
+Documentação e plano prontos e revisados. **Nenhuma linha de produção foi tocada**: nada de migration
+aplicada, função redeployada, instância criada ou mensagem enviada. A linha de base de testes é de
+**26 testes Deno passando** (`npx -y deno@2 test supabase/functions/_shared/` — o Deno não está no PATH
+desta máquina). O módulo da Fatia 1 foi escrito e executado fora do repo para verificação: **9 testes
+passando**, então o plano entrega código que roda, não código plausível.
+
+---
+
+## 40. Remodelagem implementada — as 6 fatias no branch `fatia-1-conector-baileys` (25/08/2026)
+
+O desenho da §39 virou codigo. **Nada foi aplicado em producao**: nenhuma migration rodada, nenhuma
+Edge Function deployada, nenhum workflow n8n alterado, nenhuma mensagem enviada.
+
+### O que existe agora
+
+| Fatia | Entrega |
+| --- | --- |
+| 1 | `chips.conector` reaberto (`baileys` padrao, `meta_cloud` preservado) + `chips.instancia_evolution`; `_shared/conector.ts`; cadastro de chip Baileys na API; canal Meta marcado como suspenso no painel |
+| 2 | `_shared/evolution.ts` (JID, tempo de digitacao, classificacao de erro, estado→status) + `evolution-client.ts` + Edge Function `enviar-mensagem`; `lib/evolution.ts` e `POST/GET /api/chips/[id]/conectar` (instancia + QR + Chatwoot); **sondagem `on_whatsapp` removida** |
+| 3 | `mensagens.status_entrega`/`entregue_em`; `_shared/saude-chip.ts` (indice por taxa de entrega) e `_shared/dossie.ts` (historico atravessa chips + `deveAnunciarTroca`) |
+| 4 | `conversas.opt_in`; tabela **`bloqueios_contato`** + trigger de opt-out + gate no `fn_selecionar_lote` + backfill; `_shared/optin.ts` |
+| 5 | Config `freio_global` (desligada) e `_shared/ritmo-global.ts` |
+| 6 | `devedores.balde` com backfill do historico real e `_shared/baldes.ts` |
+
+**Migrations novas (4, nenhuma aplicada):** `20260825140000_conector_baileys`,
+`20260825150000_saude_entrega_dossie`, `20260825160000_optin_bloqueio_contato`,
+`20260825170000_freio_global_e_baldes`.
+
+### Decisoes de implementacao que valem lembrar
+
+- **`classificarErroEnvio` falha FECHADA.** O padrao e `falha` (que retenta) e `sem_whatsapp` exige
+  match positivo numa lista curta. E o §36 codificado: la, um `HTTP 200` com corpo `null` virou
+  "numero nao existe" e descartou 10 itens da fila.
+- **`enviar-mensagem` e funcao NOVA, nao alteracao do `campanha-lote`.** O disparador tem 469 linhas
+  e uma versao deployada; trocar o caminho de envio nele as cegas e a classe de mudanca que ja
+  custou uma campanha. A troca do elo no n8n W01 e passo de operacao.
+- **`avaliarEntrega` checa a amostra minima ANTES da taxa.** 3 envios e 0 entregas nao e critico, e
+  desconhecido — travar chip saudavel por azar e o erro simetrico ao do §36.
+- **`bloqueios_contato` e constraint, nao regra de prompt.** Com varios numeros virtuais que caem e
+  sao substituidos, "nao perturbe" como estado nao bastava: nada impedia o chip novo recontatar quem
+  recusou pelo antigo.
+- **No opt-in, pergunta sobre o ASSUNTO destrava, pergunta sobre QUEM FALA nao.** `recusado` e
+  terminal e `concedido` nao regride — assimetria deliberada.
+- **Nos baldes, bloqueio vence tudo.** Quem respondeu e depois pediu para parar e `nunca_mais`.
+
+### Verificacao
+
+**93 testes Deno passando** (`npx -y deno@2 test supabase/functions/_shared/` — o Deno nao esta no
+PATH desta maquina), `npx tsc --noEmit` limpo e `npm run build` OK. As migrations foram conferidas por
+leitura (idempotencia, dollar-quoting balanceado, dependencias `fn_role`/`carteiras.cobrador_id`
+existentes) — **nao ha Postgres local para executa-las**.
+
+### O que falta, e e operacao e nao codigo
+
+1. Subir a **Evolution API no Coolify**, com backup do Postgres dela **testado por restauracao real**.
+2. Comprar, registrar e vincular os numeros (VoIP — ver ADR-0004).
+3. Aplicar as 4 migrations e deployar `enviar-mensagem` + `contato-criar`.
+4. Trocar o elo de envio no **n8n W01** para `enviar-mensagem`.
+5. Editar o **conteudo** do fluxo v3 na tela de Fluxo: encaixar o opt-in a frente das 31 etapas e
+   podar o que pressiona. O codigo garante que o portao exista; o texto e decisao do dono.
+
+Cada um dos 4 primeiros exige autorizacao especifica pela politica de credenciais.
+
+### Sujeira de ambiente encontrada (nao tocada)
+
+O `dashboard/.next` corrompe a cada rebuild com `EINVAL readlink` — o projeto esta dentro de uma
+pasta sincronizada pelo OneDrive, que mexe nos arquivos durante a compilacao. Limpar `.next` resolve
+sempre, mas vai atrapalhar toda sessao. Ha tambem **1,2 GB em 4 diretorios `.next-stale-*`** de
+agosto, que a memoria do projeto registra como causa de upload gigante na Vercel.
