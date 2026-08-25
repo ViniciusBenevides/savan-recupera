@@ -53,7 +53,7 @@ Deno.serve(async (req) => {
   if (!inbox_id) return json({ ok: false, erro: "inbox_id_ausente" }, 400);
 
   const { data: chipRow } = await sb.from("chips")
-    .select("cobrador_id, conector")
+    .select("cobrador_id")
     .eq("chatwoot_inbox_id", inbox_id)
     .maybeSingle();
   if (!chipRow) return json({ ok: false, erro: "inbox_nao_vinculada_a_chip" }, 400);
@@ -69,30 +69,19 @@ Deno.serve(async (req) => {
     if (val === true || val === "true") return json({ ok: true, exists: true, conversation_id: null, contact_id: null, simulado: true });
   }
 
-  let jidE164 = telefone_e164;
-  // Native Meta inboxes return HTTP 200 + `null` from `on_whatsapp`, including for valid
-  // numbers. Meta only confirms validity when Cloud API accepts or rejects the template.
-  if (chipRow.conector !== "meta_cloud") {
-    const wppR = await fetch(`${url}/api/v1/accounts/${acc}/inboxes/${inbox_id}/on_whatsapp`, {
-      method: "POST", headers: H, body: JSON.stringify({ phone_number: telefone_e164 }),
-    });
-    const wpp = await lerJson(wppR);
-    if (!wppR.ok || typeof wpp?.exists !== "boolean") {
-      return json({ ok: false, erro: "validacao_whatsapp_indisponivel", status_provedor: wppR.status }, 502);
-    }
-    if (!wpp.exists) {
-      if (body.telefone_id) await sb.from("telefones_devedor")
-        .update({ whatsapp_valido: false, verificado_em: new Date().toISOString() })
-        .eq("id", body.telefone_id);
-      return json({ ok: true, exists: false });
-    }
-
-    const mJid = String(wpp.jid ?? "").match(/^(\d+)@/);
-    if (mJid) jidE164 = "+" + mJid[1];
-    if (body.telefone_id) await sb.from("telefones_devedor")
-      .update({ whatsapp_valido: true, verificado_em: new Date().toISOString() })
-      .eq("id", body.telefone_id);
-  }
+  // A SONDAGEM `on_whatsapp` FOI REMOVIDA (Fatia 2, decisão do Q17). Dois motivos:
+  //
+  // 1. RISCO. Sondar milhares de números desconhecidos é padrão de robô — o §31 lista isso como
+  //    causa de restrição dos chips, e a documentação do Baileys avisa que consultas USync
+  //    agressivas são limitadas (`onWhatsApp` roda sobre USync).
+  // 2. BENEFÍCIO PEQUENO. No histórico real, 32 de 2.555 telefones (1,25%) eram `sem_whatsapp`.
+  //    A 2 mensagens/hora, isso é meio dia de fila desperdiçada ao longo de um ano inteiro.
+  //
+  // O que substitui: o envio acontece e, se falhar, `classificarErroEnvio` (_shared/evolution.ts)
+  // diz se foi mesmo número inexistente. Invalidez passa a ser conclusão de um envio real, nunca
+  // de uma sondagem — e essa função classificadora falha FECHADA, que é a lição do §36, onde um
+  // `HTTP 200` com corpo `null` virou "não existe" e descartou 10 itens da fila.
+  const jidE164 = telefone_e164;
 
   // busca contato
   let contato: any = null;
