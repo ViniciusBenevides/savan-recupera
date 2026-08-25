@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { Card, Button, Input, Label, Textarea, Select, Badge } from "@/components/ui/primitives";
-import { FileText, Plus, Trash2, RefreshCw, AlertTriangle, Info } from "lucide-react";
+import { FileText, Plus, Trash2, RefreshCw, AlertTriangle, Info, Ban } from "lucide-react";
 
 type T = { name: string; status: string; category: string; language: string; waba_id?: string; components?: any; quality_score?: string | null; rejected_reason?: string | null; erro?: string };
 
@@ -75,6 +75,21 @@ export function MetaTemplates({ conta }: { conta?: string | null }) {
 
   return (
     <div className="space-y-4">
+      {/*
+        A conta oficial foi banida em 17/08/2026 (contexto §38). Esta tela continua no ar porque o
+        caminho da Meta foi preservado de propósito — mas ninguém deve descobrir que o canal está
+        morto tentando cadastrar um número. Ver docs/adr/0004.
+      */}
+      <Card className="flex gap-2.5 border-rose/30 bg-rose/5">
+        <Ban className="mt-0.5 h-4 w-4 shrink-0 text-rose" />
+        <div className="text-xs leading-relaxed text-mist">
+          <b className="text-rose">Canal oficial da Meta suspenso.</b> A conta de WhatsApp da empresa foi
+          <b className="text-chalk"> banida permanentemente em 17/08/2026</b> e não envia mais nada — modelos
+          aprovados aqui não saem. Esta tela fica disponível para consulta e para o dia em que houver uma
+          conta oficial de novo. <b className="text-chalk">O envio hoje sai pelos chips do canal Baileys.</b>
+        </div>
+      </Card>
+
       <Card className="flex gap-2.5 border-amber/30 bg-amber/5">
         <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber" />
         <div className="text-xs leading-relaxed text-mist">
