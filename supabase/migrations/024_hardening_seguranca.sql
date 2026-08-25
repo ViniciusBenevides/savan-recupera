@@ -12,6 +12,5 @@ revoke insert, update, delete on table public.usuarios_app from authenticated, a
 -- M3 (MÉDIO): tabelas lidas apenas pelo service_role. O RLS já negava (testado: 0 linhas),
 --   mas o GRANT amplo padrão do Supabase permanecia. Removido (defesa em profundidade).
 revoke all on table public.segredos           from authenticated, anon;
-revoke all on table public.chips_credenciais  from authenticated, anon;
 revoke all on table public.bot_locks          from authenticated, anon;
 revoke all on table public.bot_fila_mensagens from authenticated, anon;

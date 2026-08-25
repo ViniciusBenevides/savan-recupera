@@ -1,22 +1,22 @@
--- 025 — WhatsApp Cloud API (Meta oficial) como conector adicional por chip.
--- (§32) Z-API e Meta coexistem; cada chip usa UM conector. O atendimento de conversa segue
+-- 025 — WhatsApp Cloud API (Meta oficial) como conector único por chip.
+-- O atendimento de conversa segue
 -- mediado pelo Chatwoot (canal nativo provider="whatsapp_cloud"); o SAVAN fala direto com a
 -- Graph API só para qualidade/limites e gestão/aprovação de templates.
 -- Idempotente. Aplicar via MCP apply_migration (projeto wmggqsmqvklxlqwsksjs).
 
 -- 1) Conector do chip ------------------------------------------------------------------------
-alter table chips add column if not exists conector text not null default 'zapi';
+alter table chips add column if not exists conector text not null default 'meta_cloud';
 do $$ begin
   if not exists (
     select 1 from pg_constraint where conname = 'chips_conector_check'
   ) then
-    alter table chips add constraint chips_conector_check check (conector in ('zapi','meta_cloud'));
+    alter table chips add constraint chips_conector_check check (conector in ('meta_cloud'));
   end if;
 end $$;
 comment on column chips.conector is
-  'Conector do chip: zapi (WhatsApp Web não-oficial, QR) ou meta_cloud (API oficial da Meta).';
+  'Conector do chip: meta_cloud (API oficial da Meta).';
 
--- 2) Credenciais Meta Cloud (espelha o sigilo de chips_credenciais — só service_role) --------
+-- 2) Credenciais Meta Cloud (somente service_role) ------------------------------------------
 create table if not exists chips_credenciais_meta (
   chip_id int primary key references chips (id) on delete cascade,
   phone_number_id text not null,           -- id do número na Graph API (POST /{id}/messages)

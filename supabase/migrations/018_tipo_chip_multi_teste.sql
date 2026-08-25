@@ -8,8 +8,8 @@ alter table chips add column if not exists tipo text not null default 'fisico'
   check (tipo in ('fisico','esim','voip','virtual_api'));
 comment on column chips.tipo is
   'fisico = SIM físico; esim = eSIM (chip virtual de operadora); voip = número VoIP; '
-  'virtual_api = número virtual que não recebe chamada/SMS, só serve para a API do '
-  'WhatsApp (não conecta por QR/Z-API). Campo informativo: não altera o disparo.';
+  'virtual_api = número virtual que não recebe chamada/SMS, só serve para a API oficial do '
+  'WhatsApp. Campo informativo: não altera o disparo.';
 
 -- ───────────────────────── #2 múltiplos números de teste ─────────────────────────
 -- Migra o formato antigo {e164, ativo} para {numeros: [{e164, label, ativo}]}.

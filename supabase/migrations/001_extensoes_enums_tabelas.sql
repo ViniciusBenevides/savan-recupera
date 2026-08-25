@@ -71,13 +71,6 @@ create table chips (
   atualizado_em timestamptz not null default now()
 );
 
-create table chips_credenciais (
-  chip_id int primary key references chips (id) on delete cascade,
-  zapi_instance_id text not null,
-  zapi_token text not null,
-  criado_em timestamptz not null default now()
-);
-
 create table chip_metricas_diarias (
   chip_id int not null references chips (id) on delete cascade,
   dia date not null,

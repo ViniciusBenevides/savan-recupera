@@ -43,3 +43,6 @@ site-mccred
 ref_sites_bancarios
 instagram_mc_cred
 Guias Operacionais
+!Guias Operacionais/
+Guias Operacionais/*
+!Guias Operacionais/Credenciais — Política para Agentes.md

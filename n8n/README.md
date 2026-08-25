@@ -1,7 +1,7 @@
 # n8n — Orquestração SAVAN Recupera
 
 Os workflows n8n são **finos de propósito**: só cuidam de _timing_ (agenda/cron),
-_webhook_ e _I/O_ com Chatwoot/Z-API. Toda a lógica pesada (negociação, seleção de lote,
+_webhook_ e _I/O_ com Chatwoot e a API oficial do WhatsApp. Toda a lógica pesada (negociação, seleção de lote,
 Pix, métricas) mora nas **Edge Functions do Supabase** (`supabase/functions/`), que são
 testáveis por `curl` e estão sempre no ar. Cada workflow basicamente chama uma Edge Function
 por HTTP com o `service_role` como `Bearer`.
@@ -18,7 +18,7 @@ por HTTP com o `service_role` como `Bearer`.
 | **SAVAN W01 - Disparador** | Schedule, **1 min** | `campanha-lote` → `contato-criar` → `campanha-registrar` | Pega o lote permitido, valida WhatsApp, cria contato/conversa no Chatwoot, envia a 1ª mensagem (respeitando _Modo simulação_) e registra. O relógio persistente do chip carrega os segundos entre ciclos para cumprir o ritmo sem rajadas. |
 | **SAVAN W02 - Bot Negociador** | Webhook `POST /webhook/savan-bot` | `chatwoot-sync` → `bot-turno` | Espelha `conversation_created` e toda mensagem pública recebida/enviada no painel. Somente mensagens recebidas, não-privadas e com o bot ligado seguem para a IA. |
 | **SAVAN W07 - Follow-up** | Schedule, **5 min** | `campanha-followup` | Reengaja quem não respondeu (até 3×), respeitando a janela. |
-| **SAVAN W08 - Monitor de Chips** | Schedule, **15 min** | `chips-monitor` | Consulta o status Z-API de cada chip e atualiza saúde/status. |
+| **SAVAN W08 - Monitor de Chips** | Schedule, **15 min** | `chips-monitor` | Consulta a qualidade de cada número na API oficial e atualiza saúde/status. |
 | **SAVAN W09 - Métricas** | Schedule, **5 min** | `metricas-sync` | Reabre itens presos, recalcula métricas do dia, promove chips aquecidos→ativos. |
 
 **Webhook do Chatwoot** (inbox/integração) deve apontar para
@@ -128,7 +128,7 @@ A organização aqui se limita ao que é do produto — nenhuma limpeza é feita
 ## Referência
 
 A pasta `WORKFLOWS/` (na raiz, **gitignored**) guarda exports `.json` de workflows de
-referência de terceiros (Secretária/Asaas/Z-API) usados como base — **não** são os workflows
+referência de terceiros (Secretária/Asaas) usados como base — **não** são os workflows
 reais do SAVAN. Os reais são gerados por `criar_workflows.py`.
 
 ---

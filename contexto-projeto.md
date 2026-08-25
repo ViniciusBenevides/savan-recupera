@@ -1,7 +1,15 @@
 # Contexto do Projeto — SAVAN Recupera
 
-> Documento para retomar o contexto em novas sessões com Claude.
-> Última atualização: **§33 — RITMO SEGURO POR HORA + janela por dia + análise de resposta + base de
+> Documento para retomar o contexto em novas sessões com Claude Code ou Codex.
+> Atualização de **25/08/2026**: o conector não oficial foi removido definitivamente. Código,
+> ambientes, documentação e migrations agora mantêm somente a API oficial da Meta. Bancos já
+> existentes devem aplicar a migration de remoção das credenciais do conector descontinuado.
+> Última atualização: **§38 — BANIMENTO PERMANENTE da conta oficial do WhatsApp da MC CRED em
+> 17/08/2026. WABA `1367926504833737` REJECTED/BLOCKED, telefone `+55 62 8257-5799` BANNED e
+> revisão rejeitada. Não reatribuir o chip, não desregistrar o número sem avaliação e não criar ativos
+> novos para esconder/evasar o banimento. Preservar as 438 conversas e 3 escaladas no Chatwoot; buscar
+> avaliação prévia de compliance com BSP oficial e usar canais alternativos. Ver §38.**
+> (Anterior: **§33 — RITMO SEGURO POR HORA + janela por dia + análise de resposta + base de
 > conhecimento. Vindo do estudo de uma plataforma concorrente: o freio que faltava era o teto por
 > HORA (só havia teto por dia + intervalo entre mensagens). Migrations 026/027/028; `campanha-lote`
 > v10 (gate `teto_hora` + piso do delay pelo ritmo + faixas por dia), `campanha-registrar` v9,
@@ -12,54 +20,55 @@
 > (Anterior: **§32 — CONECTOR WhatsApp Cloud API (Meta oficial) pelo painel: cadastro de número
 > oficial por "colar credenciais" (sem QR), **semáforo de qualidade do número** (GREEN/YELLOW/RED) + tier
 > de limite no card e via `chips-monitor` (deployado v5), tela **Templates Meta** (criar/submeter/status de
-> aprovação), **calculadora de custos** Z-API×Meta, multi-número. Migration 025 aplicada (RLS service_role
-> em `chips_credenciais_meta`). Conector ADICIONAL: Z-API segue intacto. Envio frio por Meta depende de
+> aprovação), **calculadora de custos** conector legado×Meta, multi-número. Migration 025 aplicada (RLS service_role
+> em `chips_credenciais_meta`). Conector ADICIONAL: conector legado segue intacto. Envio frio por Meta depende de
 > template aprovado (gate pronto). Ver §32.**
 > (Anterior: **§31 — INCIDENTE: chips 1 e 2 RESTRINGIDOS pelo WhatsApp (29/06) + fix do
-> webhook de entrada. Os 2 chips de bot (mesmo aparelho/conta Z-API, `maturidade=novo`) caíram com a
+> webhook de entrada. Os 2 chips de bot (mesmo aparelho/conta do conector legado, `maturidade=novo`) caíram com a
 > tela "Sua conta está restringida" — NÃO por volume (só 3 envios reais em 3 dias, 0 de entrada), e sim
-> pelo perfil de risco (número novo cru + WhatsApp Web não-oficial da Z-API + cold outreach a estranhos
-> + 2 chips no mesmo IP). `fila_envios.status='enviado'` é só o ACEITE da Z-API, não entrega → por isso
-> o celular não mostra msg enviada. Gatilho: campanha RELIGADA em 27/06. Mais: atacado o item "resolver
-> a entrada" — o botão "Revincular Chatwoot" só consertava a SAÍDA e nunca setava o webhook "ao receber"
-> da Z-API; agora chama `garantirWebhookEntrada` (commit `88da551`), webhook reaplicado ao vivo nos 2
-> chips e elo Chatwoot→n8n (webhook id 5) confirmado. Ver §31.**
-> (Anterior: INCIDENTE 401 — após rotacionar a chave do Supabase, a trava A1 (§29, comparação do
-> `SUPABASE_SERVICE_ROLE_KEY` cru) barrou o n8n com 401 em TODAS as 9 Edge Functions; fix: a trava virou
-> checagem do claim `role` do JWT (exige `role=service_role`; barra anon); + bug do `campanha-registrar`
-> que não gravava a 1ª msg em `mensagens` (aba Conversas vazia) + backfill; campanha pausada. Ver §30.)
-> (Anterior: Auditoria de segurança completa (4 camadas) + hardening — 11 achados (1 Crítico/2 Alto/
-> 4 Médio/4 Baixo), 9 corrigidos: migration 024 + guarda A1 nas 9 Edge Functions, `gerar-pix` (preço
-> do servidor) e `webhook-asaas` (token fail-closed) — ver §29.)
-> (Anterior: Anti-ban — intervalo de envio ALEATÓRIO (sorteado em [min, max], padrão 30–90s)
+> pelo perfil de risco (número novo cru + WhatsApp Web não-oficial do conector legado + cold outreach a estranhos
+>
+> + 2 chips no mesmo IP). `fila_envios.status='enviado'` é só o ACEITE do conector legado, não entrega → por isso
+>   o celular não mostra msg enviada. Gatilho: campanha RELIGADA em 27/06. Mais: atacado o item "resolver
+>   a entrada" — o botão "Revincular Chatwoot" só consertava a SAÍDA e nunca setava o webhook "ao receber"
+>   do conector legado; agora chama `garantirWebhookEntrada` (commit `88da551`), webhook reaplicado ao vivo nos 2
+>   chips e elo Chatwoot→n8n (webhook id 5) confirmado. Ver §31.**
+>   (Anterior: INCIDENTE 401 — após rotacionar a chave do Supabase, a trava A1 (§29, comparação do
+>   `SUPABASE_SERVICE_ROLE_KEY` cru) barrou o n8n com 401 em TODAS as 9 Edge Functions; fix: a trava virou
+>   checagem do claim `role` do JWT (exige `role=service_role`; barra anon); + bug do `campanha-registrar`
+>   que não gravava a 1ª msg em `mensagens` (aba Conversas vazia) + backfill; campanha pausada. Ver §30.)
+>   (Anterior: Auditoria de segurança completa (4 camadas) + hardening — 11 achados (1 Crítico/2 Alto/
+>   4 Médio/4 Baixo), 9 corrigidos: migration 024 + guarda A1 nas 9 Edge Functions, `gerar-pix` (preço
+>   do servidor) e `webhook-asaas` (token fail-closed) — ver §29.)
+>   (Anterior: Anti-ban — intervalo de envio ALEATÓRIO (sorteado em [min, max], padrão 30–90s)
 > + variação de TAMANHO das mensagens. `intervalo_min_segundos` ganha par `intervalo_max_segundos`;
-> `campanha-lote` sorteia `delay_proximo` por mensagem e o n8n W01 espera esse tempo (nó "Aguardar
-> intervalo" dinâmico) com consulta a cada 1 min e saldo de cadência persistido por chip; templates de abordagem ganham spintax opcional
-> (`{|texto}`) p/ variar o comprimento; UI da Campanha com campos mín/máx + migration 023 — ver §28.)
-> (Anterior: Janela de envio só em dias úteis (seg–sex) e pulando feriados nacionais —
-> `dias` vira padrão seg–sex e nova flag `pular_feriados` (feriados fixos + móveis via Páscoa, base
-> bancária/ANBIMA), com seletor de dias + switch + **calendário visual** (dias que rodam, feriados
-> nacionais e folgas clicáveis) na tela de Campanha; gate nas Edge Functions
-> `campanha-lote`/`campanha-followup` + migration 022 — ver §27.)
-> (Anterior: Escalador humano "só registrado" — chip papel=Equipe pode ser cadastrado só
-> com nome + número de WhatsApp, sem Z-API/QR/Chatwoot (o dono não quer pagar Z-API pra quem só recebe
-> a finalização); trade-off consciente: não aparece no Chatwoot. Mais: editar nome/credor da carteira e
-> importador aceita até 6 telefones — ver §25–§26.)
-> (Anterior: Vários escaladores (cobradores humanos) por carteira, escolhidos entre os chips
-> conectados marcados como Equipe, com estratégia de roteamento (rodízio/região/fixo+reserva) e número
-> puxado do chip conectado — ver §24.)
-> (Anterior: Seletor de modelo de IA em Configurações — lista os modelos que a chave
-> OpenAI da conta acessa e sugere o melhor custo-benefício e o melhor para cobrança — ver §23.)
-> (Anterior: Campanha/Mensagens/Descontos por conta (cobrador), com o admin vendo/
-> controlando tudo separado por conta (seletor de conta) + correção da saída @lid ("Falha ao
-> enviar") — ver §22.)
-> (Anterior: Hierarquia de acesso em 4 níveis (admin único · cobrador · credor ·
-> visualizador) com isolamento por tenant via RLS, atribuição p/ o admin, self-service de usuários
-> e chaves por cobrador — ver §21.)
-> (Anteriores: correção do teste ponta a ponta §20, importar planilha fora do padrão com a IA organizando §19, tipo de chip + múltiplos
-> números de teste §18, modo teste + papel de chip §17, distribuição/maturidade/failover §16, Central
-> de Ajuda §15, conexão de chips ponta a ponta Z-API ↔ Chatwoot §9.12, tema claro/escuro §8,
-> white-label `NEXT_PUBLIC_APP_NAME`, GitHub público + deploy Vercel §13.)
+>   `campanha-lote` sorteia `delay_proximo` por mensagem e o n8n W01 espera esse tempo (nó "Aguardar
+>   intervalo" dinâmico) com consulta a cada 1 min e saldo de cadência persistido por chip; templates de abordagem ganham spintax opcional
+>   (`{|texto}`) p/ variar o comprimento; UI da Campanha com campos mín/máx + migration 023 — ver §28.)
+>   (Anterior: Janela de envio só em dias úteis (seg–sex) e pulando feriados nacionais —
+>   `dias` vira padrão seg–sex e nova flag `pular_feriados` (feriados fixos + móveis via Páscoa, base
+>   bancária/ANBIMA), com seletor de dias + switch + **calendário visual** (dias que rodam, feriados
+>   nacionais e folgas clicáveis) na tela de Campanha; gate nas Edge Functions
+>   `campanha-lote`/`campanha-followup` + migration 022 — ver §27.)
+>   (Anterior: Escalador humano "só registrado" — chip papel=Equipe pode ser cadastrado só
+>   com nome + número de WhatsApp, sem conector legado/QR/Chatwoot (o dono não quer pagar conector legado pra quem só recebe
+>   a finalização); trade-off consciente: não aparece no Chatwoot. Mais: editar nome/credor da carteira e
+>   importador aceita até 6 telefones — ver §25–§26.)
+>   (Anterior: Vários escaladores (cobradores humanos) por carteira, escolhidos entre os chips
+>   conectados marcados como Equipe, com estratégia de roteamento (rodízio/região/fixo+reserva) e número
+>   puxado do chip conectado — ver §24.)
+>   (Anterior: Seletor de modelo de IA em Configurações — lista os modelos que a chave
+>   OpenAI da conta acessa e sugere o melhor custo-benefício e o melhor para cobrança — ver §23.)
+>   (Anterior: Campanha/Mensagens/Descontos por conta (cobrador), com o admin vendo/
+>   controlando tudo separado por conta (seletor de conta) + correção da saída @lid ("Falha ao
+>   enviar") — ver §22.)
+>   (Anterior: Hierarquia de acesso em 4 níveis (admin único · cobrador · credor ·
+>   visualizador) com isolamento por tenant via RLS, atribuição p/ o admin, self-service de usuários
+>   e chaves por cobrador — ver §21.)
+>   (Anteriores: correção do teste ponta a ponta §20, importar planilha fora do padrão com a IA organizando §19, tipo de chip + múltiplos
+>   números de teste §18, modo teste + papel de chip §17, distribuição/maturidade/failover §16, Central
+>   de Ajuda §15, conexão de chips ponta a ponta conector legado ↔ Chatwoot §9.12, tema claro/escuro §8,
+>   white-label `NEXT_PUBLIC_APP_NAME`, GitHub público + deploy Vercel §13.)
 
 ---
 
@@ -74,7 +83,9 @@ operador** (Asaas). Vendido ao **cliente final** não-técnico (ex.: Maurélio) 
 por cliente**, com várias carteiras dentro. Ver a reformulação multi-carteira no **§14**.
 
 ### Regras de negócio inegociáveis (jurídico)
+
 Dívidas com média de **15,8 anos → ~99,8% prescritas** e **fora do Serasa** (>5 anos).
+
 - Bot **nunca** ameaça ação judicial, **nunca** menciona Serasa/SPC/negativação/score.
 - Enquadramento sempre: "quitação voluntária / encerramento definitivo com termo de quitação".
 - Se perguntarem sobre prescrição → responder **honestamente** (dívida antiga, pode estar
@@ -92,22 +103,22 @@ Dívidas com média de **15,8 anos → ~99,8% prescritas** e **fora do Serasa** 
 
 ## 2. Stack técnica
 
-| Camada | Tecnologia | Detalhe |
-|---|---|---|
-| Banco | **Supabase Postgres 17** | projeto `<SUPABASE_PROJECT_REF>` (us-east-2) |
-| Cérebro/lógica | **Supabase Edge Functions** (Deno/TS) | 9 funções — fazem o trabalho pesado |
-| Orquestração | **n8n** (Coolify) | `https://<seu-n8n>` — 5 workflows finos |
-| Atendimento | **Chatwoot** (fork fazer.ai, Coolify) | `https://<seu-chatwoot>` conta 1, canal `zapi` |
-| WhatsApp | **Z-API** + chips **Salvy** | ainda NÃO comprados — cadastro pré-pronto no painel |
-| Pagamentos | **Asaas** | sandbox hoje; Pix + split |
-| Frontend | **Next.js 15.5.19** (App Router) + **React 18** + **Tailwind v3** | deploy Vercel |
-| Auth | **Supabase Auth** (`@supabase/ssr`) | e-mail/senha + middleware |
-| Gráficos | **Recharts** · ícones **lucide-react** | |
-| Fontes | Bricolage Grotesque (display) · Plus Jakarta Sans (corpo) · JetBrains Mono (números) | |
+| Camada           | Tecnologia                                                                              | Detalhe                                                       |
+| ---------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| Banco            | **Supabase Postgres 17**                                                          | projeto`<SUPABASE_PROJECT_REF>` (us-east-2)                 |
+| Cérebro/lógica | **Supabase Edge Functions** (Deno/TS)                                             | 9 funções — fazem o trabalho pesado                        |
+| Orquestração   | **n8n** (Coolify)                                                                 | `https://<seu-n8n>` — 5 workflows finos                    |
+| Atendimento      | **Chatwoot** (fork fazer.ai, Coolify)                                             | `https://<seu-chatwoot>` conta 1, canal `CONECTOR_LEGADO` |
+| WhatsApp         | **conector legado** + chips **Salvy**                                       | ainda NÃO comprados — cadastro pré-pronto no painel        |
+| Pagamentos       | **Asaas**                                                                         | sandbox hoje; Pix + split                                     |
+| Frontend         | **Next.js 15.5.19** (App Router) + **React 18** + **Tailwind v3**     | deploy Vercel                                                 |
+| Auth             | **Supabase Auth** (`@supabase/ssr`)                                             | e-mail/senha + middleware                                     |
+| Gráficos        | **Recharts** · ícones **lucide-react**                                    |                                                               |
+| Fontes           | Bricolage Grotesque (display) · Plus Jakarta Sans (corpo) · JetBrains Mono (números) |                                                               |
 
 **Decisão de arquitetura central:** o trabalho pesado (negociação, seleção de lote, Pix,
 webhook) fica nas **Edge Functions** (testáveis via curl, sempre no ar), não em nós n8n
-complexos. Os workflows n8n são finos: só orquestram timing e I/O com Chatwoot/Z-API.
+complexos. Os workflows n8n são finos: só orquestram timing e I/O com Chatwoot/conector legado.
 
 ---
 
@@ -121,7 +132,7 @@ MaurelioV2/                        # repo Git público (ver §13). [gi] = gitign
 ├── .env.example                   # template das vars dos scripts (formato KEY=valor)
 ├── conversa_com_claude.md         # [gi] histórico das decisões (planejamento)
 ├── dividas_savan.xlsx             # [gi] planilha-fonte REAL (PII LGPD) — NUNCA versionar
-├── .env                           # [gi] TODAS as credenciais (Supabase, Chatwoot, Asaas, Z-API, n8n)
+├── .env                           # [gi] TODAS as credenciais (Supabase, Chatwoot, Asaas, conector legado, n8n)
 │
 ├── supabase/
 │   ├── migrations/                # 7 migrations (rodadas via MCP apply_migration)
@@ -221,7 +232,7 @@ metricas_diarias, eventos_campanha.
 **Segredos** (tabela `segredos`, lida só pelo service_role):
 `CHATWOOT_TOKEN`, `ASAAS_API_KEY_SANDBOX` (preenchida), `ASAAS_API_KEY_PROD` (vazia),
 `ASAAS_WEBHOOK_TOKEN`, `OPENAI_API_KEY` (**preenchida** — usada pelo bot e pelo import com IA §19),
-`ZAPI_CLIENT_TOKEN`. ⚠️ Runtime do Supabase **bloqueia `Deno.env.set`** → cada Edge
+`CREDENCIAL_CONECTOR_LEGADO`. ⚠️ Runtime do Supabase **bloqueia `Deno.env.set`** → cada Edge
 Function lê os segredos via função que **RETORNA um mapa** (não seta env). O dashboard lê a
 `OPENAI_API_KEY` direto da tabela `segredos` (via `supabaseAdmin`) para o mapeamento de planilha (§19).
 
@@ -229,17 +240,17 @@ Function lê os segredos via função que **RETORNA um mapa** (não seta env). O
 
 ## 5. Edge Functions (9, todas ACTIVE)
 
-| Função | verify_jwt | Papel |
-|---|---|---|
-| `campanha-lote` | true | gates (campanha/janela/aquecimento) → seleciona lote → renderiza msg (spintax) |
-| `campanha-registrar` | true | grava resultado do envio, cria conversa, métricas, tenta próximo telefone |
-| `contato-criar` | true | on_whatsapp + busca/cria contato e conversa no Chatwoot (fallback 9º dígito) |
-| `bot-turno` | true | **cérebro do bot** — OpenAI function calling (tools: consultar_divida, gerar_pix, escalar_humano, nao_perturbe, pessoa_errada, desconto_extra) |
-| `gerar-pix` | true | cria customer + Pix Asaas com **split 90/10**, grava negociação/pagamento |
-| `webhook-asaas` | **false** | recebe pagamento (autentica por header `asaas-access-token`); SEMPRE 200; envia confirmação + termo de quitação |
-| `campanha-followup` | true | reengaja sem-resposta até 3×, respeita janela |
-| `chips-monitor` | true | consulta status Z-API de cada chip, atualiza saúde/status |
-| `metricas-sync` | true | reabre presos, recalcula métricas do dia, promove chips aquecidos→ativos |
+| Função               | verify_jwt      | Papel                                                                                                                                                  |
+| ---------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `campanha-lote`      | true            | gates (campanha/janela/aquecimento) → seleciona lote → renderiza msg (spintax)                                                                       |
+| `campanha-registrar` | true            | grava resultado do envio, cria conversa, métricas, tenta próximo telefone                                                                            |
+| `contato-criar`      | true            | on_whatsapp + busca/cria contato e conversa no Chatwoot (fallback 9º dígito)                                                                         |
+| `bot-turno`          | true            | **cérebro do bot** — OpenAI function calling (tools: consultar_divida, gerar_pix, escalar_humano, nao_perturbe, pessoa_errada, desconto_extra) |
+| `gerar-pix`          | true            | cria customer + Pix Asaas com**split 90/10**, grava negociação/pagamento                                                                       |
+| `webhook-asaas`      | **false** | recebe pagamento (autentica por header`asaas-access-token`); SEMPRE 200; envia confirmação + termo de quitação                                   |
+| `campanha-followup`  | true            | reengaja sem-resposta até 3×, respeita janela                                                                                                        |
+| `chips-monitor`      | true            | consulta status conector legado de cada chip, atualiza saúde/status                                                                                   |
+| `metricas-sync`      | true            | reabre presos, recalcula métricas do dia, promove chips aquecidos→ativos                                                                             |
 
 ---
 
@@ -258,8 +269,7 @@ Webhook do **Chatwoot id 5** → `https://<seu-n8n>/webhook/savan-bot`
 
 ## 7. Chatwoot
 
-Conta 1. Canal `Channel::Whatsapp` provider **`zapi`**, `provider_config = {token,
-instance_id, client_token}` (client_token = `ZAPI_CLIENT_TOKEN`). Labels: `agente-off`,
+Conta 1. Canal `Channel::Whatsapp` provider **`CONECTOR_LEGADO`**, `provider_config = {token, instance_id, client_token}` (client_token = `CREDENCIAL_CONECTOR_LEGADO`). Labels: `agente-off`,
 `escalado-humano`, `pix-enviado`, `pix-pago`, `acordo`, `sem-whatsapp`, `nao-perturbe`,
 `pessoa-errada`, `contestou-divida`, `gestor`. Atributos de contato: `devedor_id`,
 `processo`, `valor_divida`, `desconto_oferecido`, `asaas_id_cliente`, `asaas_id_cobranca`,
@@ -342,24 +352,24 @@ Configurações (Asaas, segredos, **criar/gerir usuários**) · Minha conta (nom
     variables (Tailwind `rgb(var(--c-*) / <alpha-value>)`), dois temas em `globals.css`
     (`:root` escuro + `html.light` claro), `ThemeToggle`/`useTheme` com persistência e script
     anti-flash, gráficos theme-aware, fix de texto on-accent. Detalhe na seção "Tema" do §8.
-12. **Conexão de chips quebrada de ponta a ponta (Z-API ↔ Chatwoot).** Sintomas: o QR não
-    aparecia quando a assinatura da instância Z-API estava expirada/pendente/cancelada (só um
+12. **Conexão de chips quebrada de ponta a ponta (conector legado ↔ Chatwoot).** Sintomas: o QR não
+    aparecia quando a assinatura da instância conector legado estava expirada/pendente/cancelada (só um
     spinner infinito, sem explicação); o inbox do Chatwoot era criado com telefone-placeholder
     e o webhook do canal (derivado do número) ficava errado → **mensagens recebidas não
     roteavam**; e o Token de Segurança era um env global (errado para um produto multi-conta
-    Z-API). Solução:
-    - **Proxy do QR** (`api/chips/[id]/qrcode`) classifica o erro da Z-API
+    conector legado). Solução:
+    - **Proxy do QR** (`api/chips/[id]/qrcode`) classifica o erro do conector legado
       (`assinatura`/`config`/`credencial`/`indisponivel`) e a tela mostra um **card** explicando
       (ex.: "quite a assinatura desta instância, não pode estar cancelada"), com link para
-      app.z-api.io e botão "já paguei, tentar de novo"; o polling pausa em erro definitivo.
-    - **Finalização automática ao conectar** (`lib/zapi.ts` `finalizarConexaoChip`): lê o número
+      app.conector legado.io e botão "já paguei, tentar de novo"; o polling pausa em erro definitivo.
+    - **Finalização automática ao conectar** (`lib/CONECTOR_LEGADO.ts` `finalizarConexaoChip`): lê o número
       real em `/device` (o `/status` **não** traz o telefone), corrige o `phone_number` do inbox
-      no Chatwoot (PATCH; se não aplicar, deleta e recria) e aponta os webhooks da Z-API para
+      no Chatwoot (PATCH; se não aplicar, deleta e recria) e aponta os webhooks do conector legado para
       `…/webhooks/whatsapp/+<numero>` (`update-every-webhooks`, fallback `update-webhook-received`).
       Roda uma vez (guard) e não rebaixa quem já está aquecendo/ativo/pausado.
     - **Token de Segurança por chip** (migration `009_chip_client_token.sql`: coluna
-      `chips_credenciais.zapi_client_token`): informado no cadastro e na edição (cada conta Z-API
-      tem o seu); o env `ZAPI_CLIENT_TOKEN` virou apenas **fallback** para chips antigos.
+      `chips_credenciais.CREDENCIAL_CONECTOR_LEGADO`): informado no cadastro e na edição (cada conta do conector legado
+      tem o seu); o env `CREDENCIAL_CONECTOR_LEGADO` virou apenas **fallback** para chips antigos.
     - **Chatwoot sempre linkado** (`lib/chatwoot.ts`): a criação do inbox deixou de ser muda
       (retorna status), há rota de revínculo (`api/chips/[id]/chatwoot`), telefone-placeholder
       **único por chip** (evita colisão de número no 2º chip) e aviso "Chatwoot não vinculado"
@@ -367,20 +377,20 @@ Configurações (Asaas, segredos, **criar/gerir usuários**) · Minha conta (nom
     - **Editar/excluir chip** (`api/chips/[id]` GET/PATCH/DELETE): o menu ⋮ do card abre a edição
       já preenchida, com os tokens **ocultos** (campo senha + olho para revelar); salva só o que
       mudou; excluir remove o chip (cascade nas credenciais/métricas) e o inbox no Chatwoot.
-    (arquivos: `dashboard/src/lib/{chatwoot,zapi}.ts`, `app/api/chips/route.ts` + `[id]/{route,
-    qrcode,chatwoot}.ts`, `app/(dash)/chips/{chip-card.tsx,novo/flow.tsx}`,
-    `supabase/migrations/009_chip_client_token.sql`.)
+      (arquivos: `dashboard/src/lib/{chatwoot,CONECTOR_LEGADO}.ts`, `app/api/chips/route.ts` + `[id]/{route, qrcode,chatwoot}.ts`, `app/(dash)/chips/{chip-card.tsx,novo/flow.tsx}`,
+      `supabase/migrations/009_chip_client_token.sql`.)
 
 ---
 
 ## 10. Pendências / Go-Live (detalhe no README.md)
 
 Tudo pré-pronto. Faltam itens que dependem de compra/assinatura:
+
 1. **Chaves** no painel (Configurações → Chaves): `OPENAI_API_KEY` ✅ **já preenchida** (bot + import
    com IA); falta só `ASAAS_API_KEY_PROD` no go-live real.
 2. **Asaas produção:** walletId da SAVAN + ligar ambiente produção + apontar webhook para
    `…/functions/v1/webhook-asaas` (header `asaas-access-token`).
-3. **Chips:** comprar 5 Salvy + 5 instâncias Z-API → cadastrar no painel (QR) → ativar.
+3. **Chips:** comprar 5 Salvy + 5 instâncias conector legado → cadastrar no painel (QR) → ativar.
 4. **Jurídico (bloqueante):** contrato de cobrança + DPA (LGPD).
 5. **Segurança:** rotacionar a `service_role` do Supabase antes de entregar ao cliente final
    (atualizar em Vercel, segredos do Supabase e `.env`).
@@ -416,10 +426,16 @@ mensagem renderizada → limpar cenário. (A fila volta ao total inicial, campan
 ## 12. Credenciais — onde estão
 
 Todas no `.env` da raiz (**gitignored**): Supabase (`service_role supabase`, `supabase api url`),
-Chatwoot (URL, token), Asaas (chave sandbox, webhook token), Z-API (client token), n8n (URL,
+Chatwoot (URL, token), Asaas (chave sandbox, webhook token), conector legado (client token), n8n (URL,
 login, senha, api key). Template sem valores em `.env.example`.
 No dashboard: `dashboard/.env.local` (**gitignored**, template em `dashboard/.env.example`) e 7
 env vars na Vercel (produção). Segredos operacionais das Edge Functions: tabela `segredos` no Supabase.
+
+**Política obrigatória para agentes:** antes de ler, usar, testar, alterar ou rotacionar qualquer
+credencial, seguir [Credenciais — Política para Agentes](<Guias Operacionais/Credenciais — Política para Agentes.md>).
+A autenticação deve vir do `.env`; a orientação, das skills aplicáveis e do guia operacional local do
+serviço. **Não usar MCP** para descobrir, validar, ler ou alterar credenciais, nem para operar esses
+serviços. Valores secretos nunca devem aparecer em conversa, logs, documentação, commits ou diffs.
 
 ---
 
@@ -452,6 +468,7 @@ carteiras dentro) · **modelo de planilha fixo** p/ baixar · **config por carte
 global** · **base suja apagada** (a planilha-fonte segue no PC do dono como backup).
 
 **Banco — migration `008_carteiras_multicarteira.sql` (aplicada):**
+
 - Tabela **`carteiras`** (`nome` UNIQUE, `credor`, `status` enum
   `importando|ativa|pausada|arquivada`, `num_devedores`, `soma_saldo`, e overrides
   `prompt_persona`/`contexto_negocio`/`guardrails`/`config_override` — NULL herda o global).
@@ -472,6 +489,7 @@ carteira. (`campanha-followup` ainda não escopa por status de carteira — pend
 n8n inalterado.
 
 **Front (Next.js `dashboard/`):**
+
 - Parser TS porta o Python: `src/lib/import/{normalizar,parse-planilha,modelo}.ts` (lê `.xlsx`
   com SheetJS/`xlsx`; CPF, telefone E.164 + 9º dígito + DDDs, datas, e-mails).
 - Rotas: `api/carteiras` (criar/listar), `api/carteiras/[id]` (PATCH status/overrides, DELETE),
@@ -505,6 +523,7 @@ visual do go-live. Item **Ajuda** na Sidebar (`LifeBuoy`). Fonte em prosa:
 `docs/manual-do-usuario.md`.
 
 **n8n organizado e revisado** (detalhe em `n8n/README.md`):
+
 - A **API pública do n8n não gerencia pastas** (`/folders` → 404; `/projects` → 403 por licença)
   nem move workflows entre pastas. O equivalente possível é **tag**: os 6 workflows do produto
   (`SAVAN W0x` + `Setup Chatwoot`) recebem a tag **`SAVAN`** (`n8n/organizar_tags.py`; o
@@ -512,9 +531,7 @@ visual do go-live. Item **Ajuda** na Sidebar (`LifeBuoy`). Fonte em prosa:
   arrastar no app web (1×). A instância é **compartilhada** com outros clientes — **só os `SAVAN`
   são deste produto; o resto não se toca.**
 - **Review n8n ✕ código:** contratos batem. Correções aplicadas:
-  1. **W02 — escalada agora é visível no Chatwoot.** Ramo dedicado `Bot responder → Escalou?
-     → Labels atuais (GET) → Marcar escalado (mescla a label `escalado-humano`; o POST de labels
-     **substitui** o conjunto, daí o GET antes) → Nota interna (privada, com o motivo)`. Antes o
+  1. **W02 — escalada agora é visível no Chatwoot.** Ramo dedicado `Bot responder → Escalou? → Labels atuais (GET) → Marcar escalado (mescla a label `escalado-humano`; o POST de labels **substitui** o conjunto, daí o GET antes) → Nota interna (privada, com o motivo)`. Antes o
      caminho mandava `content: undefined`. (W02 atualizado e **ativo**.)
   2. **`campanha-registrar` (sem_whatsapp)** busca `devedores.carteira_id` antes de criar a linha
      de retry (evita `carteira_id` nulo). Repo + **deploy (versão 3)**. Não quebrava envio
@@ -533,6 +550,7 @@ sugestão transparente do sistema**; **transparência bilateral** nos casos esca
 anti-fraude). Migrations **010–016** (aplicadas via MCP no projeto `wmggqsmqvklxlqwsksjs`).
 
 **Banco (010–016):**
+
 - `chips`: `maturidade` (`novo|aquecido`), `aquecimento_perfil`, `regiao_uf[]`, `regiao_cidade[]`.
 - `carteiras`: `estrategia_distribuicao` (`igualitario|uf|cidade|manual`).
 - `fila_envios`: `chip_designado_id` (chip **planejado**; `chip_id` = quem pegou).
@@ -555,6 +573,7 @@ cruzando conversas = número novo herda contexto; grava em `escalacoes` no `esca
 `chips-monitor` v2 (ao cair, cria `failover_eventos` pendente em vez de só rebaixar).
 
 **Front (Next.js):**
+
 - `components/MaturidadeField.tsx` (seletor novo/aquecido + sugestão transparente) no cadastro
   (`chips/novo/flow.tsx`) e edição (`chips/chip-card.tsx`); API `chips` aceita maturidade/perfil/override.
 - `lib/distribuicao.ts` (planos igualitário/UF/cidade + ETA via curva); rotas
@@ -586,6 +605,7 @@ Pedidos do dono (perguntas sobre dinheiro/teste): tornar o split à prova de err
 permitir **Asaas por carteira** + **escalar para um cobrador humano** (chip da equipe).
 
 **Migration `017_modo_teste_papel_chip.sql` (aplicada via MCP no projeto `wmggqsmqvklxlqwsksjs`):**
+
 - Flag `simulacao boolean` em `fila_envios`/`conversas`/`mensagens`/`negociacoes`/`pagamentos` (+ índices).
 - `chips.papel` (`bot|equipe`) + `chips.agente_nome` (cobrador dono do chip de equipe).
 - `escalacoes`: `equipe_chip_id`, `atendente_numero`, `resumo` (transparência/roteamento).
@@ -594,6 +614,7 @@ permitir **Asaas por carteira** + **escalar para um cobrador humano** (chip da e
   (números reais nunca contam teste); evento de pagamento carrega `simulacao` no payload.
 
 **Edge Functions (deployadas, self-contained):**
+
 - `gerar-pix` (v4): **trava de segurança** — em produção SEM `wallet` do credor, recusa (`wallet_credor_ausente`)
   em vez de mandar 100% pro operador. **Modo teste**: nunca toca produção; com chave sandbox cria Pix
   sandbox, sem chave gera **copia-e-cola fake** ("PIX DE TESTE — NÃO PAGUE"); grava `negociacoes`/`pagamentos`
@@ -609,6 +630,7 @@ permitir **Asaas por carteira** + **escalar para um cobrador humano** (chip da e
   "avançar" (você responde no seu zap) sem incomodar devedores reais. Reusa `contato-criar`.
 
 **Front (Next.js — vai pra produção no próximo `git push`):**
+
 - **Chips**: card "Número de teste" (salva `numero_teste`) + botão "Enviar teste" (rota `api/chips/teste`
   → `disparar-teste`); seletor de **papel** (bot/equipe) + nome do cobrador na edição do chip + selo "Equipe".
 - **Carteira**: nova aba **"Asaas & cobrador"** (`painel.tsx` `AbaAsaas`) — wallet+comissão por carteira
@@ -621,7 +643,7 @@ número de teste → "Enviar teste" → responda no seu WhatsApp. Bot negocia e 
 real sai nem move dinheiro; tudo marcado "Teste".
 
 **Escalação "os dois" (concluída):** `bot-turno` v6 faz tudo na escalação — (a) o bot avisa o devedor e
-passa o WhatsApp do cobrador; (b) **avisa o cobrador no WhatsApp** (Z-API send-text pelo chip do bot, com
+passa o WhatsApp do cobrador; (b) **avisa o cobrador no WhatsApp** (conector legado send-text pelo chip do bot, com
 o resumo); (c) no Chatwoot: **nota interna com o resumo + label `escalado-humano` + atribuição ao time**
 (`cfg.chatwoot.team_escalacao`, padrão "Cobranca SAVAN"). Tudo guardado por `!simulacao` (teste não dispara
 avisos reais). O ramo de escalada do **n8n W02 foi removido** (centralizado no bot-turno; evita nota/label
@@ -645,16 +667,18 @@ cobrador**. Decisões: tipo de chip é **informativo + alertas** (não muda o di
 **escolhe o número alvo na hora**.
 
 **Migration `018_tipo_chip_multi_teste.sql`:**
+
 - `chips.tipo` (`fisico|esim|voip|virtual_api`, default `fisico`) — campo informativo.
 - `configuracoes.numero_teste` migrado de `{e164, ativo}` para **`{numeros: [{e164, label, ativo}]}`**
   (idempotente: só converte se ainda não tiver a chave `numeros`; o app lê os dois formatos).
 
 **Tipo de chip — segmentação (informativa, com alerta de risco/conexão):**
+
 - **`fisico`** SIM tradicional · **`esim`** chip de operadora digital — ambos conectam normal pelo QR,
   menor risco de bloqueio.
 - **`voip`** número VoIP — alerta amber: risco maior de bloqueio; preferir maturidade `novo`/aquecimento.
 - **`virtual_api`** número virtual que **não recebe ligação/SMS** — alerta rose: **não conecta por QR**
-  (Z-API usa protocolo do WhatsApp Web); só funciona na **API oficial do WhatsApp (Meta Cloud API)**,
+  (conector legado usa protocolo do WhatsApp Web); só funciona na **API oficial do WhatsApp (Meta Cloud API)**,
   que **não é o conector atual**. Gatear conexão por tipo (usar Cloud API) ficou fora do escopo.
 
 **Edge Function `disparar-teste` (atualizada, self-contained):** aceita `{ chip_id, numero_e164? }`;
@@ -662,6 +686,7 @@ suporta os dois formatos do config; valida que o `numero_e164` pedido está cada
 (`numero_nao_cadastrado`); sem ele, usa o primeiro ativo. **Deployada (v2)** via MCP.
 
 **Front (Next.js — commitado e pushado p/ `main`, deploy automático Vercel):**
+
 - `components/TipoChipField.tsx` (novo, padrão visual do `MaturidadeField`) — 4 cards + alerta contextual;
   usado no cadastro (`chips/novo/flow.tsx`) e edição (`chips/chip-card.tsx`); selo de tipo no card.
 - **Selo de papel no card do chip** (`chips/chip-card.tsx`): chip de bot → selo azul "Bot"; chip de
@@ -699,6 +724,7 @@ campo `{ colunas:[idx], transform }`. Transforms **implementados em código** (a
 `cpf, nome, saldo, telefone` — sem eles a revisão bloqueia o import.
 
 **Backend (`dashboard/`):**
+
 - `src/lib/import/parse-planilha.ts` **refatorado**: separa *extração* de *normalização*. Núcleo único
   `montarDevedores()` (normaliza + dedup por `(carteira,cpf)` + fila) alimentado por dois caminhos:
   `extrairPadrao` (modelo, intacto) e `extrairReceita` (IA). `parsePlanilha(buf, receita?)` orquestra;
@@ -713,6 +739,7 @@ campo `{ colunas:[idx], transform }`. Transforms **implementados em código** (a
   servidor, bloqueia se faltar obrigatório); resto do pipeline de upsert/fila **inalterado**.
 
 **Front (Next.js):**
+
 - `(dash)/carteiras/importador-ia.tsx` (**novo**, compartilhado): seletor `ModoSeletor` ("Minha
   planilha segue o modelo" | "Outra formatação — a IA organiza") + fluxo escolher → **Analisar com
   IA** → painel de revisão (de-para editável por `select` de coluna **e** transform, avisos de
@@ -735,29 +762,31 @@ chegava** no WhatsApp, mas ao **responder não acontecia nada** — o bot não c
 
 **Diagnóstico (projeto `wmggqsmqvklxlqwsksjs`; chip 1 = `+556282624555`, inbox Chatwoot 4, conversa
 de teste #324 `simulacao=true`):**
-- A 1ª msg sai normal (Chatwoot → Z-API → WhatsApp).
+
+- A 1ª msg sai normal (Chatwoot → conector legado → WhatsApp).
 - A resposta de entrada **não aparecia na conversa do Chatwoot** e a Edge Function `bot-turno`
   **nunca era invocada** (zero registros nos logs edge-function) → a mensagem morria **antes** do
   cérebro do bot.
 - **Tudo a jusante estava saudável:** Chatwoot dispara `message_created` → n8n `/webhook/savan-bot`;
   **W02 ativo**; `OPENAI_API_KEY` **preenchida** (o §4/§10 antigos diziam "vazia" — desatualizado).
-- **Único elo quebrado:** o webhook **"ao receber"** da instância Z-API do chip **não apontava pro
+- **Único elo quebrado:** o webhook **"ao receber"** da instância conector legado do chip **não apontava pro
   Chatwoot** — por isso nada do que o chip recebia entrava no sistema.
 
-**Causa-raiz (fragilidade do fluxo de conexão):** `finalizarConexaoChip` (`dashboard/src/lib/zapi.ts`)
+**Causa-raiz (fragilidade do fluxo de conexão):** `finalizarConexaoChip` (`dashboard/src/lib/CONECTOR_LEGADO.ts`)
 só roda **na tela do QR** (`api/chips/[id]/qrcode`), e o passo do webhook é frágil: corrida do
-`/device` (a Z-API reporta `connected` antes de devolver o telefone → `obterTelefone` volta null e o
+`/device` (a conector legado reporta `connected` antes de devolver o telefone → `obterTelefone` volta null e o
 bloco do webhook é pulado) e a trava `jaFinalizado` depende de `saude.webhook_ok === true`, que o
-**`chips-monitor` sobrescreve a cada ciclo** com o status cru da Z-API. Resultado: o webhook de
+**`chips-monitor` sobrescreve a cada ciclo** com o status cru do conector legado. Resultado: o webhook de
 entrada podia nunca ficar garantido.
 
 **Conserto manual (já em produção, p/ o chip 1):** `PUT …/update-webhook-received` na instância
-Z-API com body `{"value":"<CHATWOOT_URL>/webhooks/whatsapp/+556282624555"}` (retorno `{"value":true}`).
+conector legado com body `{"value":"<CHATWOOT_URL>/webhooks/whatsapp/+556282624555"}` (retorno `{"value":true}`).
 Pela UI o equivalente é o botão **Revincular Chatwoot** (`api/chips/[id]/chatwoot`).
 
 **Conserto permanente (código — ✅ commitado e pushado p/ `main`, deploy Vercel):** garantia auto-curável
 amarrada ao próprio "Enviar teste".
-- `lib/zapi.ts`: novo **`garantirWebhookEntrada()`** — descobre o número real do chip (fallback ao
+
+- `lib/CONECTOR_LEGADO.ts`: novo **`garantirWebhookEntrada()`** — descobre o número real do chip (fallback ao
   `numero_e164` salvo), resolve a `CHATWOOT_URL` e reaponta o webhook "ao receber" via `definirWebhooks`.
   Idempotente.
 - `api/chips/teste/route.ts`: chama `garantirWebhookEntrada` **antes** de disparar; best-effort
@@ -775,6 +804,7 @@ pushado p/ `main` (deploy Vercel) → a auto-cura vale em todo chip/teste; o con
 
 Pedido do dono: o painel era "bagunçado" — vários **admins** viam o que os outros faziam sem saber
 **quem criou o quê**. Reestruturado em **4 papéis com isolamento real por tenant**:
+
 - **`admin`** (plataforma, **único** = `vsbenevides1@gmail.com`): vê **tudo de todos, com atribuição**;
   gere a infra global. Ninguém mais pode virar admin.
 - **`cobrador`** (era `operador`): o operador. Vê/edita **só o que é dele** (suas carteiras, chips,
@@ -785,6 +815,7 @@ Pedido do dono: o painel era "bagunçado" — vários **admins** viam o que os o
 
 **Banco — migrations `019_hierarquia_papeis.sql` + `020_escopo_rls.sql` (aplicadas via MCP no
 `wmggqsmqvklxlqwsksjs`):**
+
 - Enum `papel_usuario`: `operador` **renomeado** → `cobrador`; **+ `credor`** (`{admin,cobrador,credor,visualizador}`).
 - Colunas de dono: `usuarios_app.cobrador_id`/`criado_por`; `carteiras.cobrador_id`/`credor_id`
   (o texto `carteiras.credor` segue como **rótulo** exibido ao devedor); `chips.cobrador_id`;
@@ -794,9 +825,7 @@ Pedido do dono: o painel era "bagunçado" — vários **admins** viam o que os o
   ou o admin.
 - Funções de escopo `security definer` (revoke anon, grant authenticated): `fn_carteiras_visiveis()`,
   `fn_chips_visiveis()`, `fn_devedores_visiveis()`, `fn_conversas_visiveis()`, `fn_meu_cobrador()`.
-- **RLS reescrita** (antes tudo `select using(true)`): cada SELECT vira `fn_role()='admin' or
-  <escopo>`. Carteira-scoped via `carteira_id`; tabelas sem ela via join (`telefones/negociacoes/
-  pagamentos` → devedor; `mensagens` → conversa; `failover` → chip). `metricas_diarias` (agregado
+- **RLS reescrita** (antes tudo `select using(true)`): cada SELECT vira `fn_role()='admin' or <escopo>`. Carteira-scoped via `carteira_id`; tabelas sem ela via join (`telefones/negociacoes/ pagamentos` → devedor; `mensagens` → conversa; `failover` → chip). `metricas_diarias` (agregado
   global) = **só admin**. Escrita só `admin`/`cobrador` (no escopo). **`v_funil` já é
   `security_invoker`** → auto-escopa pelos SELECTs.
   - **Decisão do dono — IMPLEMENTADA no §22:** **Campanha, Mensagens e Descontos são por conta
@@ -809,12 +838,13 @@ Pedido do dono: o painel era "bagunçado" — vários **admins** viam o que os o
 API com **service role** (ignora RLS) → a autorização real é nos **guards** (app layer).
 
 **Front (`dashboard/`):**
+
 - `lib/auth.ts` (**novo**): `getSessao()` (`{user, role, cobrador_id, tenant}`), `exigirAdmin`/
   `exigirCobrador`, `podeEditarCarteira(id)`/`podeEditarChip(id)` (admin OU dono). Substituiu os
   guards `exigirOperador`/`exigirPapel` duplicados em **todos** os `api/**/route.ts`, agora com
   **checagem de dono** nas rotas `[id]` (carteiras/chips/escalações/failover/distribuir/importar/mapear).
 - `lib/segredos.ts` (**novo**): `getSegredo(chave, cobradorId)` (chave do cobrador → fallback global);
-  `SEGREDOS_POR_COBRADOR = [OPENAI_API_KEY, ASAAS_API_KEY_SANDBOX, ASAAS_API_KEY_PROD]` (Z-API é por
+  `SEGREDOS_POR_COBRADOR = [OPENAI_API_KEY, ASAAS_API_KEY_SANDBOX, ASAAS_API_KEY_PROD]` (conector legado é por
   chip; webhook token é infra). `api/segredos` passou a escopar por cobrador (admin = globais).
 - `api/config` está **admin-only** hoje (defaults globais) — **a rever** pela decisão acima
   (Campanha/Descontos/Mensagens por cobrador). `api/usuarios` + `usuarios/criar` viraram
@@ -838,6 +868,7 @@ idem para a **chave Asaas**. `webhook-asaas`/demais lêem só chaves globais (CH
 mudança. **n8n inalterado.**
 
 **Status:** ✅ **concluído e em produção.**
+
 - Front commitado e **pushado p/ `main`** (deploy Vercel); o banco e as Edge Functions já estão
   aplicados em produção.
 - **Campanha, Mensagens e Descontos por conta** — ✅ **CONCLUÍDO no §22** (migration 021 + RLS +
@@ -853,6 +884,7 @@ conta + padrão global). Mesmo padrão de `segredos`: linha global (`cobrador_id
 cobrador; o que o cobrador não personaliza **cai no global**.
 
 **Banco — migration `021_config_templates_por_cobrador.sql` (aplicada via MCP no `wmggqsmqvklxlqwsksjs`):**
+
 - `configuracoes` e `templates_mensagem` ganharam **`cobrador_id`**. Em `configuracoes` a PK `(chave)`
   virou 2 índices únicos parciais (`uq_config_global` + `uq_config_cobrador`), igual a `segredos`.
 - **RLS por escopo:** `configuracoes` SELECT = global (todos) + os do próprio cobrador + admin tudo;
@@ -869,6 +901,7 @@ cobrador; o que o cobrador não personaliza **cai no global**.
   aquecimento_rapido, validade_proposta_dias, followup).
 
 **Edge Functions (deployadas via MCP, self-contained):**
+
 - `campanha-lote` (v3): **gate POR COBRADOR** — agrupa por `chips.cobrador_id`, resolve a config do
   dono do chip e só dispara se a campanha **dele** estiver ligada/na janela; template `abordagem_inicial`
   do cobrador (cai no global).
@@ -881,6 +914,7 @@ cobrador; o que o cobrador não personaliza **cai no global**.
 - `_shared/lib.ts` + arquivos no repo atualizados (as deployadas seguem como fonte da verdade).
 
 **Front (`dashboard/`):**
+
 - `lib/config.ts` (**novo**): `getConfigEscopo(cobradorId)` (global + overlay), `setConfig`,
   `CONFIG_POR_COBRADOR`. `lib/auth.ts`: `resolverEscopoConta`/`exigirEscopoConta`/`listarCobradores`.
 - `components/SeletorConta.tsx` (**novo**): só p/ admin — escolhe **"Padrão global da plataforma"**
@@ -898,24 +932,25 @@ cobrador; o que o cobrador não personaliza **cai no global**.
 - **`npm run build` + `tsc --noEmit` OK.** ✅ **Commitado e pushado p/ `main` (deploy Vercel).**
 
 **Correção da SAÍDA "Falha ao enviar" (@lid) — bot-turno + Chatwoot:**
-- **Diagnóstico:** o chip está conectado e a Z-API envia por telefone OK (testado: `send-text` 200),
-  mas o WhatsApp do contato é endereçado por **`@lid`** (privacidade) — o canal Z-API do Chatwoot
-  tenta enviar pelo telefone e a Z-API responde **"Phone number does not exist"** → mensagem do bot
+
+- **Diagnóstico:** o chip está conectado e a conector legado envia por telefone OK (testado: `send-text` 200),
+  mas o WhatsApp do contato é endereçado por **`@lid`** (privacidade) — o canal conector legado do Chatwoot
+  tenta enviar pelo telefone e a conector legado responde **"Phone number does not exist"** → mensagem do bot
   fica vermelha ("Falha ao enviar"). É o oposto do §20 (que era a entrada).
 - **Fix (no `bot-turno`, já no repo + deployado):** quando o remetente é `@lid`, o **próprio
-  bot-turno envia a resposta via Z-API `send-text` (que aceita `@lid`)**, grava nota privada
+  bot-turno envia a resposta via conector legado `send-text` (que aceita `@lid`)**, grava nota privada
   "🤖 (enviado via WhatsApp/lid)" e **retorna `mensagens:[]`** para o n8n W02 **não** repostar no
   Chatwoot (evita o "Falha ao enviar" duplicado). Aprende o `@lid` em `telefones_devedor.chat_lid`
   (coluna nova — migration **`021_chat_lid.sql`**, aplicada via MCP; convive com a
   `021_config_templates_por_cobrador.sql`, mesmo número/escopos diferentes) p/ as próximas respostas
-  casarem direto. Contato normal (telefone) segue pelo fluxo Chatwoot→Z-API.
+  casarem direto. Contato normal (telefone) segue pelo fluxo Chatwoot→conector legado.
 - `lib/chatwoot.ts` `sincronizarProviderConfig` (**novo**) + `api/chips/[id]/chatwoot`: "Revincular
   Chatwoot" agora **reescreve o `provider_config`** (instance_id/token/**client_token**) de um inbox
   já existente — antes só criava (reaproveitava o inbox sem atualizar a credencial). Garante o Token
-  de Segurança no canal (necessário p/ a Z-API aceitar envios).
+  de Segurança no canal (necessário p/ a conector legado aceitar envios).
 - **Pendência:** `webhook-asaas`/`campanha-followup` ainda enviam confirmação/follow-up só pelo canal
   Chatwoot (telefone); para contatos `@lid` a entrega desses também depende do canal — replicar o
-  caminho "enviar via Z-API ao @lid" neles é melhoria futura (o caminho crítico do bot já está coberto).
+  caminho "enviar via conector legado ao @lid" neles é melhoria futura (o caminho crítico do bot já está coberto).
 
 ---
 
@@ -932,6 +967,7 @@ e "melhor para cobrança" saem de um **catálogo curado** no código, **cruzado*
 fato acessa. Sem chave (ou OpenAI fora), cai no catálogo de referência com aviso.
 
 **Front/back (`dashboard/`, sem migration nem Edge Function):**
+
 - `src/lib/ia/modelos-catalogo.ts` (**novo**): catálogo dos modelos de chat com **preço USD/1M
   tokens** e notas curadas (`inteligencia`, `cobranca`). Cobre as famílias atuais (verificado em
   **2026-06-24**, fonte `developers.openai.com/api/docs/pricing`): **5.x** (gpt-5.5, 5.4, 5.4-mini,
@@ -968,7 +1004,7 @@ output). Vai a produção no próximo `git push` (deploy automático Vercel).
 
 ## 24. Vários escaladores (cobradores humanos) por carteira + estratégia de roteamento
 
-Pedido do dono: o **chip do escalador continua conectado** (Z-API) — de propósito, pra ver as
+Pedido do dono: o **chip do escalador continua conectado** (conector legado) — de propósito, pra ver as
 conversas dele e fiscalizar acordo por fora ("passar a perna"); e na carteira poder **selecionar
 entre os escaladores que existem no sistema** (não digitar número à mão). Decisões dele: cada
 carteira tem **1 cobrador-conta + 1 credor**, mas pode ter **vários chips de bot e vários chips de
@@ -976,8 +1012,7 @@ escalador humano**; a **estratégia de roteamento é escolhida na carteira** (en
 número **puxado do chip conectado**.
 
 **Sem migration nem mudança de API:** a lista de escaladores vive no `config_override` (jsonb livre)
-que a carteira já tem; todos os campos usados já existem (`chips.numero_e164/regiao_uf/regiao_cidade/
-status`, `devedores.uf/cidade`, `escalacoes.equipe_chip_id/atendente_numero`). A rota
+que a carteira já tem; todos os campos usados já existem (`chips.numero_e164/regiao_uf/regiao_cidade/ status`, `devedores.uf/cidade`, `escalacoes.equipe_chip_id/atendente_numero`). A rota
 `api/carteiras/[id]` (PATCH) já repassa o `config_override` inteiro.
 
 **Formato:** `config_override.escaladores = { estrategia, lista: [{chip_id, nome, numero}] }`
@@ -987,6 +1022,7 @@ estratégia `fixo`); ao **salvar de novo**, a carteira migra pro `escaladores` e
 removido.
 
 **Edge Function `bot-turno` (v11, deployada via MCP, self-contained = repo):**
+
 - `lerEscaladores(carteira,cfg)` resolve `{estrategia, lista}` com compat do `equipe` antigo.
 - `escolherEscalador(...)` escolhe **1** na hora da escalação (lazy, só no `escalar_humano`): hidrata
   cada item com o chip conectado (**número vem do `numero_e164`**, não do que ficou salvo), descarta
@@ -997,11 +1033,12 @@ removido.
     no rodízio** geral;
   - **fixo** → ordem da lista = prioridade (principal → reservas), **pulando quem está
     `desconectado`/`banido`**; se todos caídos, ainda escala (não trava).
-  O resto da escalação é igual ao §17/§22: grava `escalacoes` (com `equipe_chip_id`/`atendente_numero`
-  do escolhido), avisa o escalador no WhatsApp **pelo chip do bot** (Z-API send-text), passa o número
-  ao devedor e faz nota/label/atribuição no Chatwoot. Tudo guardado por `!simulacao`.
+    O resto da escalação é igual ao §17/§22: grava `escalacoes` (com `equipe_chip_id`/`atendente_numero`
+    do escolhido), avisa o escalador no WhatsApp **pelo chip do bot** (conector legado send-text), passa o número
+    ao devedor e faz nota/label/atribuição no Chatwoot. Tudo guardado por `!simulacao`.
 
 **Front (`dashboard/`, vai a produção no próximo `git push`):**
+
 - `carteiras/[id]/painel.tsx` `AbaAsaas`: o antigo card "Cobrador humano" (1 chip opcional + número
   digitado) virou **"Escaladores (cobradores humanos)"** — **seletor de estratégia** (fixo+reserva /
   rodízio / por região) + **multi-seleção** dos chips marcados como **Equipe** (checkbox por chip,
@@ -1021,38 +1058,39 @@ operação, §21) com o *escalador humano* (chip `papel='equipe'`) — a UI/§ c
 
 ---
 
-## 25. Escalador humano "só registrado" (sem Z-API) — adicionado nesta sessão
+## 25. Escalador humano "só registrado" (sem conector legado) — adicionado nesta sessão
 
 Pedido do dono (refinando o §24): o escalador humano **não é bot, não cobra ninguém, só recebe a
-finalização** — e ele **não quer pagar uma instância Z-API** só pra isso. Esclarecido o mal-entendido
-de que existiria um "QR do Chatwoot" separado: neste produto **o QR vem da Z-API** e o inbox do
-Chatwoot é criado **por cima** do canal Z-API (`provider: "zapi"`, ver §9.12) — não há conexão de
-WhatsApp no Chatwoot sem Z-API. Decisão do dono: aceitar **registrar o escalador só com nome + número**,
+finalização** — e ele **não quer pagar uma instância conector legado** só pra isso. Esclarecido o mal-entendido
+de que existiria um "QR do Chatwoot" separado: neste produto **o QR vem do conector legado** e o inbox do
+Chatwoot é criado **por cima** do canal conector legado (`provider: "CONECTOR_LEGADO"`, ver §9.12) — não há conexão de
+WhatsApp no Chatwoot sem conector legado. Decisão do dono: aceitar **registrar o escalador só com nome + número**,
 abrindo mão da fiscalização no Chatwoot (o §24 puxava o número do chip conectado **justamente** pra ser
 monitorável; aqui é o trade-off oposto, consciente).
 
 **Sem migration nem Edge Function** (o `bot-turno` v11 do §24 já avisa o escalador lendo `chips.numero_e164`):
+
 - **Cadastro (`chips/novo/flow.tsx`):** o seletor **Papel do chip** subiu pro topo. Em **Equipe**, o
-  form esconde Z-API/Tipo/Maturidade e pede só **nome do cobrador + número de WhatsApp**; o botão vira
+  form esconde conector legado/Tipo/Maturidade e pede só **nome do cobrador + número de WhatsApp**; o botão vira
   "Cadastrar escalador" e **não há etapa de QR** (volta direto pra lista).
 - **`api/chips` (POST):** se `papel=equipe` **sem** credenciais, valida o número (`normalizarTelefone`
   → E.164), grava em `chips.numero_e164`, **não** cria `chips_credenciais` nem inbox no Chatwoot. Chip de
-  bot (ou escalador **com** Z-API) segue exigindo as três credenciais.
-- **`api/chips/[id]` (GET/PATCH):** GET devolve `numero_e164` + flag `sem_zapi`; PATCH deixa **editar o
+  bot (ou escalador **com** conector legado) segue exigindo as três credenciais.
+- **`api/chips/[id]` (GET/PATCH):** GET devolve `numero_e164` + flag `sem_conector`; PATCH deixa **editar o
   número** à mão (revalidado p/ E.164).
 - **Card (`chips/chip-card.tsx`):** detecta o escalador "só registrado" (`papel=equipe` + `numero_e164`
   + sem `chatwoot_inbox_id`) e **esconde** QR/Ativar/Pausar, "Enviados hoje", badge de tipo/status e o
-  aviso "Chatwoot não vinculado"; mostra a linha *"Escalador humano — recebe as transferências no
-  WhatsApp. Não dispara campanha nem aparece no Chatwoot."* A edição usa a mesma regra (número editável,
-  sem Z-API).
+    aviso "Chatwoot não vinculado"; mostra a linha *"Escalador humano — recebe as transferências no
+    WhatsApp. Não dispara campanha nem aparece no Chatwoot."* A edição usa a mesma regra (número editável,
+    sem conector legado).
 
-**Caminho antigo preservado:** quem quiser **fiscalizar** um escalador ainda cadastra ele **com** Z-API
+**Caminho antigo preservado:** quem quiser **fiscalizar** um escalador ainda cadastra ele **com** conector legado
 (papel Equipe + credenciais → conecta, número vem do `/device`, inbox no Chatwoot) — é só não usar o
 atalho "só número". Na carteira (§24, `AbaAsaas`), os escaladores **só registrados** aparecem
 normalmente na multi-seleção (têm `numero_e164`), sem o aviso âmbar de "sem número".
 
 **Ressalva (a mesma do §24, agora mais forte):** sem o chip no Chatwoot, o sistema **não vê** a conversa
-do escalador com o devedor — ele atende no zap pessoal, fora do radar. É o preço de não pagar Z-API.
+do escalador com o devedor — ele atende no zap pessoal, fora do radar. É o preço de não pagar conector legado.
 
 **Status:** `tsc --noEmit` + `npm run build` OK (14 páginas; `/chips` e `/chips/novo`).
 
@@ -1062,6 +1100,7 @@ do escalador com o devedor — ele atende no zap pessoal, fora do radar. É o pr
 
 Dois retoques de usabilidade no dashboard (sem migration/Edge Function), que estavam no working tree e
 foram commitados junto:
+
 - **Editar nome/credor da carteira:** `carteiras/[id]/painel.tsx` (`AbaStatus`) ganhou um card
   **"Informações da carteira"** (editar `nome` + `credor`, salva via `api/carteiras/[id]` PATCH); a lista
   (`carteiras/acoes.tsx`) ganhou um **botão de editar** (lápis) que leva ao painel.
@@ -1079,6 +1118,7 @@ Pedido do dono: além do horário (8h–20h), a campanha só deve disparar **de 
 **padrão era seg–sáb** `[1,2,3,4,5,6]` e **não havia** noção de feriado.
 
 **Decisões:**
+
 - **Dias úteis (seg–sex)** viram o padrão (`dias = [1,2,3,4,5]`), mas o usuário pode **ajustar** quais
   dias na tela de Campanha (inclusive reativar sábado/domingo).
 - **Feriado nacional** computado **em código** (sem dependência externa / sem API): fixos + móveis via
@@ -1088,6 +1128,7 @@ Pedido do dono: além do horário (8h–20h), a campanha só deve disparar **de 
   `janela_envio.feriados_extra = ["YYYY-MM-DD", ...]`.
 
 **Onde mudou (o gate da janela é avaliado em 2 Edge Functions + 1 lib de referência):**
+
 - `supabase/functions/campanha-lote/index.ts` e `campanha-followup/index.ts` (self-contained = deployadas):
   `dentroDaJanela`/`dentroJanela` agora têm `feriadosNacionais(ano)` + `ehFeriadoHoje(janela, tz)` e o
   default de `dias` virou `[1,2,3,4,5]`. (O `bot-turno` **não** é gateado por janela — responder a um
@@ -1125,6 +1166,7 @@ um robô; a defesa é **imprevisibilidade**. Duas frentes, ligadas:
 **1) Intervalo aleatório (30–90s):** o `intervalo_min_segundos` (fixo, antes 12s) virou **piso de um
 sorteio** e ganhou par **`intervalo_max_segundos`** (padrão 90). Cada mensagem espera um tempo sorteado
 em `[min, max]`.
+
 - **`campanha-lote` (Edge):** lê min/max (com fallback 30/90; corrige `max < min`), sorteia
   **`delay_proximo`** (a espera até o próximo envio) e um **`delay_typing`** curto e proporcional ao texto
   (≤8s, "digitando" natural — não é mais o intervalo inteiro). Devolve os dois por item. O **pacing** deixou
@@ -1133,7 +1175,7 @@ em `[min, max]`.
   ciclo / sem execuções paralelas no n8n).
 - **n8n W01:** o trigger passou de **1 → 5 min** (cadência > intervalo p/ o sorteio realmente espaçar) e o
   nó fixo **"Aguardar 12s"** virou **"Aguardar intervalo"** com `amount = {{ $('Loop').item.json.delay_proximo }}`.
-  `delayTyping` do Chatwoot/Z-API continua lendo `delay_typing`. Reaplicar com `python n8n/criar_workflows.py`.
+  `delayTyping` do Chatwoot/conector legado continua lendo `delay_typing`. Reaplicar com `python n8n/criar_workflows.py`.
 
 **2) Tamanho variável das mensagens:** os 3 templates globais de `abordagem_inicial` ganharam **spintax
 opcional** `{|texto}` (sorteia incluir/omitir trechos → comprimento muda a cada envio), além das variações
@@ -1153,6 +1195,7 @@ templates globais de abordagem com o spintax de tamanho variável (só `cobrador
 personalizados de cada cobrador ficam intactos).
 
 **Aplicado em produção (projeto `wmggqsmqvklxlqwsksjs`):**
+
 - **Migration 023 aplicada** (MCP). Verificado por SQL: global `intervalo_min_segundos=30`,
   `intervalo_max_segundos=90`; os 3 templates globais de abordagem atualizados. Render testado
   (500 amostras/template): **0 chaves soltas** e tamanho variando ~102–208 chars.
@@ -1182,12 +1225,11 @@ e os 6 segredos preenchidos. Há 2 usuários `*@mailinator.com` (`recon_…`, `r
 visualizador, `cobrador_id` NULL → inertes) a revisar.
 
 **Achados Crítico/Alto e correções:**
+
 - **C1 🔴 (RLS) — escalonamento `cobrador → admin`.** As policies `upd/del_usuarios` checavam só
-  `cobrador_id = auth.uid()`, sem trava de coluna → um cobrador podia `UPDATE usuarios_app SET
-  role='admin'` num sub-usuário seu **direto via PostgREST** (anon key pública), virando admin da
+  `cobrador_id = auth.uid()`, sem trava de coluna → um cobrador podia `UPDATE usuarios_app SET role='admin'` num sub-usuário seu **direto via PostgREST** (anon key pública), virando admin da
   plataforma (vê todos os tenants). **Confirmado empiricamente.** A rota `api/usuarios` bloqueia
-  `role='admin'`, mas o RLS permitia contornar a API. **Fix (migration 024):** `REVOKE
-  INSERT/UPDATE/DELETE ON usuarios_app FROM authenticated, anon` (escrita só via service_role/API;
+  `role='admin'`, mas o RLS permitia contornar a API. **Fix (migration 024):** `REVOKE INSERT/UPDATE/DELETE ON usuarios_app FROM authenticated, anon` (escrita só via service_role/API;
   mantém SELECT p/ o `getSessao`). Verificado: `has_table_privilege('authenticated',…,'UPDATE')=false`.
 - **A1 🟠 (Edge) — `verify_jwt=true` ≠ autorização.** A `NEXT_PUBLIC_SUPABASE_ANON_KEY` (pública) é um
   JWT válido do projeto → passava no `verify_jwt` e **qualquer um** podia invocar as 9 funções, que
@@ -1201,14 +1243,14 @@ visualizador, `cobrador_id` NULL → inertes) a revisar.
   (preserva o desconto-extra do bot, bloqueia abuso).
 
 **Achados Médio/Baixo corrigidos:**
+
 - **M1 (Edge) — `gerar-pix` sem idempotência** → Pix duplicado em corrida. **Fix:** reusa cobrança
   `pendente` idêntica (< 2 min).
 - **M2 (Edge) — `webhook-asaas` fail-OPEN** (se `ASAAS_WEBHOOK_TOKEN` vazio, a checagem era pulada) +
   sem idempotência. **Fix:** fail-CLOSED (`!token || token!=esperado → 401`) e só envia
   confirmação/quitação na **1ª** transição p/ recebido/confirmado.
 - **M3 (RLS) — grants amplos** em `segredos`/`chips_credenciais`/`bot_locks`/`bot_fila_mensagens`
-  (RLS já negava, mas o GRANT default permanecia). **Fix (migration 024):** `REVOKE ALL FROM
-  authenticated, anon`.
+  (RLS já negava, mas o GRANT default permanecia). **Fix (migration 024):** `REVOKE ALL FROM authenticated, anon`.
 - **B3 (Edge) — `webhook-asaas` vazava `String(e)`** no corpo → mensagem genérica.
 - **(de passagem)** `contato-criar` tinha fallback hardcoded `chatwoot.virtusdoctor.com` →
   normalizado p/ `chatwoot.example.com` (anonimização do §13).
@@ -1222,6 +1264,7 @@ browser** (lida só server-side via `getSegredo`); `anon` deslogado não lê nad
 `{authenticated}`).
 
 **Aplicado em produção (`wmggqsmqvklxlqwsksjs`):**
+
 - **Migration `024_hardening_seguranca.sql`** aplicada via MCP + verificada por SQL.
 - **Deploys (10):** `gerar-pix` v6 (A1+A2+M1) · `webhook-asaas` v4 (M2+B3, `verify_jwt=false`) ·
   `campanha-lote` v6 · `bot-turno` v12 · `campanha-registrar` v5 · `contato-criar` v3 ·
@@ -1229,6 +1272,7 @@ browser** (lida só server-side via `getSegredo`); `anon` deslogado não lê nad
   ACTIVE. As 10 funções no repo (`supabase/functions/`) foram **sincronizadas** com o deployado.
 
 **Pendências do dono (não dá pra fazer via MCP/código):**
+
 1. **Rotacionar a `service_role`** (§10.5) — circulou em texto + repo público. **Depois de rotacionar,
    garantir que o n8n use a chave nova** (as funções agora exigem o service_role como Bearer).
 2. **Revisar os 2.633 devedores reais (PII)** e as 2 contas `*@mailinator.com` — confirmar se são
@@ -1249,6 +1293,7 @@ O dono relatou: "diz que mandou pra +30 pessoas, mas cada chip só mandou pra 1"
 dados de produção (`wmggqsmqvklxlqwsksjs`) achou **uma causa-raiz que congelou tudo** + 2 bugs.
 
 **Causa-raiz — 401 em TODO o backend (a trava A1, não a chave):**
+
 - `get_logs service=edge-function` mostrou **100% das chamadas do n8n em 401** (`campanha-lote`,
   `campanha-followup`, `metricas-sync`, `chips-monitor`, etc.) por horas.
 - O dono havia **rotacionado a chave** do Supabase (novo sistema de API keys). Primeiro diagnóstico
@@ -1283,28 +1328,26 @@ simulação): o W01 chama `contato-criar` (cria o contato no Chatwoot) **antes**
 mas pula o "Enviar msg" → viram conversas vazias "Nova Mensagem" no Chatwoot, inflando a contagem.
 
 **Segurança/estado:** **campanha pausada** (`campanha_ativa=false`, global) p/ não disparar aos 2.557
-devedores reais da fila ao destravar. Chips 4 e 11 voltaram `conectado:true` no Z-API (o dono
+devedores reais da fila ao destravar. Chips 4 e 11 voltaram `conectado:true` no conector legado (o dono
 reconectou); `chips-monitor` rodou e confirmou. `mensagens` de entrada seguia zerada → o bot nunca
-recebeu resposta (depende do webhook "ao receber" da Z-API apontar pro Chatwoot, §20 — usar
+recebeu resposta (depende do webhook "ao receber" do conector legado apontar pro Chatwoot, §20 — usar
 "Revincular Chatwoot" ao reconectar).
 
 **Melhorias de design — FEITAS nesta sessão (deploy via MCP, sem mudar o n8n):**
+
 1. **Anti "enviar no vácuo" (`campanha-lote` v8):** antes de gastar lote, confere a **conexão real
-   do chip na Z-API** (`/status`). Chip caído → `marcarChipCaido` (status=desconectado + evento +
+   do chip na conector legado** (`/status`). Chip caído → `marcarChipCaido` (status=desconectado + evento +
    `failover_eventos` pendente, igual `chips-monitor`) e pula (`pulados.chip_desconectado`); erro ao
    checar → pula sem marcar (`chip_sem_status`). Fecha a janela de até 15 min do `chips-monitor` e
    impede contar envio fantasma com o chip morto. (Confirmação por-mensagem via webhook de status da
-   Z-API segue como melhoria futura — isto cobre o caso "chip caiu".)
+   conector legado segue como melhoria futura — isto cobre o caso "chip caiu".)
 2. **Dry-run não polui o Chatwoot (`contato-criar` v5 + `disparar-teste` v5):** em `modo_simulacao`,
-   o `contato-criar` **pula todo o Chatwoot** e devolve `{exists:true, conversation_id:null,
-   simulado:true}` (resolve o modo pelo MESMO chip via inbox, casando com o `campanha-lote`). O
+   o `contato-criar` **pula todo o Chatwoot** e devolve `{exists:true, conversation_id:null, simulado:true}` (resolve o modo pelo MESMO chip via inbox, casando com o `campanha-lote`). O
    `disparar-teste` passa `teste_real:true` p/ furar o pulo (ele manda msg real ao seu número). **Sem
    mudar o n8n** (o W01 segue chamando `contato-criar`, que agora se autogerencia). **Verificado:**
    sim → `simulado:true`; `teste_real` → prossegue.
-3. **Teste não suja dados reais:** `campanha-registrar` v8 só marca `devedores.status_cobranca=
-   'contatado'` se **`!sim`** (antes o dry-run marcava devedores reais como contatados). `metricas-sync`
-   v6 **exclui eventos `payload.simulacao=true`** da recontagem diária (`.not("payload->>simulacao",
-   "eq","true")`) — fecha o vazamento em que o dry-run inflava `metricas_diarias` (o §17 só blindava
+3. **Teste não suja dados reais:** `campanha-registrar` v8 só marca `devedores.status_cobranca= 'contatado'` se **`!sim`** (antes o dry-run marcava devedores reais como contatados). `metricas-sync`
+   v6 **exclui eventos `payload.simulacao=true`** da recontagem diária (`.not("payload->>simulacao", "eq","true")`) — fecha o vazamento em que o dry-run inflava `metricas_diarias` (o §17 só blindava
    pagamentos). Verificado (SQL): split real/teste dos eventos de envio confere.
 
 **Reativar a operação:** confirmar chips OK (não banidos) → "Revincular Chatwoot" p/ fiar a entrada →
@@ -1319,11 +1362,12 @@ tela do WhatsApp **"Sua conta está restringida no momento"** (timer ~5h19); "o 
 abrir o WhatsApp dos 2 chips no celular consta que não mandou nenhuma mensagem". Investigação com dados
 de produção (`wmggqsmqvklxlqwsksjs`).
 
-**Não é falha técnica da Z-API — é bloqueio do WhatsApp.** A tela é uma restrição da conta (bloqueia
+**Não é falha técnica do conector legado — é bloqueio do WhatsApp.** A tela é uma restrição da conta (bloqueia
 **iniciar conversas novas**). O `chips.status=desconectado` + `saude.error="You are not connected"` é só
-a consequência (a sessão WhatsApp Web da Z-API cai quando o WhatsApp restringe).
+a consequência (a sessão WhatsApp Web do conector legado cai quando o WhatsApp restringe).
 
 **Timeline (29/06, BRT = UTC−3), de `eventos_campanha`/`fila_envios`:**
+
 - 08:00:21 — campanha rodou; **Chip 2 (id 11) já estava caído** (`chip_status`), não enviou hoje (último
   envio dele foi 26/06).
 - 08:00:51 — **Chip 1 (id 4)** enviou **1 mensagem real** (devedor 57), sem erro.
@@ -1336,41 +1380,39 @@ a consequência (a sessão WhatsApp Web da Z-API cai quando o WhatsApp restringe
 **só 3 envios reais em 3 dias**. `mensagens`: **161 no total, todas de saída, 0 de entrada** (ninguém
 respondeu / nada foi entregue). `conversas`: 81 (78 teste + 3 reais).
 
-**Causas (ordem de peso):** (1) chips **novos e sem aquecimento** (criados 21/06 e 24/06, `maturidade=
-novo`) iniciando conversa com estranhos = perfil nº 1 de ban; (2) **Z-API = protocolo WhatsApp Web não-
-oficial** → flag agressivo p/ número novo em automação; (3) **2 chips no mesmo aparelho/IP/conta Z-API**
+**Causas (ordem de peso):** (1) chips **novos e sem aquecimento** (criados 21/06 e 24/06, `maturidade= novo`) iniciando conversa com estranhos = perfil nº 1 de ban; (2) **conector legado = protocolo WhatsApp Web não-
+oficial** → flag agressivo p/ número novo em automação; (3) **2 chips no mesmo aparelho/IP/conta do conector legado**
 = fingerprint correlacionado (derruba um e o "irmão" — exatamente o observado); (4) sondagem de muitos
 números desconhecidos (`on_whatsapp`); (5) dívidas de ~15 anos = números reciclados → bloqueio/denúncia
 do destinatário. **Gatilho de contexto:** a campanha foi **RELIGADA** (`campanha_ativa=true` desde
 27/06, `modo_simulacao=false`) depois do incidente da §30 que a havia pausado.
 
-**O "não mandou nenhuma msg no celular" — explicado (é a prova do bloqueio):** `fila_envios.status=
-'enviado'` significa que a **Z-API aceitou** o pedido, **não** que o WhatsApp entregou. Numa conta nova
+**O "não mandou nenhuma msg no celular" — explicado (é a prova do bloqueio):** `fila_envios.status= 'enviado'` significa que a **conector legado aceitou** o pedido, **não** que o WhatsApp entregou. Numa conta nova
 já restrita, o WhatsApp aceita-e-descarta silenciosamente (sem entrega, sem tique) → a conversa nunca
 materializa → nada aparece no app. A própria tela confirma: bloqueio de **iniciar conversas novas** (=
 exatamente o cold outreach).
 
 **Recomendações (não-código):** pausar a campanha; **não reconectar p/ disparar** (reincidência → ban
 permanente); aquecer de verdade antes (uso humano por dias, foto/nome, rampa lenta, **1 chip por
-aparelho/IP**); resolver a entrada (abaixo); p/ escala real ir p/ **WhatsApp Cloud API oficial** (Z-API
+aparelho/IP**); resolver a entrada (abaixo); p/ escala real ir p/ **WhatsApp Cloud API oficial** (conector legado
 com chip cru não sobrevive a cobrança fria).
 
-**Fix do item "resolver a entrada" (webhook Z-API → Chatwoot) — APLICADO:**
+**Fix do item "resolver a entrada" (webhook conector legado → Chatwoot) — APLICADO:**
+
 - **Gap encontrado:** a rota `api/chips/[id]/chatwoot` ("Revincular Chatwoot") só consertava a **SAÍDA**
   (`vincularChatwootInbox` + `sincronizarProviderConfig`) e **nunca** chamava `garantirWebhookEntrada` —
-  o botão de recuperação documentado **não setava o webhook "ao receber" da Z-API**. Só
+  o botão de recuperação documentado **não setava o webhook "ao receber" do conector legado**. Só
   `finalizarConexaoChip` (no QR) e "Enviar teste" setavam. Se nenhum pegasse, a entrada ficava órfã →
   `bot-turno` nunca era invocada (explica as 0 de 161 de entrada).
 - **Fix de código (commit `88da551`, na `main` → deploy Vercel):** a rota passou a chamar
   `garantirWebhookEntrada` (entrada + saída de uma vez) e retorna `webhook_entrada_ok`/
   `webhook_entrada_url`/`aviso_entrada`. `tsc --noEmit` limpo.
-- **Fix ao vivo (idempotente, não dispara envio):** webhook de entrada reaplicado na Z-API dos 2 chips
+- **Fix ao vivo (idempotente, não dispara envio):** webhook de entrada reaplicado na conector legado dos 2 chips
   (`PUT update-every-webhooks` → `200 {"value":true}`): chip 4 → `…/webhooks/whatsapp/+556282624555`
   (inbox 4); chip 11 → `…/webhooks/whatsapp/+556282624557` (inbox 5).
 - **Cadeia de entrada verificada:** `phone_number` do inbox = número do chip nos dois (necessário pro
-  fork rotear); **Chatwoot→n8n já OK** (webhook id 5, nível conta, `message_created` → `…/webhook/savan-
-  bot`); n8n W02 → `bot-turno` ACTIVE. A causa da entrada `@lid` segue tratada no `bot-turno` v9+ (ver
-  memória `savan-teste-webhook-zapi-entrada`).
+  fork rotear); **Chatwoot→n8n já OK** (webhook id 5, nível conta, `message_created` → `…/webhook/savan- bot`); n8n W02 → `bot-turno` ACTIVE. A causa da entrada `@lid` segue tratada no `bot-turno` v9+ (ver
+  memória `savan-teste-webhook-CONECTOR_LEGADO-entrada`).
 - **Ressalva:** não dá p/ testar ponta a ponta enquanto os chips estão banidos (nada é entregue); a
   cadeia fica pronta p/ quando um chip saudável conectar e alguém responder.
 
@@ -1383,7 +1425,7 @@ nada dispara com os chips caídos, mas reconectar volta a disparar real (pendên
 
 Pedido do dono (após o ban da §31): conectar **número oficial da Meta (WhatsApp Cloud API)** pelo
 próprio front, ver o **índice de qualidade do número** ("perto de banir?"), **gerir/enviar templates** e
-ter **vários números** + **calculadora de custos**. Decisões: conector **adicional por chip** (Z-API e
+ter **vários números** + **calculadora de custos**. Decisões: conector **adicional por chip** (conector legado e
 Meta coexistem); onboarding por **colar credenciais** (phone_number_id + WABA + token permanente de System
 User — sem Embedded Signup/App Review); custos = **calculadora viva no painel**.
 
@@ -1399,7 +1441,8 @@ webhook id 5→W02→`bot-turno`). O SAVAN fala **direto com a Graph API** só p
 (mensagens); qualidade/templates o SAVAN obtém por **polling** (chips-monitor 15 min + tela de templates).
 
 **Banco — migration `025_meta_cloud_api.sql` (aplicada via MCP, verificada):**
-- `chips.conector` (`zapi`|`meta_cloud`, default `zapi`, check) — os 3 chips atuais seguem `zapi`.
+
+- `chips.conector` (`CONECTOR_LEGADO`|`meta_cloud`, default `CONECTOR_LEGADO`, check) — os 3 chips atuais seguem `CONECTOR_LEGADO`.
 - **`chips_credenciais_meta`** (`phone_number_id`, `waba_id`, `access_token`, `app_secret?`,
   `webhook_verify_token?`): RLS on, **sem policy** + `revoke all from authenticated, anon` (só
   service_role; `has_table_privilege('authenticated',…,SELECT)=false` confirmado).
@@ -1408,30 +1451,32 @@ webhook id 5→W02→`bot-turno`). O SAVAN fala **direto com a Graph API** só p
 - `chips.saude` (jsonb) passa a guardar p/ Meta `{quality_rating, messaging_limit_tier, number_status, name_status, msgs_hoje, atualizado_em}`.
 
 **Front (`dashboard/`, build + tsc OK):**
+
 - `lib/meta.ts` (Graph API: `verificarNumero`, `subscribarWaba`, `listar/criar/excluirTemplate`,
   `tetoDoTier`); `lib/meta/precos.ts` (tarifas BR de referência **datadas+editáveis**, padrão do §23).
 - `lib/chatwoot.ts` `criarInboxMeta` (provider `whatsapp_cloud`; número real, **sem placeholder/QR**;
   devolve callback URL + verify token p/ colar na Meta).
 - `api/chips` (POST) e `[id]` (GET/PATCH) aceitam `conector` + creds Meta (mascaradas no GET);
   `api/chips/[id]/qualidade` (refresh sob demanda); `api/meta/templates` (GET/POST/DELETE por escopo §22).
-- `components/ConectorChipField.tsx` (seletor Z-API×Meta) no cadastro; `chips/novo/flow.tsx` ganha branch
+- `components/ConectorChipField.tsx` (seletor conector legado×Meta) no cadastro; `chips/novo/flow.tsx` ganha branch
   Meta (cola creds → **conecta sem QR** → tela com número/qualidade/Chatwoot/webhook/lembrete de template);
   `chips/chip-card.tsx` ganha **selo "Meta oficial" + semáforo de qualidade + tier + usado/teto + "Atualizar
   saúde"** e edição das creds Meta.
 - Página **Templates Meta** (`(dash)/templates-meta`, item na Sidebar): criar/submeter template à Meta,
   listar com **status de aprovação + motivo de reprovação + quality score**, excluir.
 - **Calculadora de custos** (`components/CalculadoraCusto.tsx` + `(dash)/chips/custos`, botão no header de
-  Chips): Z-API+Salvy (flat×nº) × Meta (por mensagem×volume) em R$/mês + ponto de equilíbrio.
+  Chips): conector legado+Salvy (flat×nº) × Meta (por mensagem×volume) em R$/mês + ponto de equilíbrio.
 
 **Edge Functions:**
+
 - **`chips-monitor` (deployada v5, ACTIVE):** chip `meta_cloud` → lê qualidade/limite/status pela Graph,
   grava `saude`; número restrito (status≠CONNECTED) → desconectado + evento + failover; RED → evento
-  `chip_qualidade` (1×/dia). Z-API intacto. **É o monitoramento "perto de banir" ao vivo.**
+  `chip_qualidade` (1×/dia). conector legado intacto. **É o monitoramento "perto de banir" ao vivo.**
 - **`campanha-lote` (repo atualizado; deploy no próximo push):** gate p/ chip Meta — sem template de
   abordagem **aprovado e mapeado** (`meta_abordagem_template`), pula (não manda texto livre que a Meta
-  recusaria). **A versão deployada já pula chip Meta com segurança** (sem creds Z-API → `chip_sem_status`),
+  recusaria). **A versão deployada já pula chip Meta com segurança** (sem creds conector legado → `chip_sem_status`),
   então não redeployei o disparador crítico só p/ melhorar o motivo do skip.
-- **`bot-turno`:** o envio direto @lid é **só Z-API** (Cloud API não tem @lid e não tem linha em
+- **`bot-turno`:** o envio direto @lid é **só conector legado** (Cloud API não tem @lid e não tem linha em
   `chips_credenciais` → no-opa e cai no Chatwoot, texto livre vale na janela de 24h). Mudança só de
   comentário — sem redeploy.
 
@@ -1461,6 +1506,7 @@ sai porque nenhum chip está `ativo`/`aquecendo`, mas **no instante em que um ch
 para valer**. Decisão do dono.
 
 **Migrations aplicadas (via Management API com o token pessoal — sem MCP, a pedido do dono):**
+
 - **`026_ritmo_seguro.sql`** — `chips.limite_hora_override`, `chips.abordagem_travada_ate`, tabela
   **`chip_metricas_horarias`** (chip × dia × hora: msgs e respostas), `fn_inc_chip_metrica_hora`,
   **`fn_limite_chip_hora`** (override → curva por maturidade → teto do dia diluído pelas horas da
@@ -1475,6 +1521,7 @@ para valer**. Decisão do dono.
 `create or replace` nelas — as funções novas são adicionais (`fn_inc_chip_metrica_hora`).
 
 **Edge Functions (deployadas):**
+
 - **`campanha-lote` v10** — gate `pulados.teto_hora`; o lote passa a ser limitado também pelo restante
   da hora; **piso do `delay_proximo` derivado do ritmo** (`3600/limite_hora`), com o sorteio da §28 por
   cima; e a janela agora entende **faixas por dia**.
@@ -1487,6 +1534,7 @@ para valer**. Decisão do dono.
   (`chip_metricas_diarias` + `chip_metricas_horarias`), que é o que alimenta o heatmap.
 
 **Front (`dashboard/`, build OK):**
+
 - `lib/ritmo.ts` — `avaliarRitmo()` (4 veredictos: volume por hora alto, intervalo curto, chip novo com
   volume alto, configuração segura) + `ritmoPorIntervalo`/`minutosAteEsgotar`.
 - **Campanha**: veredicto de segurança abaixo do intervalo, com o ritmo estimado por hora; modo
@@ -1498,8 +1546,7 @@ para valer**. Decisão do dono.
 - **Base de conhecimento** (`/conhecimento` + `api/conhecimento`, item na Sidebar): CRUD com
   aprovação; **editar o texto derruba a aprovação** e o bot para de usar até nova revisão.
 
-**Formato da janela (retrocompatível):** `janela_envio.faixas_por_dia = {"1":[["08:00","12:00"],
-["14:00","18:00"]], …}`. Sem esse campo vale o formato antigo (`dias` + `inicio`/`fim`) — **nenhuma
+**Formato da janela (retrocompatível):** `janela_envio.faixas_por_dia = {"1":[["08:00","12:00"], ["14:00","18:00"]], …}`. Sem esse campo vale o formato antigo (`dias` + `inicio`/`fim`) — **nenhuma
 config existente precisou migrar**. Os dois formatos não coexistem: salvar em "horário único" remove
 o `faixas_por_dia`. `feriados_extra` e o calendário clicável da §27 seguem como estavam.
 
@@ -1557,6 +1604,7 @@ arrastáveis, arestas com rótulo, minimapa e barra flutuante. Screenshot da ref
 `/appjs/assistant/edit/:id?area=workflow`, sub-aba "Fluxo").
 
 Refeito com **`@xyflow/react` (React Flow)** — o equivalente React do vue-flow que eles usam:
+
 - `carteiras/[id]/roteiro.tsx` — canvas com nó customizado por etapa (ícone por tipo: início/meio/fim,
   prévia da instrução, contador de caminhos), handles para **ligar arrastando** (cria o caminho na
   etapa de origem), **painel lateral** para editar a etapa selecionada, barra flutuante
@@ -1593,12 +1641,12 @@ menu (5 áreas → 4) e o **fluxo virou a linha do tempo inteira**, não só a c
 
 `carteiras.roteiro.etapas[]` ganhou o campo **`tipo`** (ausente = `conversa`, então nada antigo quebra):
 
-| `tipo` | quem executa | o que carrega |
-|---|---|---|
-| `disparo` | `campanha-lote` | `textos[]` — a 1ª mensagem, texto pronto, variação sorteada por envio |
-| `followup` | `campanha-followup` | `textos[]` + `espera_horas` — reenvios, **na ordem** em que aparecem |
-| `conversa` | `bot-turno` | `instrucao` + `casos[]` — as etapas guiadas por IA (formato de sempre) |
-| `pos_pagamento` | `webhook-asaas` | `textos[]` — confirmação e termo de quitação, na ordem |
+| `tipo`          | quem executa          | o que carrega                                                                   |
+| ----------------- | --------------------- | ------------------------------------------------------------------------------- |
+| `disparo`       | `campanha-lote`     | `textos[]` — a 1ª mensagem, texto pronto, variação sorteada por envio     |
+| `followup`      | `campanha-followup` | `textos[]` + `espera_horas` — reenvios, **na ordem** em que aparecem |
+| `conversa`      | `bot-turno`         | `instrucao` + `casos[]` — as etapas guiadas por IA (formato de sempre)     |
+| `pos_pagamento` | `webhook-asaas`     | `textos[]` — confirmação e termo de quitação, na ordem                   |
 
 **Por que o disparo continua texto fixo e não IA:** o contato frio é onde o WhatsApp julga se você é
 robô (§28/§31) e onde o enquadramento jurídico é mais sensível (§1). Texto previsível com spintax
@@ -1614,13 +1662,13 @@ verdade no bloco de disparo, porque isso o operador precisa escolher.
 
 ### 35.2 — Onde cada coisa foi parar
 
-| Antes | Agora | Por quê |
-|---|---|---|
-| Robô → Mensagens (modelos) | blocos do fluxo de cada carteira | é a mesma decisão da conversa, no mesmo desenho |
-| Robô → Comportamento (persona/guardrails/descontos) | card recolhível **"Ajustes do robô nesta carteira"**, no Fluxo | cada credor negocia diferente; global não servia |
-| Robô → Comportamento (modelo de IA + nome do bot) | Ajustes → Integrações | é contrato com fornecedor (custa por token), não "como ele fala" |
-| Robô → Mensagens (templates da Meta) | Ajustes → Integrações | aprovação é por conta/número Meta, não por carteira |
-| Robô → Conhecimento | aba **Conhecimento** dentro da carteira | a dúvida que aparece é sempre da carteira |
+| Antes                                                 | Agora                                                           | Por quê                                                           |
+| ----------------------------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------ |
+| Robô → Mensagens (modelos)                          | blocos do fluxo de cada carteira                                | é a mesma decisão da conversa, no mesmo desenho                  |
+| Robô → Comportamento (persona/guardrails/descontos) | card recolhível**"Ajustes do robô nesta carteira"**, no Fluxo | cada credor negocia diferente; global não servia                  |
+| Robô → Comportamento (modelo de IA + nome do bot)   | Ajustes → Integrações                                        | é contrato com fornecedor (custa por token), não "como ele fala" |
+| Robô → Mensagens (templates da Meta)                | Ajustes → Integrações                                        | aprovação é por conta/número Meta, não por carteira           |
+| Robô → Conhecimento                                 | aba**Conhecimento** dentro da carteira                    | a dúvida que aparece é sempre da carteira                        |
 
 Abas da carteira: **Visão geral · Fluxo do robô · Conhecimento · Recebimento**.
 
@@ -1686,6 +1734,7 @@ limpos; `whatsapp_valido/verificado_em` voltaram a `null`; os devedores afetados
 O total histórico `sem_whatsapp` voltou de 42 para 32.
 
 **Correção em produção:**
+
 - `contato-criar`: chips `meta_cloud` não usam `on_whatsapp`; cria/busca contato, garante o vínculo
   `contact_inbox` e usa seu `source_id` real antes de criar conversa. Todas as respostas do Chatwoot
   agora são validadas e falham fechadas, sem converter indisponibilidade em número inválido.
@@ -1748,3 +1797,45 @@ nasce cinco minutos depois e poderia enviar seu primeiro item antes do relógio 
 pausada antes do ciclo seguinte. `chips.proximo_disparo_em` agora reserva atomicamente a cadência do chip
 entre execuções; o Wait continua espaçando itens do mesmo lote. Assim o schedule pode consultar a cada
 cinco minutos sem furar o intervalo sorteado.
+
+---
+
+## 38. Banimento permanente da conta oficial do WhatsApp da MC CRED (17/08/2026)
+
+### Ativos afetados
+
+| Ativo              | Identificador / estado                       |
+| ------------------ | -------------------------------------------- |
+| WABA               | `1367926504833737` — `REJECTED/BLOCKED` |
+| Business Portfolio | `4589133878076007`                         |
+| Phone Number ID    | `1305910209264751`                         |
+| Número            | `+55 62 8257-5799` — `BANNED`           |
+| App ID             | `713560411852518`                          |
+
+### Cronologia e diagnóstico
+
+- Em **17/08/2026**, a WhatsApp Cloud API começou a retornar o erro `131031` (`Business Account locked`).
+- Depois, a Graph API retornou `141014` (`The WABA is banned`).
+- A qualidade do telefone ainda aparecia como `GREEN`, mas isso não anulava os estados bloqueantes da
+  WABA e do número.
+- A revisão solicitada à Meta foi rejeitada; a interface passou a informar bloqueio permanente e não
+  disponibilizou suporte humano depois da revisão.
+- O diagnóstico exibido pela Meta AI apontou `BM_BANNED` / `WABA_BANNED`, com
+  `ban_reason=bm_reactive_scam_model_enforcement_heuristic`. A hipótese apresentada foi a combinação de
+  denúncias/bloqueios de usuários com o modelo das abordagens; não houve indicação humana e conclusiva
+  de uma mensagem específica ou cláusula específica violada.
+
+### Contexto jurídico e provável fator de risco
+
+A MC CRED comprou os créditos por cessão e tornou-se credora. A cobrança pode ser juridicamente legítima,
+mas os devedores se relacionavam originalmente com o cedente. Sem uma notificação prévia e clara da
+cessão, o primeiro contato da MC CRED pode parecer inesperado, ser percebido como fraude e gerar bloqueios
+ou denúncias. A legitimidade civil do crédito, por si só, não garante elegibilidade na política da Meta
+nem reduz automaticamente os sinais comportamentais usados pelos modelos antisspam/antifraude.
+
+### Impacto e preservação
+
+- Havia **438 conversas em andamento** e **3 escaladas**.
+- O histórico continua preservado no Chatwoot e deve permanecer disponível para atendimento e auditoria.
+- O banimento interrompe o canal oficial Meta; ele não autoriza apagar, reatribuir ou recriar
+  silenciosamente a operação.

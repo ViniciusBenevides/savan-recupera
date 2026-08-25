@@ -63,12 +63,18 @@ export function Sidebar({ nome, role }: { nome: string; role: string }) {
 
       <div className="mt-4 rounded-xl border border-line bg-ink-850 p-3">
         <div className="flex items-center gap-2.5">
-          <Link href="/ajustes?aba=conta" title="Minha conta" className="grid h-8 w-8 place-items-center rounded-full bg-emerald/15 font-display text-sm font-700 text-emerald hover:bg-emerald/25">
-            {nome.charAt(0).toUpperCase()}
-          </Link>
-          <Link href="/ajustes?aba=conta" className="min-w-0 flex-1">
-            <div className="truncate text-sm font-medium text-chalk hover:text-emerald">{nome}</div>
-            <div className="text-[11px] capitalize text-mist">{role} · minha conta</div>
+          <Link
+            href="/ajustes?aba=conta"
+            aria-label={`Abrir minha conta: ${nome}`}
+            className="group flex min-w-0 flex-1 items-center gap-2.5 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-emerald/60"
+          >
+            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-emerald/15 font-display text-sm font-700 text-emerald transition-colors group-hover:bg-emerald/25">
+              {nome.charAt(0).toUpperCase()}
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-sm font-medium text-chalk transition-colors group-hover:text-emerald">{nome}</span>
+              <span className="block text-[11px] capitalize text-mist">{role} · minha conta</span>
+            </span>
           </Link>
           <ThemeToggle className="h-8 w-8 rounded-lg border-0" />
           <button onClick={sair} title="Sair" className="rounded-lg p-2 text-mist hover:bg-ink-700 hover:text-rose">

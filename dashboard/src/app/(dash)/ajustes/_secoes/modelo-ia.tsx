@@ -19,6 +19,33 @@ type Resposta = {
 
 const usd = (n: number | null) => (n === null ? "—" : `$${n.toFixed(2)}`);
 
+function selecionarMelhores(modelos: Modelo[], recomendacoes?: Resposta["recomendacoes"]): Modelo[] {
+  const disponiveis = modelos.filter((modelo) => modelo.disponivel);
+  const porId = new Map(disponiveis.map((modelo) => [modelo.id, modelo]));
+  const selecionados: Modelo[] = [];
+
+  // Os dois destaques têm lugar garantido; as vagas restantes ficam com os modelos
+  // mais adequados para cobrança, usando inteligência e menor preço como desempate.
+  for (const id of [recomendacoes?.cobranca, recomendacoes?.custo_beneficio]) {
+    const modelo = id ? porId.get(id) : undefined;
+    if (modelo && !selecionados.some((item) => item.id === modelo.id)) selecionados.push(modelo);
+  }
+
+  const ranking = [...disponiveis].sort((a, b) =>
+    (b.cobranca ?? -1) - (a.cobranca ?? -1)
+    || (b.inteligencia ?? -1) - (a.inteligencia ?? -1)
+    || ((a.entrada ?? Infinity) + (a.saida ?? Infinity))
+      - ((b.entrada ?? Infinity) + (b.saida ?? Infinity))
+  );
+
+  for (const modelo of ranking) {
+    if (selecionados.length === 3) break;
+    if (!selecionados.some((item) => item.id === modelo.id)) selecionados.push(modelo);
+  }
+
+  return selecionados;
+}
+
 // Seletor do modelo de IA do robô. Busca os modelos que a conta da OpenAI acessa e
 // sugere o melhor custo-benefício e o melhor para o cenário de cobrança. Salva em `ia.modelo`.
 export function ModeloIA({ iaAtual }: { iaAtual: { nome_bot?: string; modelo?: string } }) {
@@ -57,6 +84,9 @@ export function ModeloIA({ iaAtual }: { iaAtual: { nome_bot?: string; modelo?: s
   }
 
   const rec = dados?.recomendacoes;
+  const modelosExibidos = selecionarMelhores(dados?.modelos ?? [], rec);
+  const modeloAtual = iaAtual.modelo ?? "gpt-4.1-mini";
+  const atualForaDoTrio = Boolean(dados && !modelosExibidos.some((modelo) => modelo.id === modeloAtual));
   const mudou = sel !== (iaAtual.modelo ?? "gpt-4.1-mini") || nomeBot !== (iaAtual.nome_bot ?? "Ana");
 
   return (
@@ -67,8 +97,8 @@ export function ModeloIA({ iaAtual }: { iaAtual: { nome_bot?: string; modelo?: s
             <Bot className="h-4 w-4 text-violet" /> Robô
           </h3>
           <p className="mt-1 text-xs text-mist">
-            Nome do bot e qual modelo da OpenAI ele usa para negociar. O sistema lista os modelos
-            que a sua chave acessa e sugere os melhores para cobrança. Modelo atual:{" "}
+            Nome do bot e qual modelo da OpenAI ele usa para negociar. O sistema mostra as três
+            melhores opções que a sua chave acessa. Modelo atual:{" "}
             <span className="font-mono text-chalk">{iaAtual.modelo ?? "gpt-4.1-mini"}</span>.
           </p>
         </div>
@@ -98,6 +128,15 @@ export function ModeloIA({ iaAtual }: { iaAtual: { nome_bot?: string; modelo?: s
       {erro && (
         <div className="rounded-xl border border-rose/30 bg-rose/10 px-3 py-2 text-xs text-rose">{erro}</div>
       )}
+      {atualForaDoTrio && (
+        <div className="flex items-start gap-2 rounded-xl border border-violet/25 bg-violet/10 px-3 py-2 text-xs text-mist">
+          <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-violet" />
+          <span>
+            O modelo atual não está entre as três recomendações. Escolha uma opção abaixo para substituí-lo
+            ou mantenha a configuração como está.
+          </span>
+        </div>
+      )}
 
       {carregando && !dados ? (
         <div className="flex items-center gap-2 py-6 text-sm text-mist">
@@ -105,23 +144,20 @@ export function ModeloIA({ iaAtual }: { iaAtual: { nome_bot?: string; modelo?: s
         </div>
       ) : (
         <div className="grid gap-2.5">
-          {dados?.modelos.map((m) => {
+          {modelosExibidos.map((m) => {
             const ativo = sel === m.id;
             const ehCobranca = rec?.cobranca === m.id;
             const ehCB = rec?.custo_beneficio === m.id;
-            const desabilitado = !m.disponivel;
             return (
               <button
                 type="button"
                 key={m.id}
-                disabled={desabilitado}
+                aria-pressed={ativo}
                 onClick={() => setSel(m.id)}
                 className={`rounded-xl border p-3 text-left transition-colors ${
                   ativo
                     ? "border-emerald/50 bg-emerald/10"
-                    : desabilitado
-                      ? "cursor-not-allowed border-line bg-ink-850 opacity-50"
-                      : "border-line bg-ink-850 hover:border-mist/40"
+                    : "border-line bg-ink-850 hover:border-mist/40"
                 }`}
               >
                 <div className="flex flex-wrap items-center gap-2">
@@ -129,7 +165,6 @@ export function ModeloIA({ iaAtual }: { iaAtual: { nome_bot?: string; modelo?: s
                   {ehCobranca && <Badge tone="green"><Scale className="h-3 w-3" /> Melhor p/ cobrança</Badge>}
                   {ehCB && <Badge tone="amber"><Coins className="h-3 w-3" /> Custo-benefício</Badge>}
                   {!m.catalogado && <Badge tone="neutral">Sem dados de preço</Badge>}
-                  {!m.disponivel && <Badge tone="rose">Sem acesso na chave</Badge>}
                   {ativo && <Badge tone="violet"><CheckCircle2 className="h-3 w-3" /> Selecionado</Badge>}
                 </div>
                 <p className="mt-1.5 text-xs text-mist">{m.descricao}</p>

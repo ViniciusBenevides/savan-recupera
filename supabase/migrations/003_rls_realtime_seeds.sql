@@ -4,7 +4,6 @@
 alter table devedores enable row level security;
 alter table telefones_devedor enable row level security;
 alter table chips enable row level security;
-alter table chips_credenciais enable row level security;      -- SEM policy: só service_role
 alter table chip_metricas_diarias enable row level security;
 alter table templates_mensagem enable row level security;
 alter table fila_envios enable row level security;

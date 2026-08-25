@@ -33,7 +33,8 @@ no code required.
 
 **Core architectural decision:** the heavy lifting (negotiation, batch selection, Pix,
 webhooks) lives in the **Edge Functions** (curl-testable, always on), not in complex n8n
-nodes. The n8n workflows are thin: they only orchestrate timing and I/O with Chatwoot/Z-API.
+nodes. The n8n workflows are thin: they only orchestrate timing and I/O with Chatwoot and
+the official WhatsApp Cloud API.
 
 ---
 

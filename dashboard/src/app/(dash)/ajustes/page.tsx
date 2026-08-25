@@ -14,8 +14,8 @@ import { Ajuda } from "./_secoes/ajuda";
 
 export const dynamic = "force-dynamic";
 
-// Ajustes = "como a máquina roda?". Absorve Campanha (as regras), Chips, Custos,
-// Configurações, Minha conta e Ajuda — seis entradas de menu que só se mexe de vez em quando.
+// Ajustes = "como a máquina roda?". A conta pessoal é acessada pelo perfil da sidebar
+// e não aparece como uma aba ao lado das configurações operacionais.
 export default async function AjustesPage({ searchParams }: {
   searchParams: Promise<{ aba?: string; conta?: string }>;
 }) {
@@ -26,8 +26,8 @@ export default async function AjustesPage({ searchParams }: {
   const podeOperar = ["admin", "cobrador"].includes(sessao.role);
   const ehAdmin = sessao.role === "admin";
 
-  // credor/visualizador só têm conta e ajuda — o resto é infraestrutura de quem opera.
-  const abas : Aba[] = [
+  // credor/visualizador só veem a ajuda — o resto é infraestrutura de quem opera.
+  const abas: Aba[] = [
     ...(podeOperar ? [
       { k: "envio", t: "Envio", icon: "Send" },
       { k: "chips", t: "Chips", icon: "Smartphone" },
@@ -35,10 +35,10 @@ export default async function AjustesPage({ searchParams }: {
       { k: "integracoes", t: "Integrações", icon: "Plug" },
       { k: "equipe", t: "Equipe", icon: "Users" },
     ] satisfies Aba[] : []),
-    { k: "conta", t: "Minha conta", icon: "UserCog" },
     { k: "ajuda", t: "Ajuda", icon: "LifeBuoy" },
   ];
-  const aba = resolverAba(abas, pedida);
+  const abaConta: Aba = { k: "conta", t: "Minha conta", icon: "UserCog" };
+  const aba = resolverAba(pedida === "conta" ? [abaConta, ...abas] : abas, pedida);
 
   const sub: Record<string, string> = {
     envio: "Dias e horários em que o robô pode enviar.",
