@@ -36,6 +36,7 @@ conector MCP e não copie segredos para arquivos auxiliares.
 | `CHATWOOT_*` | Chatwoot | Não há skill específica instalada | [Chatwoot](<Chatwoot — Guia Operacional.md>) |
 | `CNPJBIZ_*` | CNPJ Biz | Não há skill específica instalada | **Não existe guia local atualmente** |
 | `COOLIFY_*` | Coolify | Não há skill específica instalada | **Não existe guia local atualmente** |
+| `EVOLUTION_*` | Evolution API / Baileys (WhatsApp) | Não há skill específica instalada | [Baileys](<Baileys — Guia Operacional.md>) |
 | `HOSTINGER_*` | Hostinger | Não há skill específica instalada | [Hostinger](<Hostinger — Guia Operacional.md>) |
 | `META_*` | Meta / WhatsApp Cloud API | Não há skill específica instalada | [Meta](<Meta — Guia Operacional.md>) |
 | `N8N_*` | n8n | [`n8n-skills` (Codex)](<../.agents/skills/n8n-skills/SKILL.md>) e [`n8n-skills` (Claude)](<../.claude/skills/n8n-skills/SKILL.md>) | [n8n](<n8n — Guia Operacional.md>) |
@@ -70,3 +71,16 @@ Antes de qualquer ação com `META_*`, ler também o §38 de `contexto-projeto.m
 CRED e sua WABA estão permanentemente banidos. Não executar deregistro, reatribuição, recriação de ativos
 ou tentativa de evasão sem uma decisão explícita, documentada e compatível com a orientação formal da
 Meta ou de um BSP oficial.
+
+## Regra adicional para Evolution/Baileys
+
+A sessão de WhatsApp do Baileys **é a credencial** e não tem substituto: não existe token para rotacionar.
+O que autentica cada número é um par de chaves Signal guardado no banco da Evolution, equivalente a uma
+chave SSH privada.
+
+- Nunca exibir, logar, versionar ou copiar o conteúdo do estado de auth (`creds`/`keys`).
+- Nunca desconectar, deslogar ou apagar uma instância sem autorização específica: perder a sessão obriga
+  a um novo registro por QR, e um número que já rodou automação frequentemente não volta a registrar.
+- Enviar mensagem por esse canal atinge uma pessoa real e não tem desfazer — confirmar antes, sempre.
+- Ler integralmente o [guia do Baileys](<Baileys — Guia Operacional.md>), em especial a §8 (sinais de ban)
+  e a §10 (regras de segurança), antes de qualquer operação no canal.
