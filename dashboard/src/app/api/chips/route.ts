@@ -5,6 +5,7 @@ import { criarInboxMeta } from "@/lib/chatwoot";
 import { verificarNumero, subscribarWaba } from "@/lib/meta";
 import { configurarWebhookDoChip } from "@/lib/meta-webhook";
 import { normalizarTelefone } from "@/lib/import/normalizar";
+import { nomeInstanciaEvolution } from "@/lib/conector";
 
 // Cria chip + credenciais + (best-effort) inbox no Chatwoot. Dois caminhos:
 //  - chip de bot: API oficial da Meta (cola phone_number_id + WABA + token permanente);
@@ -40,7 +41,62 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, chip_id: chip.id, escalador: true, chatwoot: null });
   }
 
-  // ── Chip de bot: número oficial na Meta Cloud API ─────────────────────────────────────
+  // ── Chip de bot no Baileys (Evolution API) — o caminho padrão ─────────────────────────
+  // O chip nasce 'cadastrado': quem o conecta de fato é o QR da Evolution, na Fatia 2.
+  // A sessão do WhatsApp NUNCA vem para o nosso banco — ela vive no Postgres da Evolution.
+  const conectorPedido = String(body.conector ?? "baileys").trim().toLowerCase();
+  if (conectorPedido === "baileys") {
+    const n = normalizarTelefone(numero_e164, "movel");
+    if (!n) {
+      return NextResponse.json(
+        { erro: "Informe o número de WhatsApp do chip, com DDD." },
+        { status: 400 },
+      );
+    }
+
+    const novoBaileys: Record<string, unknown> = {
+      nome, status: "cadastrado", cobrador_id: dono, papel: "bot", conector: "baileys",
+      numero_e164: n.e164, tipo: "virtual_api",
+    };
+    if (maturidade === "aquecido" || maturidade === "novo") novoBaileys.maturidade = maturidade;
+    if (limite_dia_override != null && limite_dia_override !== "") {
+      novoBaileys.limite_dia_override = Number(limite_dia_override);
+    }
+    if (limite_hora_override != null && limite_hora_override !== "") {
+      novoBaileys.limite_hora_override = Number(limite_hora_override);
+    }
+
+    const { data: chipB, error: errB } = await admin
+      .from("chips").insert(novoBaileys).select("id").single();
+    if (errB) return NextResponse.json({ erro: errB.message }, { status: 400 });
+
+    // O nome da instância depende do id, então só dá para calcular depois do insert.
+    const instancia = nomeInstanciaEvolution(nome, chipB.id);
+    const { error: errU } = await admin
+      .from("chips").update({ instancia_evolution: instancia }).eq("id", chipB.id);
+    if (errU) return NextResponse.json({ erro: errU.message }, { status: 400 });
+
+    return NextResponse.json({
+      ok: true,
+      chip_id: chipB.id,
+      conector: "baileys",
+      instancia_evolution: instancia,
+      numero: n.e164,
+      // Conectar de verdade (QR + inbox no Chatwoot) é a Fatia 2.
+      conexao_pendente: true,
+    });
+  }
+
+  // ── Chip de bot na Meta Cloud API — canal SUSPENSO desde 17/08/2026 (§38) ─────────────
+  // O caminho continua funcionando para o dia em que houver uma conta oficial de novo, mas
+  // exige `conector: "meta_cloud"` explícito no corpo: ninguém cai aqui por engano.
+  if (conectorPedido !== "meta_cloud") {
+    return NextResponse.json(
+      { erro: `Conector desconhecido: ${conectorPedido}. Use "baileys" ou "meta_cloud".` },
+      { status: 400 },
+    );
+  }
+
   const phoneNumberId = String(body.meta_phone_number_id ?? "").trim();
   const wabaId = String(body.meta_waba_id ?? "").trim();
   const metaToken = String(body.meta_token ?? "").trim();
