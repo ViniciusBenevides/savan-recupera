@@ -1992,3 +1992,56 @@ O `dashboard/.next` corrompe a cada rebuild com `EINVAL readlink` — o projeto 
 pasta sincronizada pelo OneDrive, que mexe nos arquivos durante a compilacao. Limpar `.next` resolve
 sempre, mas vai atrapalhar toda sessao. Ha tambem **1,2 GB em 4 diretorios `.next-stale-*`** de
 agosto, que a memoria do projeto registra como causa de upload gigante na Vercel.
+
+---
+
+## 41. Aplicado em producao (26/08/2026)
+
+O que a §40 descrevia como "pronto e nao aplicado" foi aplicado. Estado real do banco e das funcoes:
+
+| Acao | Estado |
+| --- | --- |
+| **Campanha pausada** (`campanha_ativa=false`) | feito — 2.046 devedores protegidos contra disparo acidental no dia do primeiro QR |
+| Migration `20260825140000_conector_baileys` | aplicada — `chips.conector` aceita `baileys`+`meta_cloud`, `instancia_evolution` criada |
+| Migration `20260825150000_saude_entrega_dossie` | aplicada — `mensagens.status_entrega` e `entregue_em` |
+| Migration `20260825160000_optin_bloqueio_contato` | aplicada — `conversas.opt_in`, `bloqueios_contato`, trigger de opt-out, gate no `fn_selecionar_lote` |
+| Migration `20260825170000_freio_global_e_baldes` | aplicada — `freio_global` (desligado) e `devedores.balde` |
+| Edge Function `enviar-mensagem` | deployada (com os 3 arquivos de `_shared` empacotados) |
+| Edge Function `contato-criar` | deployada — **sem a sondagem `on_whatsapp`** |
+
+### O backfill dos baldes sobre os dados reais
+
+- **121** devedores em `recontato_continuidade` — chegaram a responder alguma coisa
+- **2.512** em `primeira_vez` — nunca responderam; recebem o opt-in como se fosse o primeiro contato
+- **1** em `nunca_mais` — bloqueado permanentemente
+
+### Dois achados que so a aplicacao revelou
+
+**1. A migration 3 falhou na primeira tentativa.** Eu havia escrito `devedores.status`, mas a coluna se
+chama **`status_cobranca`** (tipo `status_devedor`). Erro `42703`; o Postgres reverteu tudo, nada ficou
+meio aplicado. Corrigido e reaplicado. A licao: conferir migration por leitura pega idempotencia e
+dollar-quoting, **nao pega nome de coluna errado** — so aplicar prova.
+
+**2. Dar `source` no `.env` vaza segredo.** O valor de `COOLIFY_API_KEY` contem caractere que o shell
+interpreta; ao carregar o `.env` com `source`, o valor virou comando, o script quebrou e **um pedaco do
+token apareceu na mensagem de erro**. Os scripts novos (`scripts/supabase-sql.sh` e
+`scripts/supabase-deploy.sh`) leem o `.env` como TEXTO, nunca executam, e passam o token por arquivo de
+config com permissao 600 — fora da lista de processos. **O `COOLIFY_API_KEY` deve ser rotacionado.**
+
+### Ferramentas novas
+
+`scripts/supabase-sql.sh <arquivo.sql|--sql "...">` e `scripts/supabase-deploy.sh <funcao> [...]`.
+Existem para que operacao de producao seja uma linha auditavel que pode receber regra de permissao
+especifica, em vez de liberar `curl` para qualquer destino. Regras em `.claude/settings.local.json`
+(gitignorado).
+
+### O que falta
+
+1. **Evolution API no Coolify** (`coolify.virtusdoctor.com` — a URL entrou no `.env` em 26/08), com
+   backup do Postgres dela testado por restauracao real.
+2. **Comprar e registrar os numeros.** Etapa fisica e intransferivel: vincular numero ao WhatsApp exige
+   escanear QR com celular ou digitar o codigo de pareamento no app. Nao ha caminho de API.
+3. **Trocar o elo de envio no n8n W01** para `enviar-mensagem` — so depois de a Evolution estar no ar,
+   senao troca um caminho que funciona por um que aponta para o vazio.
+4. **Escrever o conteudo do fluxo v3**: encaixar o opt-in a frente das 31 etapas e podar o que
+   pressiona. O codigo garante que o portao exista; o texto e decisao do dono.
