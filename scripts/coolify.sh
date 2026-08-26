@@ -156,9 +156,23 @@ elif cmd == 'sincronizar-env':
         sys.stderr.write(f'HTTP {st}: {envs}\n'); sys.exit(1)
 
     mapa = {e.get('key'): (e.get('value') or '') for e in (envs if isinstance(envs, list) else [])}
-    chave = mapa.get('AUTHENTICATION_API_KEY', '')
+
+    def resolver(valor, profundidade=0):
+        """O Coolify guarda `${OUTRA_VAR}` como valor literal — resolve ate o valor real.
+
+        Sem isto, copiavamos a string '${SERVICE_PASSWORD_AUTHENTICATIONAPIKEY}' (40 chars) como se
+        fosse a chave e a Evolution respondia 401. Aconteceu.
+        """
+        if profundidade > 5:
+            return valor
+        m = re.fullmatch(r'\$\{([A-Za-z_][A-Za-z0-9_]*)\}', (valor or '').strip())
+        return resolver(mapa.get(m.group(1), ''), profundidade + 1) if m else valor
+
+    chave = resolver(mapa.get('AUTHENTICATION_API_KEY', ''))
     if not chave:
-        sys.stderr.write('erro: AUTHENTICATION_API_KEY vazia no servico\n'); sys.exit(1)
+        sys.stderr.write('erro: AUTHENTICATION_API_KEY vazia ou nao resolvida\n'); sys.exit(1)
+    if '${' in chave:
+        sys.stderr.write(f'erro: chave nao resolvida (ainda contem interpolacao)\n'); sys.exit(1)
 
     st, svc = call('GET', f'services/{servico}')
     url = ''
