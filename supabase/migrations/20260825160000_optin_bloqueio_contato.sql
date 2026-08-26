@@ -135,8 +135,9 @@ from conversas c
 where c.motivo_encerramento = 'nao_perturbe' and c.devedor_id is not null
 on conflict (devedor_id) where devedor_id is not null do nothing;
 
+-- A coluna é `status_cobranca` (do tipo status_devedor), não `status`.
 insert into bloqueios_contato (devedor_id, motivo, origem)
-select d.id, 'nao_perturbe', 'backfill:status_devedor'
+select d.id, 'nao_perturbe', 'backfill:status_cobranca'
 from devedores d
-where d.status = 'nao_perturbe'
+where d.status_cobranca = 'nao_perturbe'
 on conflict (devedor_id) where devedor_id is not null do nothing;
