@@ -41,7 +41,7 @@ conector MCP e não copie segredos para arquivos auxiliares.
 | `META_*` | Meta / WhatsApp Cloud API | Não há skill específica instalada | [Meta](<Meta — Guia Operacional.md>) |
 | `N8N_*` | n8n | [`n8n-skills` (Codex)](<../.agents/skills/n8n-skills/SKILL.md>) e [`n8n-skills` (Claude)](<../.claude/skills/n8n-skills/SKILL.md>) | [n8n](<n8n — Guia Operacional.md>) |
 | `OPENAI_*` | OpenAI | `openai-docs` no Codex, quando disponível; não há cópia local equivalente para Claude | **Não existe guia local atualmente** |
-| `SALVY_*` | Salvy | Não há skill específica instalada | **Não existe guia local atualmente** |
+| `SALVY_*` | Salvy | Não há skill específica instalada | [Salvy](<Salvy — Guia Operacional.md>) |
 | `SUPABASE_*` | Supabase / Postgres | Ver carregamento obrigatório abaixo | **Não existe guia local atualmente** |
 | `VERCEL_*` | Vercel | [`vercel-cli-with-tokens` (Codex)](<../.agents/skills/vercel-cli-with-tokens/SKILL.md>) e [`vercel-cli-with-tokens` (Claude)](<../.claude/skills/vercel-cli-with-tokens/SKILL.md>) | [Vercel](<Vercel — Guia Operacional.md>) |
 
