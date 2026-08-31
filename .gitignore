@@ -25,6 +25,19 @@ supabase/.temp-legacy/
 # === Tooling local e material de referência (não é o trabalho / bloat) ===
 .claude/
 .agents/
+# ...menos as skills ESCRITAS PARA ESTE PROJETO. Elas carregam regra de operação que já custou
+# caro (o ban da §38, os chips da §31) e precisam existir para quem clonar o repo — não só na
+# máquina de quem escreveu. Skills de terceiros continuam fora: quem as instala é o skills-lock.
+!.claude/
+.claude/*
+!.claude/skills/
+.claude/skills/*
+!.claude/skills/fluxo-do-robo/
+!.agents/
+.agents/*
+!.agents/skills/
+.agents/skills/*
+!.agents/skills/fluxo-do-robo/
 Documentacao/
 referencias/
 conversa_com_claude.md
