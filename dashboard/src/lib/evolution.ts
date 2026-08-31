@@ -24,6 +24,20 @@ async function lerJson(r: Response): Promise<any | null> {
 const semConfig = { ok: false as const, motivo: "sem_config" as const, mensagem: "Evolution não configurada no painel (EVOLUTION_URL/EVOLUTION_API_KEY)." };
 
 /**
+ * Extrai do corpo da Evolution a IMAGEM do QR, e só ela.
+ *
+ * A Evolution devolve dois campos parecidos e bem diferentes: `base64` é a imagem pronta e `code` é
+ * o texto cru do QR — que o navegador não sabe desenhar. Aceitar `code` como se fosse imagem produz
+ * um `<img>` quebrado na tela de conexão, que é justamente a tela em que o dono está de celular na
+ * mão. Sem imagem devolvemos `null` e a tela cai no código de pareamento.
+ */
+function imagemQr(fonte: any): string | null {
+  const b64 = typeof fonte?.base64 === "string" ? fonte.base64.trim() : "";
+  if (!b64) return null;
+  return b64.startsWith("data:") ? b64 : `data:image/png;base64,${b64}`;
+}
+
+/**
  * Cria a instância que representa um chip e devolve o QR para vincular o número.
  *
  * Idempotente na prática: se a instância já existe, a Evolution recusa a criação e nós seguimos
@@ -47,6 +61,10 @@ export async function criarInstancia(opts: { instancia: string; numeroE164?: str
         instanceName: opts.instancia,
         integration: "WHATSAPP-BAILEYS",
         qrcode: true,
+        // Com o número no corpo a Evolution devolve TAMBÉM um código de pareamento, além do QR.
+        // É o plano B de quem não consegue escanear (celular sem câmera livre, tela pequena):
+        // digita-se o código no WhatsApp em vez de apontar para o monitor.
+        ...(opts.numeroE164 ? { number: opts.numeroE164.replace(/\D/g, "") } : {}),
       }),
     });
     const corpo = await lerJson(r);
@@ -60,7 +78,7 @@ export async function criarInstancia(opts: { instancia: string; numeroE164?: str
         return { ok: false, motivo: "falha", mensagem: `Evolution recusou criar a instância (HTTP ${r.status}).` };
       }
     } else {
-      const qr = corpo?.qrcode?.base64 ?? corpo?.qrcode?.code ?? null;
+      const qr = imagemQr(corpo?.qrcode);
       if (qr) {
         return { ok: true, qr, pairing_code: corpo?.qrcode?.pairingCode ?? null, ja_existia: false };
       }
@@ -92,7 +110,7 @@ export async function conectarInstancia(instancia: string): Promise<
     }
     return {
       ok: true,
-      qr: corpo?.base64 ?? corpo?.code ?? null,
+      qr: imagemQr(corpo),
       pairing_code: corpo?.pairingCode ?? null,
     };
   } catch {
@@ -112,7 +130,20 @@ export async function estadoInstancia(instancia: string): Promise<
       headers: { apikey: apiKey },
     });
     const corpo = await lerJson(r);
-    if (r.status === 401) return { ok: true, estado: "close", codigo: 401 };
+    // HTTP 401/403 aqui é a EVOLUTION recusando a NOSSA chave, não o WhatsApp derrubando o número.
+    // Confundir os dois é caro: a chave errada marcaria todo chip como 'banido', que é terminal e
+    // manda comprar outro número. Falha fechada, como em `classificarErroEnvio` (§36). O 401 que
+    // significa sessão revogada vem no CORPO, em `statusCode`, e é lido logo abaixo.
+    if (r.status === 401 || r.status === 403) {
+      return {
+        ok: false, motivo: "sem_config",
+        mensagem: "A Evolution recusou a credencial do painel. Confira EVOLUTION_API_KEY — isto não é queda do número.",
+      };
+    }
+    // 404 = a instância não existe (nunca foi criada, ou foi apagada na Evolution). Não é falha de
+    // comunicação: é um chip que precisa ser provisionado de novo. Quem trata isso é a tela, que
+    // oferece o botão de conectar — devolver erro aqui a deixaria só com um 502 sem saída.
+    if (r.status === 404) return { ok: true, estado: "nao_existe" };
     if (!r.ok) return { ok: false, motivo: "falha", mensagem: `HTTP ${r.status} ao ler o estado.` };
     return {
       ok: true,

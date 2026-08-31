@@ -8,8 +8,10 @@ import { TesteCard } from "../../chips/teste-card";
 import { Plus, Smartphone, Calculator } from "lucide-react";
 
 /**
- * Aba "Chips" — os números de WhatsApp, todos na API oficial da Meta. A calculadora de custo,
- * que era uma página inteira só para ela (/chips/custos), virou um bloco recolhível no fim desta.
+ * Aba "Chips" — os números de WhatsApp. O canal em uso é o comum (Baileys, vinculado por QR na
+ * Evolution); a API oficial da Meta está suspensa desde 17/08/2026 (§38) e sobrevive só nos chips
+ * antigos. A calculadora de custo, que era uma página inteira só para ela (/chips/custos), virou
+ * um bloco recolhível no fim desta.
  */
 export async function Chips({ sessao }: { sessao: Sessao }) {
   const sb = await supabaseServer();
@@ -53,7 +55,7 @@ export async function Chips({ sessao }: { sessao: Sessao }) {
     <>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-mist">
-          Cada chip é um número de WhatsApp conectado pela API oficial da Meta (Cloud API).
+          Cada chip é um número de WhatsApp vinculado por QR, como no WhatsApp Web.
         </p>
         <Link href="/chips/novo"><Button><Plus className="h-4 w-4" /> Adicionar chip</Button></Link>
       </div>
@@ -66,8 +68,8 @@ export async function Chips({ sessao }: { sessao: Sessao }) {
           <div>
             <h3 className="font-display text-lg font-600 text-chalk">Nenhum chip cadastrado</h3>
             <p className="mt-1 max-w-sm text-sm text-mist">
-              Adicione o número no seu app do Meta Business e cadastre aqui colando o ID do número,
-              o ID da WABA e o token permanente. O número valida na hora e já fica pronto para ativar.
+              Cadastre o número aqui e leia o QR com o celular dele — como conectar o WhatsApp Web.
+              Depois de conectado, é só ativar.
             </p>
           </div>
           <Link href="/chips/novo"><Button><Plus className="h-4 w-4" /> Adicionar primeiro chip</Button></Link>

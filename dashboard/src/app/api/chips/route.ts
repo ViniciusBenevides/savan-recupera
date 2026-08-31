@@ -45,6 +45,17 @@ export async function POST(req: Request) {
   // O chip nasce 'cadastrado': quem o conecta de fato é o QR da Evolution, na Fatia 2.
   // A sessão do WhatsApp NUNCA vem para o nosso banco — ela vive no Postgres da Evolution.
   const conectorPedido = String(body.conector ?? "baileys").trim().toLowerCase();
+
+  // Guarda contra cliente desatualizado. A tela antiga mandava as credenciais da Meta sem dizer o
+  // conector; caía no padrão (baileys) e morria pedindo um número que aquele formulário nem tinha.
+  // O erro mentia sobre a causa — e ninguém conseguia cadastrar chip nenhum, de canal nenhum.
+  if (!body.conector && (body.meta_phone_number_id || body.meta_waba_id || body.meta_token)) {
+    return NextResponse.json(
+      { erro: 'Para cadastrar um número na Meta, mande conector: "meta_cloud" — o canal oficial está suspenso desde 17/08/2026 e ninguém cai nele por omissão.' },
+      { status: 400 },
+    );
+  }
+
   if (conectorPedido === "baileys") {
     const n = normalizarTelefone(numero_e164, "movel");
     if (!n) {

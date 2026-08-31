@@ -14,7 +14,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
   const admin = supabaseAdmin();
   const [{ data: chip }, { data: credMeta }] = await Promise.all([
-    admin.from("chips").select("nome, maturidade, aquecimento_perfil, limite_dia_override, limite_hora_override, papel, agente_nome, tipo, numero_e164, chatwoot_inbox_id, saude").eq("id", Number(id)).maybeSingle(),
+    admin.from("chips").select("nome, maturidade, aquecimento_perfil, limite_dia_override, limite_hora_override, papel, agente_nome, tipo, numero_e164, chatwoot_inbox_id, saude, conector, instancia_evolution, status").eq("id", Number(id)).maybeSingle(),
     admin.from("chips_credenciais_meta").select("phone_number_id, waba_id, access_token, app_id, app_secret, webhook_callback_url, webhook_configurado_em").eq("chip_id", Number(id)).maybeSingle(),
   ]);
   if (!chip) return NextResponse.json({ erro: "chip_nao_encontrado" }, { status: 404 });
@@ -30,6 +30,11 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     tipo: chip.tipo ?? "virtual_api",
     numero_e164: chip.numero_e164 ?? "",
     saude: chip.saude ?? null,
+    // O conector decide o formulário inteiro: Baileys pede número e QR, Meta pede credenciais.
+    conector: chip.conector ?? "baileys",
+    instancia_evolution: chip.instancia_evolution ?? null,
+    status: chip.status ?? "cadastrado",
+    chatwoot_inbox_id: chip.chatwoot_inbox_id ?? null,
     // escalador "só registrado": papel=equipe, sem credenciais e sem inbox no Chatwoot
     escalador: (chip.papel ?? "bot") === "equipe" && !credMeta && !chip.chatwoot_inbox_id,
     // credenciais Meta (chegam ao navegador só aqui, sob auth — para preencher a edição)

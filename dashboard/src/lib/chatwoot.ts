@@ -116,3 +116,51 @@ export async function deletarInbox(inboxId: number): Promise<boolean> {
     return r.ok;
   } catch { return false; }
 }
+
+/**
+ * Acha, pelo nome, o inbox que a Evolution criou no Chatwoot.
+ *
+ * A Evolution cria o inbox sozinha durante o `POST /chatwoot/set` e **não devolve o id** — procurar
+ * pelo `nameInbox` que mandamos é o único caminho. Esse id não é detalhe: sem ele o chip é mudo.
+ * O `campanha-lote` monta o item da fila com `inbox_id` nulo, o `contato-criar` recusa com
+ * `inbox_nao_vinculada_a_chip` e o `bot-turno` não consegue voltar do inbox para o chip quando a
+ * resposta chega — ou seja, o número conecta e mesmo assim ninguém fala com ninguém.
+ */
+export async function buscarInboxPorNome(nome: string): Promise<number | null> {
+  const { url, token, accountId } = cfgCw();
+  if (!url || !token) return null;
+  const alvo = nome.trim();
+  if (!alvo) return null;
+  try {
+    const r = await fetch(`${url}/api/v1/accounts/${accountId}/inboxes`, {
+      headers: { api_access_token: token }, cache: "no-store",
+    });
+    if (!r.ok) return null;
+    const corpo = await r.json().catch(() => null);
+    const lista: any[] = Array.isArray(corpo?.payload) ? corpo.payload : Array.isArray(corpo) ? corpo : [];
+    const inbox = lista.find((i) => String(i?.name ?? "").trim() === alvo);
+    return typeof inbox?.id === "number" ? inbox.id : null;
+  } catch { return null; }
+}
+
+/**
+ * Nome atual de um inbox, pelo id.
+ *
+ * Serve para reconectar um chip sem trocar de inbox. O `chatwoot/set` da Evolution identifica o
+ * inbox pelo `nameInbox`: se o chip foi renomeado depois de conectado, mandar o nome novo faria a
+ * Evolution criar um inbox SEGUNDO e espelhar as conversas lá, enquanto o nosso banco continua
+ * apontando para o primeiro — o bot ficaria surdo sem nenhum erro aparecer.
+ */
+export async function nomeDoInbox(inboxId: number): Promise<string | null> {
+  const { url, token, accountId } = cfgCw();
+  if (!url || !token) return null;
+  try {
+    const r = await fetch(`${url}/api/v1/accounts/${accountId}/inboxes/${inboxId}`, {
+      headers: { api_access_token: token }, cache: "no-store",
+    });
+    if (!r.ok) return null;
+    const corpo = await r.json().catch(() => null);
+    const nome = (corpo?.payload ?? corpo)?.name;
+    return typeof nome === "string" && nome.trim() ? nome : null;
+  } catch { return null; }
+}
