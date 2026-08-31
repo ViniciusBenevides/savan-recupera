@@ -19,8 +19,8 @@ export type Veredicto = {
 export type EntradaRitmo = {
   /** teto de mensagens por hora do chip */
   msgsHora: number;
-  /** teto de mensagens por dia do chip */
-  limiteDia: number;
+  /** teto de mensagens por dia do chip. Ausente = o chip usa a curva por idade, sem teto manual */
+  limiteDia?: number | null;
   /** menor intervalo possível entre dois envios, em segundos */
   intervaloMinSegundos?: number;
   /** dias desde a ativação do chip (undefined = desconhecido) */
@@ -57,7 +57,7 @@ export function avaliarRitmo(e: EntradaRitmo): Veredicto {
     };
   }
 
-  if (idadeDias != null && idadeDias < 7 && limiteDia > TETO_DIA_AQUECIMENTO) {
+  if (idadeDias != null && idadeDias < 7 && limiteDia != null && limiteDia > TETO_DIA_AQUECIMENTO) {
     return {
       nivel: "risco",
       titulo: "Chip novo com volume alto",
@@ -75,10 +75,14 @@ export function avaliarRitmo(e: EntradaRitmo): Veredicto {
     };
   }
 
+  // Só cita o teto diário quando ele foi realmente informado. Sem essa guarda, um chip que usa a
+  // curva por idade aparecia como "e 0 por dia", que soa como chip travado — e não é o caso.
   return {
     nivel: "seguro",
     titulo: "Configuração segura",
-    explicacao: `${msgsHora} mensagens por hora e ${limiteDia} por dia é um ritmo conservador, ` +
+    explicacao: (limiteDia != null && limiteDia > 0
+      ? `${msgsHora} mensagens por hora e ${limiteDia} por dia é um ritmo conservador, `
+      : `${msgsHora} mensagens por hora é um ritmo conservador, `) +
       `o que ajuda a preservar a reputação do número.`,
   };
 }

@@ -1,6 +1,6 @@
 "use client";
 import { Label, HelpHint } from "@/components/ui/primitives";
-import { Snowflake, Flame, Info, Gauge, ShieldCheck, ShieldAlert, TriangleAlert } from "lucide-react";
+import { Snowflake, Flame, Gauge, ShieldCheck, ShieldAlert, TriangleAlert } from "lucide-react";
 import { avaliarRitmo, minutosAteEsgotar, formatarDuracao } from "@/lib/ritmo";
 
 export type MaturidadeValor = {
@@ -22,7 +22,9 @@ export function MaturidadeField({ value, onChange }: {
   const aquecido = value.maturidade === "aquecido";
   const sugestaoHora = SUGESTAO_HORA[value.maturidade] ?? 8;
   const horaEfetiva = value.limite_hora_override ?? sugestaoHora;
-  const diaEfetivo = value.limite_dia_override ?? 0;
+  // O teto diário não é mais editável aqui: quem manda é a curva por idade do chip. O valor só
+  // aparece no veredicto quando algum chip antigo ainda carrega um override gravado.
+  const diaEfetivo = value.limite_dia_override;
 
   const veredicto = avaliarRitmo({
     msgsHora: horaEfetiva,
@@ -35,7 +37,7 @@ export function MaturidadeField({ value, onChange }: {
     risco: { cor: "border-rose/30 bg-rose/10 text-rose", Icone: TriangleAlert },
   }[veredicto.nivel];
   const { Icone } = estilo;
-  const esgota = minutosAteEsgotar(diaEfetivo, horaEfetiva);
+  const esgota = minutosAteEsgotar(diaEfetivo ?? 0, horaEfetiva);
 
   return (
     <div>
@@ -74,60 +76,26 @@ export function MaturidadeField({ value, onChange }: {
         </button>
       </div>
 
-      {/* Explicação transparente da estratégia escolhida */}
-      <div className="mt-2 flex gap-2 rounded-lg border border-line bg-ink-850 px-3 py-2.5 text-[11px] leading-relaxed text-mist">
-        <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-blue" />
-        {aquecido ? (
-          <span>
-            <b className="text-chalk">Sugestão do sistema:</b> rampa curta de segurança e{" "}
-            <span className="text-amber">{SUGESTAO_HORA.aquecido} mensagens por hora</span>. Mesmo aquecido, um
-            número novo para o <i>WhatsApp Business</i> ainda pode ser bloqueado se disparar tudo de uma vez.
-          </span>
-        ) : (
-          <span>
-            <b className="text-chalk">Sugestão do sistema:</b> aquecimento gradual e{" "}
-            <span className="text-emerald-soft">{SUGESTAO_HORA.novo} mensagens por hora</span>. É o recomendado
-            para chip recém-comprado. O limite diário padrão aumenta gradualmente conforme a idade do chip.
-          </span>
-        )}
-      </div>
-
-      {/* Ritmo de envio deste chip — por hora e por dia, com projeção e veredicto */}
+      {/* Ritmo de envio deste chip — só o teto por hora, com veredicto */}
       <div className="mt-3 rounded-xl border border-line bg-ink-850 p-3">
         <Label className="text-xs">
           <Gauge className="mr-1 inline h-3.5 w-3.5" /> Ritmo de envio deste chip
           <HelpHint text="Em branco = usa os limites seguros sugeridos pelo sistema para a maturidade e a idade deste chip. Preencher aqui personaliza somente este chip." />
         </Label>
 
-        <div className="mt-2 grid gap-3 sm:grid-cols-2">
-          <div>
-            <span className="mb-1 block text-[11px] text-mist">Mensagens por hora</span>
-            <input
-              type="number"
-              min={1}
-              placeholder={`em branco = ${sugestaoHora}`}
-              value={value.limite_hora_override ?? ""}
-              onChange={(e) => onChange({
-                ...value,
-                limite_hora_override: e.target.value === "" ? null : Number(e.target.value),
-              })}
-              className="h-10 w-full rounded-xl border border-line bg-ink-900 px-3.5 font-mono text-sm text-chalk placeholder:text-mist/50 outline-none focus:border-ink-500"
-            />
-          </div>
-          <div>
-            <span className="mb-1 block text-[11px] text-mist">Mensagens por dia</span>
-            <input
-              type="number"
-              min={1}
-              placeholder="em branco = sugestão do sistema"
-              value={value.limite_dia_override ?? ""}
-              onChange={(e) => onChange({
-                ...value,
-                limite_dia_override: e.target.value === "" ? null : Number(e.target.value),
-              })}
-              className="h-10 w-full rounded-xl border border-line bg-ink-900 px-3.5 font-mono text-sm text-chalk placeholder:text-mist/50 outline-none focus:border-ink-500"
-            />
-          </div>
+        <div className="mt-2">
+          <span className="mb-1 block text-[11px] text-mist">Mensagens por hora</span>
+          <input
+            type="number"
+            min={1}
+            placeholder={`em branco = ${sugestaoHora}`}
+            value={value.limite_hora_override ?? ""}
+            onChange={(e) => onChange({
+              ...value,
+              limite_hora_override: e.target.value === "" ? null : Number(e.target.value),
+            })}
+            className="h-10 w-full rounded-xl border border-line bg-ink-900 px-3.5 font-mono text-sm text-chalk placeholder:text-mist/50 outline-none focus:border-ink-500"
+          />
         </div>
 
         <div className={`mt-3 flex items-start gap-2 rounded-lg border p-2.5 ${estilo.cor}`}>
