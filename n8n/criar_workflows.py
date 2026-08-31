@@ -25,7 +25,11 @@ def env(chave):
 
 
 N8N = env("N8N_URL").rstrip("/")
-SUPA = env("SUPABASE_API_URL").rstrip("/")
+# SUPABASE_API_URL aponta para a API REST e termina em /rest/v1. As Edge Functions ficam em
+# /functions/v1 na RAIZ do projeto: concatenar direto gerava .../rest/v1/functions/v1/..., que dá 404
+# em toda chamada. O W01 no ar tinha a URL certa e o script, a errada — regerar por cima teria
+# quebrado os cinco nós de Edge Function de uma vez, sem erro nenhum aparecer até a campanha rodar.
+SUPA = re.sub(r"/rest/v\d+/?$", "", env("SUPABASE_API_URL").rstrip("/"))
 N8N_KEY = env("N8N_API_KEY")
 SRK = env("SUPABASE_SERVICE_ROLE_KEY")
 HDR = {"X-N8N-API-KEY": N8N_KEY, "Content-Type": "application/json"}
@@ -171,18 +175,34 @@ def w01():
                        "combinator": "and", "conditions": [
             {"leftValue": "={{ $('Loop').item.json.simulacao }}", "rightValue": True,
              "operator": {"type": "boolean", "operation": "true", "singleValue": True}}]}})
-    envia = http_chatwoot("Enviar msg", [2000, 360],
-        f"={env('CHATWOOT_URL').rstrip('/')}/api/v1/accounts/1/conversations/{{{{ $json.conversation_id }}}}/messages",
-        # A 1a mensagem abre a conversa: fora da janela de 24h a Cloud API so aceita modelo
-        # aprovado. O campanha-lote ja manda o descritor pronto em `template`.
-        '={ "content": {{ JSON.stringify($(\'Loop\').item.json.mensagem) }}, "message_type": "outgoing", '
-        '"template_params": {{ JSON.stringify($(\'Loop\').item.json.template) }} }')
-    envio_ok = node("Mensagem aceita?", "n8n-nodes-base.if", 2.2, [2220, 360], {
+    # O caminho de saida depende do conector do chip, e o campanha-lote ja diz qual em `canal`.
+    canal = node("Canal Baileys?", "n8n-nodes-base.if", 2.2, [2000, 360], {
         "conditions": {"options": {"caseSensitive": True, "typeValidation": "loose"},
                        "combinator": "and", "conditions": [
-            {"leftValue": "={{ !!$json.id }}", "rightValue": True,
+            {"leftValue": "={{ $('Loop').item.json.canal }}", "rightValue": "baileys",
+             "operator": {"type": "string", "operation": "equals"}}]}})
+    # BAILEYS (ADR-0002): sai pela Edge Function, NAO pelo Chatwoot. E ela que aplica presenca e
+    # "digitando..." — os sinais comportamentais pelos quais o WhatsApp separa humano de robo. Num
+    # canal nao oficial o juiz e comportamental, entao esse controle nao pode ficar de fora.
+    envia_bai = http_edge("Enviar pelo Baileys", "enviar-mensagem", [2220, 200],
+        '={ "chip_id": {{ $(\'Loop\').item.json.chip_id }}, '
+        '"numero_e164": {{ JSON.stringify($(\'Loop\').item.json.telefone_e164) }}, '
+        '"texto": {{ JSON.stringify($(\'Loop\').item.json.mensagem) }}, '
+        '"simulacao": {{ $(\'Loop\').item.json.simulacao }} }')
+    # META CLOUD (§32): a 1a mensagem abre a conversa, entao esta fora da janela de 24h e a Cloud
+    # API so aceita modelo aprovado. O campanha-lote ja manda o descritor pronto em `template`.
+    envia = http_chatwoot("Enviar msg", [2220, 460],
+        f"={env('CHATWOOT_URL').rstrip('/')}/api/v1/accounts/1/conversations/{{{{ $('Criar contato').item.json.conversation_id }}}}/messages",
+        '={ "content": {{ JSON.stringify($(\'Loop\').item.json.mensagem) }}, "message_type": "outgoing", '
+        '"template_params": {{ JSON.stringify($(\'Loop\').item.json.template) }} }')
+    # Um no de veredicto para os dois caminhos, porque a resposta tem formato diferente em cada um:
+    # o Chatwoot devolve a mensagem criada (tem `id`), a `enviar-mensagem` devolve `ok: true`.
+    envio_ok = node("Mensagem aceita?", "n8n-nodes-base.if", 2.2, [2440, 360], {
+        "conditions": {"options": {"caseSensitive": True, "typeValidation": "loose"},
+                       "combinator": "and", "conditions": [
+            {"leftValue": "={{ !!$json.id || $json.ok === true }}", "rightValue": True,
              "operator": {"type": "boolean", "operation": "true", "singleValue": True}}]}})
-    reg_ok = http_edge("Registrar enviado", "campanha-registrar", [2440, 300],
+    reg_ok = http_edge("Registrar enviado", "campanha-registrar", [2660, 300],
         '={ "fila_id": {{ $(\'Loop\').item.json.fila_id }}, "chip_id": {{ $(\'Loop\').item.json.chip_id }}, '
         '"carteira_id": {{ $(\'Loop\').item.json.carteira_id }}, "devedor_id": {{ $(\'Loop\').item.json.devedor_id }}, '
         '"telefone_id": {{ $(\'Loop\').item.json.telefone_id }}, "mensagem": {{ JSON.stringify($(\'Loop\').item.json.mensagem) }}, '
@@ -197,16 +217,16 @@ def w01():
         '={ "fila_id": {{ $(\'Loop\').item.json.fila_id }}, "devedor_id": {{ $(\'Loop\').item.json.devedor_id }}, '
         '"telefone_id": {{ $(\'Loop\').item.json.telefone_id }}, "status": "falha", '
         '"erro": {{ JSON.stringify($json.erro || "contato_criar_falhou") }} }')
-    reg_falha_envio = http_edge("Registrar falha de envio", "campanha-registrar", [2440, 520],
+    reg_falha_envio = http_edge("Registrar falha de envio", "campanha-registrar", [2660, 520],
         '={ "fila_id": {{ $(\'Loop\').item.json.fila_id }}, "devedor_id": {{ $(\'Loop\').item.json.devedor_id }}, '
         '"telefone_id": {{ $(\'Loop\').item.json.telefone_id }}, "status": "falha", '
-        '"erro": {{ JSON.stringify($json.error || $json.message || "chatwoot_resposta_sem_id") }} }')
+        '"erro": {{ JSON.stringify($json.error || $json.message || $json.resultado || "resposta_sem_id") }} }')
     # espera ALEATORIA ate o proximo envio (anti-ban): le delay_proximo sorteado no campanha-lote
-    espera = node("Aguardar intervalo", "n8n-nodes-base.wait", 1.1, [2660, 300],
+    espera = node("Aguardar intervalo", "n8n-nodes-base.wait", 1.1, [2880, 300],
                   {"resume": "timeInterval", "amount": "={{ $('Loop').item.json.delay_proximo }}", "unit": "seconds"},
                   {"webhookId": "savan-w01-wait"})
 
-    nodes = [trig, lote, split, loop, contato, contato_ok, cond, sim, envia, envio_ok,
+    nodes = [trig, lote, split, loop, contato, contato_ok, cond, sim, canal, envia_bai, envia, envio_ok,
              reg_ok, reg_sem, reg_falha_contato, reg_falha_envio, espera]
     connections = {}
     def add(src, dst, idx=0):
@@ -224,7 +244,10 @@ def w01():
     add("Tem WhatsApp?", "É simulação?", 0)   # true
     add("Tem WhatsApp?", "Registrar sem WA", 1)  # false
     add("É simulação?", "Registrar enviado", 0)  # true -> não envia, só registra
-    add("É simulação?", "Enviar msg", 1)         # false -> envia
+    add("É simulação?", "Canal Baileys?", 1)     # false -> escolhe o caminho de saida
+    add("Canal Baileys?", "Enviar pelo Baileys", 0)  # true  -> Evolution, com ritmo de digitacao
+    add("Canal Baileys?", "Enviar msg", 1)           # false -> Chatwoot com modelo aprovado
+    add("Enviar pelo Baileys", "Mensagem aceita?")
     add("Enviar msg", "Mensagem aceita?")
     add("Mensagem aceita?", "Registrar enviado", 0)
     add("Mensagem aceita?", "Registrar falha de envio", 1)

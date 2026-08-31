@@ -175,6 +175,26 @@ function Canvas({ carteira, padrao, salvar }: {
   const [aviso, setAviso] = React.useState("");
   const [transferencia, setTransferencia] = React.useState<Transferencia | null>(null);
 
+  // Por qual canal a 1ª mensagem desta carteira sai. O bloco de disparo só vale para chip Baileys;
+  // chip Meta manda o modelo aprovado, que vive fora do fluxo. Sem isto na tela, editar o texto e
+  // não ver efeito nenhum é o resultado esperado — e ninguém entende por quê.
+  const [canais, setCanais] = React.useState<{ baileys: number; meta: number } | null>(null);
+  React.useEffect(() => {
+    let vivo = true;
+    fetch(`/api/carteiras/${carteira.id}/chips`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!vivo || !d?.chips) return;
+        const ligados = d.chips.filter((c: any) => c.vinculado);
+        setCanais({
+          baileys: ligados.filter((c: any) => c.conector === "baileys").length,
+          meta: ligados.filter((c: any) => c.conector !== "baileys").length,
+        });
+      })
+      .catch(() => {});
+    return () => { vivo = false; };
+  }, [carteira.id]);
+
   const problemas = React.useMemo(() => diagnosticar(etapas), [etapas]);
   const alertas = React.useMemo(() => avisos(etapas), [etapas]);
   const orfas = React.useMemo(() => inalcancaveis(etapas), [etapas]);
@@ -665,6 +685,7 @@ function Canvas({ carteira, padrao, salvar }: {
           <PainelBloco
             aberta={aberta}
             etapas={etapas}
+            canais={canais}
             mudar={mudarAberta}
             renomear={renomearAberta}
             duplicar={() => duplicarBloco(aberta)}
@@ -793,9 +814,10 @@ function PainelResposta({ origem, caso, etapas, mudar, remover, fechar }: {
   );
 }
 
-function PainelBloco({ aberta, etapas, mudar, renomear, duplicar, remover, selecionarCaso, fechar }: {
+function PainelBloco({ aberta, etapas, canais, mudar, renomear, duplicar, remover, selecionarCaso, fechar }: {
   aberta: EtapaRoteiro;
   etapas: EtapaRoteiro[];
+  canais: { baileys: number; meta: number } | null;
   mudar: (campo: keyof EtapaRoteiro, valor: any) => void;
   renomear: (rotulo: string) => void;
   duplicar: () => void;
@@ -839,6 +861,38 @@ function PainelBloco({ aberta, etapas, mudar, renomear, duplicar, remover, selec
         </div>
       )}
 
+      {/* De onde sai a 1ª mensagem depende do conector do chip — e o bloco de disparo é só metade
+          da história quando a carteira tem chip da Meta. */}
+      {tipo === "disparo" && canais && (
+        canais.baileys === 0 && canais.meta === 0 ? (
+          <div className="flex gap-2 rounded-xl border border-amber/30 bg-amber/10 px-3 py-2.5 text-[11px] leading-relaxed text-amber">
+            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <span>
+              Nenhum chip vinculado a esta carteira — este texto não vai para lugar nenhum. Vincule em{" "}
+              <b>Visão geral → Chips desta carteira</b>.
+            </span>
+          </div>
+        ) : canais.baileys === 0 ? (
+          <div className="flex gap-2 rounded-xl border border-amber/30 bg-amber/10 px-3 py-2.5 text-[11px] leading-relaxed text-amber">
+            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <span>
+              Esta carteira só tem chip da <b>API oficial da Meta</b>, e nele a 1ª mensagem é um{" "}
+              <b>modelo aprovado</b>, não este texto. Edite o modelo em{" "}
+              <a href="/ajustes?aba=modelos" className="underline">Ajustes → Modelos</a>.
+            </span>
+          </div>
+        ) : canais.meta > 0 ? (
+          <div className="flex gap-2 rounded-xl border border-blue/30 bg-blue/10 px-3 py-2.5 text-[11px] leading-relaxed text-blue">
+            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <span>
+              Carteira com os <b>dois canais</b>: este texto sai pelos {canais.baileys} chip(s) de
+              WhatsApp comum, e os {canais.meta} da Meta mandam o modelo aprovado. Mantenha os dois
+              dizendo a mesma coisa.
+            </span>
+          </div>
+        ) : null
+      )}
+
       {mensagem ? (
         <div>
           <Label className="flex items-center gap-1.5 text-xs">
@@ -870,6 +924,45 @@ function PainelBloco({ aberta, etapas, mudar, renomear, duplicar, remover, selec
               + variação
             </button>
           </div>
+
+          {/* Abertura para quem já respondeu antes. Só no disparo: a partir do follow-up a conversa
+              já existe, então não há "primeira mensagem" para escolher. */}
+          {tipo === "disparo" && (
+            <div className="mt-4 border-t border-line pt-3">
+              <Label className="flex items-center gap-1.5 text-xs">
+                Para quem já respondeu antes
+                <HelpHint text="Abertura usada com quem já respondeu alguma mensagem nossa em algum momento (balde 'recontato de continuidade'). Em branco, essas pessoas recebem a mesma abertura de quem nunca ouviu falar da empresa — que soa como robô para quem já conversou." />
+              </Label>
+              <div className="mt-1 flex flex-col gap-2">
+                {(aberta.textos_recontato ?? []).map((t, j) => (
+                  <div key={j} className="rounded-xl border border-line bg-ink-900 p-2">
+                    <div className="mb-1 flex items-center gap-1.5 text-[10px] text-mist">
+                      variação {j + 1}
+                      <button onClick={() => mudar("textos_recontato", (aberta.textos_recontato ?? []).filter((_, m) => m !== j))}
+                              className="ml-auto text-mist hover:text-rose" aria-label="remover variação">
+                        <Trash2 className="h-3 w-3" />
+                      </button>
+                    </div>
+                    <textarea
+                      value={t} rows={4}
+                      onChange={(e) => mudar("textos_recontato", (aberta.textos_recontato ?? []).map((x, m) => (m === j ? e.target.value : x)))}
+                      placeholder="{Oi|Olá}, {{primeiro_nome}}! Aqui é a {{nome_bot}} de novo…"
+                      className="w-full rounded-lg border border-line bg-ink-850 px-2.5 py-2 text-xs text-chalk outline-none placeholder:text-mist focus:border-emerald"
+                    />
+                  </div>
+                ))}
+                <button onClick={() => mudar("textos_recontato", [...(aberta.textos_recontato ?? []), ""])}
+                        className="self-start text-[11px] text-emerald underline-offset-2 hover:underline">
+                  + variação de recontato
+                </button>
+              </div>
+              {(aberta.textos_recontato ?? []).length === 0 && (
+                <p className="mt-1.5 text-[10px] text-mist">
+                  Em branco = quem já respondeu recebe a mesma abertura fria acima.
+                </p>
+              )}
+            </div>
+          )}
         </div>
       ) : (
         <div className="space-y-3">

@@ -20,6 +20,9 @@ export type EtapaRoteiro = {
   objetivo?: string;
   instrucao?: string;        // blocos de conversa
   textos?: string[];         // blocos de mensagem (variações sorteadas)
+  // Só no bloco de disparo: abertura para quem JÁ respondeu alguma vez (balde
+  // `recontato_continuidade`). Vazio = essas pessoas recebem a abertura fria de `textos`.
+  textos_recontato?: string[];
   espera_horas?: number;     // follow-up: tempo desde a última mensagem
   usa_conhecimento?: boolean;
   casos?: CasoRoteiro[];

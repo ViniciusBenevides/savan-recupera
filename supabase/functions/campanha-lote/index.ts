@@ -278,21 +278,27 @@ Deno.serve(async (req) => {
   // §35: a 1ª mensagem é o bloco `tipo: "disparo"` do fluxo da carteira. As variações dentro do
   // bloco são sorteadas a cada envio — é o que substituiu o peso entre vários templates, e continua
   // sendo o mesmo remédio anti-ban: dois devedores não recebem o texto idêntico.
-  const disparoCache = new Map<number, string[]>();
-  async function textoDeDisparo(cartId: number | null): Promise<string | null> {
+  const disparoCache = new Map<number, { padrao: string[]; recontato: string[] }>();
+  async function textoDeDisparo(cartId: number | null, balde: string | null): Promise<string | null> {
     if (!cartId) return null;
     if (!disparoCache.has(cartId)) {
       const { data } = await sb.from("carteiras").select("roteiro").eq("id", cartId).maybeSingle();
       const bloco = (data?.roteiro?.etapas ?? []).find((e: any) => e?.tipo === "disparo");
-      const textos: string[] = (bloco?.textos ?? []).map((t: unknown) => String(t ?? "").trim()).filter(Boolean);
-      disparoCache.set(cartId, textos);
+      const limpar = (v: unknown) =>
+        (Array.isArray(v) ? v : []).map((t) => String(t ?? "").trim()).filter(Boolean);
+      disparoCache.set(cartId, { padrao: limpar(bloco?.textos), recontato: limpar(bloco?.textos_recontato) });
     }
-    const textos = disparoCache.get(cartId)!;
-    return textos.length ? textos[Math.floor(Math.random() * textos.length)] : null;
+    const c = disparoCache.get(cartId)!;
+    // Quem já respondeu alguma vez NÃO é contato frio. Mandar para essas 121 pessoas a mesma
+    // abertura de quem nunca ouviu falar da MC Cred joga fora o único ativo que a conversa tem —
+    // o histórico — e reapresentar-se do zero a quem já conversou soa como robô.
+    // Sem texto de recontato escrito, cai no padrão: é melhor a abertura fria do que nenhuma.
+    const lista = balde === "recontato_continuidade" && c.recontato.length ? c.recontato : c.padrao;
+    return lista.length ? lista[Math.floor(Math.random() * lista.length)] : null;
   }
 
   // chips com o dono (cobrador) p/ resolver a config/template de cada um
-  const { data: chips } = await sb.from("chips").select("id, nome, chatwoot_inbox_id, status, cobrador_id, proximo_disparo_em").in("status", ["ativo", "aquecendo"]);
+  const { data: chips } = await sb.from("chips").select("id, nome, chatwoot_inbox_id, status, cobrador_id, proximo_disparo_em, conector, instancia_evolution").in("status", ["ativo", "aquecendo"]);
   const itens: any[] = [];
   const pulados: Record<string, number> = {}; // motivo -> nº de chips
 
@@ -307,33 +313,48 @@ Deno.serve(async (req) => {
       continue;
     }
 
-    // GATE DO CONECTOR OFICIAL (§32). Todo chip é Meta Cloud API: a 1ª mensagem a um contato novo
-    // NÃO pode ser texto livre — tem que ser um TEMPLATE aprovado pela Meta. Enquanto o envio por
-    // template não existir, nenhum lote sai daqui: é melhor devolver lote vazio com o motivo do que
-    // gerar envio fantasma (marcado como "enviado" sem nada chegar) ou texto livre que a Meta recusa.
-    // A abordagem ABRE a conversa, então está sempre fora da janela de 24h: a Cloud API só aceita
-    // modelo aprovado. Sem template configurado (ou ainda em análise na Meta) o chip é pulado com o
-    // motivo — melhor lote vazio explicado do que envio fantasma marcado como "enviado".
+    // DE ONDE VEM A 1ª MENSAGEM — e isso depende do conector do chip.
+    //
+    // meta_cloud (§32): a abordagem ABRE a conversa, então está sempre fora da janela de 24h, e a
+    // Cloud API só aceita MODELO APROVADO ali. Sem template configurado ou aprovado, o chip é
+    // pulado com o motivo — melhor lote vazio explicado do que envio fantasma marcado como
+    // "enviado", ou texto livre que a Meta recusa.
+    //
+    // baileys: não existe modelo para aprovar, e a 1ª mensagem sai do bloco de disparo do fluxo da
+    // carteira, com as variações sorteadas. O gate acima não se aplica e, aplicado, era fatal: o
+    // chip Baileys nunca tem template, então caía em `meta_template_ausente` toda rodada e o número
+    // conectado ficava parado sem ninguém entender por quê.
+    const ehBaileys = (chip.conector ?? "meta_cloud") === "baileys";
     const tzAbordagem = cfg.janela_envio?.tz ?? "America/Sao_Paulo";
-    const refAtivo = referenciaPorHorario(cfg.meta_abordagem_template, tzAbordagem);
-    const refCandidato = referenciaPorHorario(cfg.meta_abordagem_template_candidato, tzAbordagem);
-    let refTpl = refAtivo;
-    // Rollout sem interrupcao: candidato so substitui o modelo atual quando o cache da Meta
-    // confirmar APPROVED. PENDING/REJECTED/ausente mantem o modelo anterior funcionando.
-    if (String(refCandidato?.name ?? "").trim()) {
-      let qCand = sb.from("meta_templates").select("status")
-        .eq("name", refCandidato.name).eq("language", refCandidato.language ?? "pt_BR")
-        .eq("status", "APPROVED");
-      qCand = chip.cobrador_id ? qCand.eq("cobrador_id", chip.cobrador_id) : qCand.is("cobrador_id", null);
-      const { data: candAprovado } = await qCand.maybeSingle();
-      if (candAprovado) refTpl = refCandidato;
+    let refTpl: any = null;
+
+    if (!ehBaileys) {
+      const refAtivo = referenciaPorHorario(cfg.meta_abordagem_template, tzAbordagem);
+      const refCandidato = referenciaPorHorario(cfg.meta_abordagem_template_candidato, tzAbordagem);
+      refTpl = refAtivo;
+      // Rollout sem interrupcao: candidato so substitui o modelo atual quando o cache da Meta
+      // confirmar APPROVED. PENDING/REJECTED/ausente mantem o modelo anterior funcionando.
+      if (String(refCandidato?.name ?? "").trim()) {
+        let qCand = sb.from("meta_templates").select("status")
+          .eq("name", refCandidato.name).eq("language", refCandidato.language ?? "pt_BR")
+          .eq("status", "APPROVED");
+        qCand = chip.cobrador_id ? qCand.eq("cobrador_id", chip.cobrador_id) : qCand.is("cobrador_id", null);
+        const { data: candAprovado } = await qCand.maybeSingle();
+        if (candAprovado) refTpl = refCandidato;
+      }
+      if (!String(refTpl?.name ?? "").trim()) { pulados.meta_template_ausente = (pulados.meta_template_ausente ?? 0) + 1; continue; }
+      let qAprov = sb.from("meta_templates").select("status")
+        .eq("name", refTpl.name).eq("language", refTpl.language ?? "pt_BR").eq("status", "APPROVED");
+      qAprov = chip.cobrador_id ? qAprov.eq("cobrador_id", chip.cobrador_id) : qAprov.is("cobrador_id", null);
+      const { data: aprov } = await qAprov.maybeSingle();
+      if (!aprov) { pulados.meta_template_nao_aprovado = (pulados.meta_template_nao_aprovado ?? 0) + 1; continue; }
+    } else if (!chip.instancia_evolution) {
+      // Chip Baileys sem instância nunca escaneou o QR. Deixar passar geraria envio para uma
+      // instância inexistente — falha 404 na Evolution, item marcado como falha e o chip levando
+      // a culpa por um problema de cadastro.
+      pulados.baileys_sem_instancia = (pulados.baileys_sem_instancia ?? 0) + 1;
+      continue;
     }
-    if (!String(refTpl?.name ?? "").trim()) { pulados.meta_template_ausente = (pulados.meta_template_ausente ?? 0) + 1; continue; }
-    let qAprov = sb.from("meta_templates").select("status")
-      .eq("name", refTpl.name).eq("language", refTpl.language ?? "pt_BR").eq("status", "APPROVED");
-    qAprov = chip.cobrador_id ? qAprov.eq("cobrador_id", chip.cobrador_id) : qAprov.is("cobrador_id", null);
-    const { data: aprov } = await qAprov.maybeSingle();
-    if (!aprov) { pulados.meta_template_nao_aprovado = (pulados.meta_template_nao_aprovado ?? 0) + 1; continue; }
 
     const simulacao = cfg.modo_simulacao === true || cfg.modo_simulacao === "true";
     const restanteJanela = minutosRestantesJanela(cfg.janela_envio);
@@ -412,7 +433,7 @@ Deno.serve(async (req) => {
     }
 
     for (const [indice, item] of selecionados.entries()) {
-      const { data: dev } = await sb.from("devedores").select("id, nome, processo, saldo, vencimento, chatwoot_contact_id").eq("id", item.devedor_id).single();
+      const { data: dev } = await sb.from("devedores").select("id, nome, processo, saldo, vencimento, chatwoot_contact_id, balde").eq("id", item.devedor_id).single();
       const { data: tel } = await sb.from("telefones_devedor").select("id, telefone_e164").eq("id", item.telefone_id).maybeSingle();
       if (!tel) { await sb.from("fila_envios").update({ status: "sem_whatsapp", erro: "sem_telefone" }).eq("id", item.id); continue; }
 
@@ -425,18 +446,42 @@ Deno.serve(async (req) => {
       // exige modelo aprovado por ela, palavra por palavra. O fluxo volta a mandar assim que a
       // pessoa responde e a janela de 24h abre. `conteudo` = o modelo já renderizado, para que o
       // histórico do painel e do atendente mostre exatamente o que a pessoa recebeu.
-      const tplMeta = await montarTemplate(sb, chip.cobrador_id ?? null, refTpl, {
+      const vars = {
         primeiro_nome: primeiroNomeCap, nome: nomeCompleto, credor: credor ?? "", nome_bot: nomeBot,
         saudacao: saudacaoNaTz(tzMensagem),
-      });
-      if (!tplMeta) {
-        // sumiu do cache ou faltou valor para alguma variável: devolve à fila em vez de virar
-        // texto livre que a Meta recusaria
-        await sb.from("fila_envios").update({ status: "pendente" }).eq("id", item.id);
-        pulados.meta_template_nao_montou = (pulados.meta_template_nao_montou ?? 0) + 1;
-        continue;
+      };
+
+      let tplMeta: TplMeta | null = null;
+      let conteudo: string;
+
+      if (ehBaileys) {
+        // No canal não-oficial a 1ª mensagem É o bloco de disparo do fluxo — com as variações
+        // sorteadas, que são o remédio anti-ban de dois devedores não receberem o texto idêntico.
+        const molde = await textoDeDisparo(item.carteira_id, (dev?.balde as string | null) ?? null);
+        if (!molde) {
+          // Carteira sem texto de disparo. Devolve à fila: o item não tem culpa, e disparar um
+          // texto padrão daqui esconderia o buraco de configuração no lugar de mostrá-lo.
+          await sb.from("fila_envios").update({ status: "pendente" }).eq("id", item.id);
+          pulados.disparo_sem_texto = (pulados.disparo_sem_texto ?? 0) + 1;
+          continue;
+        }
+        conteudo = renderTemplate(molde, vars).trim();
+        if (!conteudo) {
+          await sb.from("fila_envios").update({ status: "pendente" }).eq("id", item.id);
+          pulados.disparo_sem_texto = (pulados.disparo_sem_texto ?? 0) + 1;
+          continue;
+        }
+      } else {
+        tplMeta = await montarTemplate(sb, chip.cobrador_id ?? null, refTpl, vars);
+        if (!tplMeta) {
+          // sumiu do cache ou faltou valor para alguma variável: devolve à fila em vez de virar
+          // texto livre que a Meta recusaria
+          await sb.from("fila_envios").update({ status: "pendente" }).eq("id", item.id);
+          pulados.meta_template_nao_montou = (pulados.meta_template_nao_montou ?? 0) + 1;
+          continue;
+        }
+        conteudo = tplMeta.texto;
       }
-      const conteudo = tplMeta.texto;
 
       const { data: cartFluxo } = item.carteira_id
         ? await sb.from("carteiras").select("fluxo_versao_ativa_id").eq("id", item.carteira_id).maybeSingle()
@@ -444,8 +489,8 @@ Deno.serve(async (req) => {
       await sb.from("fila_envios").update({
         mensagem_renderizada: conteudo,
         fluxo_versao_id: cartFluxo?.fluxo_versao_ativa_id ?? null,
-        meta_template_name: tplMeta.name,
-        meta_template_language: tplMeta.language,
+        meta_template_name: tplMeta?.name ?? null,
+        meta_template_language: tplMeta?.language ?? null,
       }).eq("id", item.id);
 
       // "digitando" curto e proporcional ao texto (parece humano); espera até o próximo envio = sorteio anti-ban
@@ -458,9 +503,14 @@ Deno.serve(async (req) => {
         telefone_id: tel.id, telefone_e164: tel.telefone_e164, contato_existente: dev?.chatwoot_contact_id ?? null,
         mensagem: conteudo, delay_typing: delayTyping, delay_proximo: delayProximo, simulacao,
         fluxo_versao_id: cartFluxo?.fluxo_versao_ativa_id ?? null,
-        meta_template_name: tplMeta.name,
+        // O W01 decide o caminho de saída por aqui: 'baileys' vai pela Edge Function
+        // `enviar-mensagem` (que aplica presença e "digitando…", ADR-0002), 'meta_cloud' vai pelo
+        // Chatwoot com modelo aprovado. Sem este campo o workflow teria que adivinhar pelo chip.
+        canal: ehBaileys ? "baileys" : "meta_cloud",
+        instancia_evolution: ehBaileys ? chip.instancia_evolution : null,
+        meta_template_name: tplMeta?.name ?? null,
         // o W01 repassa isto como `template_params` ao Chatwoot (canal whatsapp_cloud)
-        template: chatwootTemplateBody(tplMeta).template_params,
+        template: tplMeta ? chatwootTemplateBody(tplMeta).template_params : null,
       });
     }
   }
