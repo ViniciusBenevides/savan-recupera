@@ -27,42 +27,17 @@
    ]
   },
   {
-   "id": "followup_1",
-   "tipo": "followup",
-   "objetivo": "Reenvio 1 — 24h sem resposta",
-   "espera_horas": 24,
-   "pos": {
-    "x": -900,
-    "y": 210
-   },
-   "textos": [
-    "{Oi|Olá}, {{primeiro_nome}}, é a {{nome_bot}} da MC Cred de novo.\n\nSó queria saber se posso te explicar aquele assunto. Um “sim” ou “não” já resolve — e se for “não”, eu encerro e não te procuro mais."
-   ]
-  },
-  {
    "id": "followup_2",
    "tipo": "followup",
-   "objetivo": "Reenvio 2 — 72h sem resposta",
+   "objetivo": "Reenvio único — 72h sem resposta",
    "espera_horas": 72,
    "pos": {
     "x": -900,
     "y": 420
    },
    "textos": [
-    "{{primeiro_nome}}, aqui é a {{nome_bot}}, da MC Cred.\n\nNão quero atrapalhar. Se você me autorizar, eu explico o assunto em duas linhas; se preferir que eu pare, me responde “não” que eu tiro seu número da lista."
-   ]
-  },
-  {
-   "id": "followup_3",
-   "tipo": "followup",
-   "objetivo": "Reenvio 3 e último — 168h sem resposta",
-   "espera_horas": 168,
-   "pos": {
-    "x": -900,
-    "y": 630
-   },
-   "textos": [
-    "Esta é a última mensagem, {{primeiro_nome}} — prometo 😊\n\nSe um dia quiser saber do que se tratava, é só chamar neste mesmo número. Encerro por aqui e não te incomodo mais. Obrigada!"
+    "{{primeiro_nome}}, aqui é a {{nome_bot}}, da MC Cred.\n\nEsta é a minha última mensagem, prometo. Se puder, me diz só se eu posso te explicar aquele assunto; se você não responder, eu encerro por aqui e não te procuro mais.",
+    "{Oi|Olá}, {{primeiro_nome}}, é a {{nome_bot}} da MC Cred.\n\nSó voltei uma vez para saber se você me autoriza a explicar aquele assunto. Se não responder, tudo bem — encerro por aqui e não te incomodo mais."
    ]
   },
   {

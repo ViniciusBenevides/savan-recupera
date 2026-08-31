@@ -17,6 +17,11 @@ export const CONFIG_POR_COBRADOR = [
   "aquecimento",
   "faixas_desconto",
   "ia",
+  // O `campanha-lote` já resolvia estas duas por cobrador (a lista dele, CHAVES_POR_COBRADOR, as
+  // inclui). Aqui elas estavam de fora, então o cobrador não conseguia definir o modelo de
+  // abordagem que o disparador ia ler no escopo dele — as duas listas precisam concordar.
+  "meta_abordagem_template",
+  "meta_abordagem_template_candidato",
 ] as const;
 
 export type ChaveConfig = (typeof CONFIG_POR_COBRADOR)[number];

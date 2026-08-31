@@ -20,6 +20,7 @@ import {
   tipoDe, ehMensagem, ROTULO, LARGURA_NO,
   type EtapaRoteiro, type TipoEtapa, type CasoRoteiro,
 } from "./roteiro-layout";
+import { TemplateMetaAbordagem } from "./template-meta";
 
 /* ---------------------------------------------------------------- nó de etapa */
 
@@ -686,6 +687,7 @@ function Canvas({ carteira, padrao, salvar }: {
             aberta={aberta}
             etapas={etapas}
             canais={canais}
+            carteiraId={carteira.id}
             mudar={mudarAberta}
             renomear={renomearAberta}
             duplicar={() => duplicarBloco(aberta)}
@@ -814,10 +816,11 @@ function PainelResposta({ origem, caso, etapas, mudar, remover, fechar }: {
   );
 }
 
-function PainelBloco({ aberta, etapas, canais, mudar, renomear, duplicar, remover, selecionarCaso, fechar }: {
+function PainelBloco({ aberta, etapas, canais, carteiraId, mudar, renomear, duplicar, remover, selecionarCaso, fechar }: {
   aberta: EtapaRoteiro;
   etapas: EtapaRoteiro[];
   canais: { baileys: number; meta: number } | null;
+  carteiraId: number;
   mudar: (campo: keyof EtapaRoteiro, valor: any) => void;
   renomear: (rotulo: string) => void;
   duplicar: () => void;
@@ -827,6 +830,9 @@ function PainelBloco({ aberta, etapas, canais, mudar, renomear, duplicar, remove
 }) {
   const tipo = tipoDe(aberta);
   const mensagem = ehMensagem(aberta);
+  // Carteira só com chip da Meta: a 1ª mensagem é modelo aprovado, então não há texto para
+  // escrever aqui — mostrar o editor livre seria oferecer uma edição que não tem efeito.
+  const soMeta = tipo === "disparo" && !!canais && canais.meta > 0 && canais.baileys === 0;
   const textos = aberta.textos ?? [];
   const conversas = etapas.filter((e) => tipoDe(e) === "conversa");
 
@@ -893,7 +899,7 @@ function PainelBloco({ aberta, etapas, canais, mudar, renomear, duplicar, remove
         ) : null
       )}
 
-      {mensagem ? (
+      {soMeta ? null : mensagem ? (
         <div>
           <Label className="flex items-center gap-1.5 text-xs">
             Texto que sai
@@ -980,6 +986,11 @@ function PainelBloco({ aberta, etapas, canais, mudar, renomear, duplicar, remove
           />
           </div>
         </div>
+      )}
+
+      {/* No canal oficial não se escreve a abertura: escolhe-se entre os modelos aprovados. */}
+      {tipo === "disparo" && canais && canais.meta > 0 && (
+        <TemplateMetaAbordagem carteiraId={carteiraId} />
       )}
 
       {/* disparo/follow-up só têm um caminho: para onde a conversa começa quando a pessoa responde */}
