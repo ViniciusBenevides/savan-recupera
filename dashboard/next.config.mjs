@@ -24,6 +24,12 @@ const rotasAntigas = [
 ];
 
 const nextConfig = {
+  // `next dev` e `next build` deixavam de compartilhar o mesmo diretório aqui de propósito.
+  // Compartilhando, um `build` de produção deixa o `.next` num estado que o dev não reaproveita, e
+  // no Windows a leitura de `.next/server/vendor-chunks` estoura com `EINVAL: readlink`. Com o
+  // projeto dentro de uma pasta do OneDrive — que mexe nos arquivos durante a compilação — isso
+  // acontece com frequência. Diretórios separados eliminam a colisão entre os dois modos.
+  distDir: process.env.NODE_ENV === "development" ? ".next-dev" : ".next",
   eslint: { ignoreDuringBuilds: true },
   typescript: { ignoreBuildErrors: true },
   async redirects() {

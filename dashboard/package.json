@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "limpar": "node -e \"fs.rmSync('.next',{recursive:true,force:true});fs.rmSync('.next-dev',{recursive:true,force:true})\""
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",

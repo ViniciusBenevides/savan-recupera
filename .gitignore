@@ -12,6 +12,7 @@ dividas_savan.xlsx
 # === Build / dependências ===
 node_modules/
 .next/
+.next-dev/
 .next-stale-*/
 *.tsbuildinfo
 dashboard/next-env.d.ts
