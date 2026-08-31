@@ -20,7 +20,17 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 
   const admin = supabaseAdmin();
 
-  let chipsQ = admin.from("chips").select("id, nome, maturidade, aquecimento_perfil, limite_dia_override, status").in("status", USAVEIS).order("id");
+  // Só os chips vinculados a esta carteira entram no plano. Antes a sugestão dividia o volume entre
+  // TODOS os chips do cobrador, prometendo um ETA que o `fn_distribuir_carteira` não entregava —
+  // ele passou a distribuir apenas entre os vinculados (migration 20260831120000).
+  const { data: vinculos } = await admin.from("carteira_chips").select("chip_id").eq("carteira_id", carteiraId);
+  // `-1` quando não há vínculo: a consulta volta vazia e o caminho de "sem chips" abaixo devolve os
+  // totais reais da carteira, em vez de zerar o que a tela mostra.
+  const idsVinculados = (vinculos ?? []).map((v) => v.chip_id);
+  const semVinculo = idsVinculados.length === 0;
+
+  let chipsQ = admin.from("chips").select("id, nome, maturidade, aquecimento_perfil, limite_dia_override, status")
+    .in("id", semVinculo ? [-1] : idsVinculados).in("status", USAVEIS).order("id");
   if (soMeu) chipsQ = chipsQ.eq("cobrador_id", soMeu);
   const [{ data: dados }, { data: chipsRaw }, { data: carteira }, { data: cfgGlob }] = await Promise.all([
     admin.rpc("fn_distribuicao_dados", { p_carteira_id: carteiraId }),
@@ -45,7 +55,12 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   }
 
   if (chips.length === 0) {
-    return NextResponse.json({ sem_chips: true, total, por_uf: porUf });
+    // `motivo` separa "nenhum chip ligado a esta carteira" de "os ligados não estão utilizáveis" —
+    // são problemas diferentes e a tela precisa dizer qual é.
+    return NextResponse.json({
+      sem_chips: true, total, por_uf: porUf,
+      motivo: semVinculo ? "sem_vinculo" : "chips_indisponiveis",
+    });
   }
 
   const recomendada = recomendarEstrategia(chips.length, porUf);

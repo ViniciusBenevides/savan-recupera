@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { AbaRoteiro } from "./roteiro";
 import { ConhecimentoCarteira } from "./conhecimento";
+import { ChipsVinculados } from "./chips-vinculados";
 
 // Quatro abas. A carteira é o único lugar onde o robô se configura (§35): o Fluxo carrega a linha
 // do tempo inteira (disparo → reenvios → conversa → pós-pagamento) mais os ajustes de persona e
@@ -221,6 +222,8 @@ function AbaStatus({ carteira, podeEditar = true }: { carteira: any; podeEditar?
           </div>
         </Card>
       )}
+
+      {podeEditar && <ChipsVinculados carteiraId={carteira.id} />}
 
       <div className="grid grid-cols-2 gap-3">
         <Card>
