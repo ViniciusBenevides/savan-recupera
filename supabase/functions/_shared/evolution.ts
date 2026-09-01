@@ -78,6 +78,27 @@ const PADROES_CHIP_CAIDO = [
   "logged out",
 ];
 
+/**
+ * Procura um `exists: false` EXPLÍCITO em qualquer nível do corpo.
+ *
+ * A Evolution 2.3.7 não devolve isso na raiz — ela responde
+ * `{status:400, error:"Bad Request", response:{message:[{jid, exists:false, number}]}}`.
+ * O teste antigo usava `{exists:false}` na raiz, formato que a API não produz, então o sinal
+ * estruturado nunca casava e todo número sem WhatsApp caía em `falha`. Resultado: o item morria
+ * como erro de envio e o `fn_proximo_telefone` nunca era consultado — o devedor tinha outro
+ * telefone e ninguém tentava.
+ *
+ * Continua fechado: só conta o booleano `false` literal numa chave chamada `exists`. Ausência,
+ * `null`, string "false" e corpo vazio não contam — é a lição do §36.
+ */
+function temExistsFalso(valor: unknown, profundidade = 0): boolean {
+  if (profundidade > 6 || valor == null || typeof valor !== "object") return false;
+  if (Array.isArray(valor)) return valor.some((v) => temExistsFalso(v, profundidade + 1));
+  const obj = valor as Record<string, unknown>;
+  if (obj.exists === false) return true;
+  return Object.values(obj).some((v) => temExistsFalso(v, profundidade + 1));
+}
+
 function textoDoCorpo(corpo: unknown): string {
   if (corpo == null) return "";
   if (typeof corpo === "string") return corpo.toLowerCase();
@@ -104,10 +125,8 @@ export function classificarErroEnvio(status: number, corpo: unknown): ResultadoE
 
   const texto = textoDoCorpo(corpo);
 
-  // Sinal explícito e estruturado de número inexistente.
-  if (corpo && typeof corpo === "object" && (corpo as { exists?: unknown }).exists === false) {
-    return "sem_whatsapp";
-  }
+  // Sinal explícito e estruturado de número inexistente, em qualquer nível do corpo.
+  if (temExistsFalso(corpo)) return "sem_whatsapp";
 
   // 401 é sessão revogada — o chip morreu, não o número do destinatário.
   if (status === 401) return "chip_caido";

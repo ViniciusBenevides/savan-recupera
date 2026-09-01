@@ -72,6 +72,23 @@ Deno.test("so sinal explicito de numero inexistente vira sem_whatsapp", () => {
     "sem_whatsapp",
   );
   assertEquals(classificarErroEnvio(400, { exists: false }), "sem_whatsapp");
+  // O corpo REAL da Evolution 2.3.7, conferido contra a instancia em 01/09/2026. O `exists` vem
+  // aninhado dentro de `response.message[]` — nunca na raiz, que era o que este teste supunha.
+  assertEquals(
+    classificarErroEnvio(400, {
+      status: 400,
+      error: "Bad Request",
+      response: { message: [{ jid: "5562993979330@s.whatsapp.net", exists: false, number: "5562993979330" }] },
+    }),
+    "sem_whatsapp",
+  );
+});
+
+Deno.test("exists ausente ou nao-booleano continua sendo falha (fecha fechado)", () => {
+  assertEquals(classificarErroEnvio(400, { response: { message: [{ jid: "x@s.whatsapp.net" }] } }), "falha");
+  assertEquals(classificarErroEnvio(400, { response: { message: [{ exists: "false" }] } }), "falha");
+  assertEquals(classificarErroEnvio(400, { response: { message: [{ exists: null }] } }), "falha");
+  assertEquals(classificarErroEnvio(400, { response: { message: [{ exists: true }] } }), "falha");
 });
 
 Deno.test("instancia fora do ar e chip_caido, nao falha do numero", () => {

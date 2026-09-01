@@ -184,6 +184,10 @@ export async function ligarChatwoot(opts: {
         token: cwToken,
         url: cwUrl,
         nameInbox: opts.nomeInbox,
+        // Sem isto a Evolution só GUARDA a configuração e espera uma mensagem chegar para criar a
+        // inbox. O chip conectava, o `garantirInbox` procurava por nome, não achava, e o
+        // `chatwoot_inbox_id` ficava nulo — que é o que travou o disparador do chip 1 em 01/09.
+        autoCreate: true,
         signMsg: false,          // o robô não assina: quem fala é a persona, não um atendente
         reopenConversation: true, // a conversa é do devedor — reabrir, não criar outra (ADR-0001)
         conversationPending: false,

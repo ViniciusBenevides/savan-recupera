@@ -461,13 +461,18 @@ Deno.serve(async (req) => {
         if (!molde) {
           // Carteira sem texto de disparo. Devolve à fila: o item não tem culpa, e disparar um
           // texto padrão daqui esconderia o buraco de configuração no lugar de mostrá-lo.
-          await sb.from("fila_envios").update({ status: "pendente" }).eq("id", item.id);
+          // 'aguardando' e não 'pendente': o enum `status_fila` só aceita aguardando/processando/
+          // enviado/falha/sem_whatsapp/cancelado. Com 'pendente' o update era recusado pelo banco,
+          // o erro do supabase-js não é lançado (vem no retorno, que aqui é ignorado), e o item
+          // ficava preso em 'processando' até o `fn_resetar_presos`. Limpar `chip_id` junto é o
+          // mesmo que o reset dos presos faz — devolver à fila é devolver ao pool, sem dono.
+          await sb.from("fila_envios").update({ status: "aguardando", chip_id: null }).eq("id", item.id);
           pulados.disparo_sem_texto = (pulados.disparo_sem_texto ?? 0) + 1;
           continue;
         }
         conteudo = renderTemplate(molde, vars).trim();
         if (!conteudo) {
-          await sb.from("fila_envios").update({ status: "pendente" }).eq("id", item.id);
+          await sb.from("fila_envios").update({ status: "aguardando", chip_id: null }).eq("id", item.id);
           pulados.disparo_sem_texto = (pulados.disparo_sem_texto ?? 0) + 1;
           continue;
         }
@@ -476,7 +481,7 @@ Deno.serve(async (req) => {
         if (!tplMeta) {
           // sumiu do cache ou faltou valor para alguma variável: devolve à fila em vez de virar
           // texto livre que a Meta recusaria
-          await sb.from("fila_envios").update({ status: "pendente" }).eq("id", item.id);
+          await sb.from("fila_envios").update({ status: "aguardando", chip_id: null }).eq("id", item.id);
           pulados.meta_template_nao_montou = (pulados.meta_template_nao_montou ?? 0) + 1;
           continue;
         }
