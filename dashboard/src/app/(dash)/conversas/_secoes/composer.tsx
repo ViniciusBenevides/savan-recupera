@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/primitives";
 import {
   Send, Loader2, StickyNote, MessageSquareText, FileText, Clock, AlertTriangle,
-  ChevronDown, Zap, X, Check,
+  ChevronDown, Zap, X, Check, Smartphone,
 } from "lucide-react";
 
 export type Modelo = {
@@ -14,7 +14,17 @@ export type RespostaPronta = { id: number; atalho: string; conteudo: string };
 export type Atendimento = {
   ok: boolean;
   estado: string;
-  ligada_ao_chatwoot: boolean;
+  /** Conector do chip que atende esta conversa. É ele que escolhe a regra de saída. */
+  conector: "baileys" | "meta_cloud";
+  chip_nome: string | null;
+  caminho: "evolution" | "chatwoot" | "nenhum";
+  impedimento: string | null;
+  texto_livre: boolean;
+  usa_modelo: boolean;
+  /** Escrever agora é abordagem: a pessoa não falou nas últimas 24 h. */
+  abordagem: boolean;
+  /** A janela de 24 h só existe no canal da Meta. */
+  janela_aplica: boolean;
   na_janela: boolean;
   ultima_entrada_em: string | null;
   janela_expira_em: string | null;
@@ -79,8 +89,13 @@ export function Composer({ conversaId, bloqueio, onEnviado }: {
     el.style.height = `${Math.min(el.scrollHeight, 180)}px`;
   }, [texto]);
 
-  const foraDaJanela = !!atd && !atd.na_janela;
+  // A janela de 24 h é regra da Cloud API, não do WhatsApp em geral. No Baileys ela não existe:
+  // exigir modelo aprovado ali barrava resposta que podia sair — e empurrava o operador para
+  // modelos de uma WABA banida, que não entregam nada (§38).
+  const foraDaJanela = !!atd && atd.janela_aplica && !atd.na_janela;
   const exigeModelo = modo === "resposta" && foraDaJanela;
+  // No Baileys nada do lado do WhatsApp barra o envio — quem pesa o risco é quem escreve.
+  const avisoAbordagem = modo === "resposta" && !!atd && !atd.janela_aplica && atd.abordagem;
 
   // "/" no começo da caixa abre as respostas prontas, como no Chatwoot.
   const sugestoes = useMemo(() => {
@@ -144,11 +159,13 @@ export function Composer({ conversaId, bloqueio, onEnviado }: {
     );
   }
 
-  if (atd && !atd.ligada_ao_chatwoot) {
+  // Sem caminho de saída: opt-out, bloqueio permanente, chip sem sessão, ponteiro na inbox banida.
+  // O servidor devolve o motivo já em português — repetir a regra aqui só criaria duas verdades.
+  if (atd && atd.caminho === "nenhum") {
     return (
       <div className="flex items-start gap-2.5 border-t border-line bg-ink-850 px-4 py-3 text-xs text-mist">
         <AlertTriangle className="mt-px h-4 w-4 shrink-0 text-amber" />
-        <span>Esta conversa ainda não está ligada ao WhatsApp oficial — não há por onde responder.</span>
+        <span>{atd.impedimento ?? "Esta conversa não aceita mensagem."}</span>
       </div>
     );
   }
@@ -174,15 +191,25 @@ export function Composer({ conversaId, bloqueio, onEnviado }: {
           <StickyNote className="h-3.5 w-3.5" /> Nota interna
         </button>
 
-        {atd && modo === "resposta" && (
+        {atd && modo === "resposta" && atd.janela_aplica && (
           <span
             className={`ml-auto inline-flex items-center gap-1.5 text-[10px] ${
               foraDaJanela ? "text-amber" : "text-mist"
             }`}
-            title="O WhatsApp só aceita texto livre até 24 h depois da última mensagem do contato."
+            title="Canal da Meta: texto livre só até 24 h depois da última mensagem do contato."
           >
             <Clock className="h-3 w-3" />
             {foraDaJanela ? "Janela de 24 h fechada" : `Janela aberta · ${restante(atd.janela_expira_em)}`}
+          </span>
+        )}
+
+        {atd && modo === "resposta" && !atd.janela_aplica && (
+          <span
+            className="ml-auto inline-flex items-center gap-1.5 text-[10px] text-mist"
+            title="Número comum (Baileys): não existe janela de 24 h nem modelo aprovado. Texto livre sempre."
+          >
+            <Smartphone className="h-3 w-3" />
+            {atd.chip_nome ?? "Número comum"} · texto livre
           </span>
         )}
       </div>
@@ -200,8 +227,24 @@ export function Composer({ conversaId, bloqueio, onEnviado }: {
         </div>
       )}
 
+      {/* ── Baileys fora de 24 h: não é proibição, é responsabilidade ─────────────────────── */}
+      {/* Aqui o WhatsApp não barra nada. Quem manda para quem está calado há dias está fazendo
+          ABORDAGEM — a única categoria de envio que gera denúncia e derruba número (CONTEXT.md).
+          Dizer isso na hora de escrever é o que resta, já que o canal não diz. */}
+      {avisoAbordagem && (
+        <div className="mx-3 mt-2 rounded-lg border border-amber/25 bg-amber/5 px-3 py-2">
+          <div className="flex items-start gap-2 text-[11px] leading-relaxed text-amber">
+            <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0" />
+            <span>
+              Esta pessoa não escreve há mais de 24 h. Mandar agora conta como <b>abordagem</b> — é o
+              tipo de envio que gera bloqueio e denúncia. O número aguenta, mas o risco é real.
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* ── Escolha do modelo ────────────────────────────────────────────────────────────── */}
-      {modo === "resposta" && (painelModelo || exigeModelo) && (
+      {modo === "resposta" && atd?.usa_modelo && (painelModelo || exigeModelo) && (
         <PainelModelo
           modelos={atd?.modelos ?? []}
           selecionado={modeloSel}
@@ -263,7 +306,7 @@ export function Composer({ conversaId, bloqueio, onEnviado }: {
             />
             <div className="flex items-center justify-between gap-2 border-t border-line/50 px-2.5 py-1.5">
               <div className="flex items-center gap-1">
-                {modo === "resposta" && (atd?.modelos.length ?? 0) > 0 && (
+                {modo === "resposta" && atd?.usa_modelo && (atd?.modelos.length ?? 0) > 0 && (
                   <button
                     onClick={() => setPainelModelo((v) => !v)}
                     className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-[11px] text-mist transition-colors hover:bg-ink-800 hover:text-chalk"

@@ -1,14 +1,18 @@
 import { NextResponse } from "next/server";
 import { exigirConversa, cobradorDoChip } from "@/lib/conversas";
-import {
-  contaChatwoot, respostasProntas, modelosAprovados, dentroDaJanela, JANELA_MS,
-} from "@/lib/chatwoot-atendimento";
+import { contaChatwoot, respostasProntas, modelosAprovados } from "@/lib/chatwoot-atendimento";
+import { canalDaConversa } from "@/lib/canal-conversa";
 
 /**
  * GET — o que a caixa de resposta precisa saber para esta conversa, agora.
  *
- * É consultado ao abrir a conversa (e não embutido na página) porque a janela de 24h expira com
- * o relógio: uma página aberta desde cedo mostraria "pode escrever" muito depois de não poder.
+ * É consultado ao abrir a conversa (e não embutido na página) porque o estado muda com o relógio:
+ * no canal da Meta a janela de 24h expira sozinha, e uma página aberta desde cedo mostraria "pode
+ * escrever" muito depois de não poder.
+ *
+ * Quem decide a regra é o CONECTOR do chip, não o painel — ver `canalDaConversa`. Antes disto a
+ * rota aplicava a regra da Meta em toda conversa, inclusive nas que hoje andam por Baileys, onde
+ * não existe janela nem modelo aprovado.
  */
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -16,16 +20,13 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   if (g.erro) return g.erro;
   const { conversa } = g;
 
-  const naJanela = dentroDaJanela(conversa.ultima_entrada_em);
-  const expiraEm = conversa.ultima_entrada_em
-    ? new Date(new Date(conversa.ultima_entrada_em).getTime() + JANELA_MS).toISOString()
-    : null;
+  const canal = await canalDaConversa(conversa);
 
   const conta = await contaChatwoot();
   const [modelos, prontas] = await Promise.all([
-    // Fora da janela o modelo aprovado é o único caminho; dentro dela ele continua disponível,
-    // mas a caixa de texto livre é o padrão.
-    modelosAprovados(await cobradorDoChip(conversa.chip_id)),
+    // Modelo aprovado só existe no canal da Meta. Buscar no Baileys era oferecer ao operador um
+    // caminho que não entrega nada — a WABA que aprovou esses modelos está banida (§38).
+    canal.usa_modelo ? modelosAprovados(await cobradorDoChip(conversa.chip_id)) : Promise.resolve([]),
     conta ? respostasProntas(conta) : Promise.resolve([]),
   ]);
 
@@ -34,10 +35,22 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     estado: conversa.estado,
     motivo_encerramento: conversa.motivo_encerramento,
     atendente_nome: conversa.atendente_nome,
-    ligada_ao_chatwoot: !!conversa.chatwoot_conversation_id,
-    na_janela: naJanela,
+
+    // ── canal ──
+    conector: canal.conector,
+    chip_nome: canal.chip?.nome ?? null,
+    caminho: canal.caminho,
+    impedimento: canal.impedimento,
+    texto_livre: canal.texto_livre,
+    usa_modelo: canal.usa_modelo,
+    abordagem: canal.abordagem,
+
+    // ── janela de 24h (só faz sentido no canal da Meta) ──
+    janela_aplica: canal.janela_aplica,
+    na_janela: canal.na_janela,
     ultima_entrada_em: conversa.ultima_entrada_em,
-    janela_expira_em: expiraEm,
+    janela_expira_em: canal.janela_expira_em,
+
     modelos,
     respostas_prontas: prontas,
   });

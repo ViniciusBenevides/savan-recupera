@@ -2045,3 +2045,66 @@ especifica, em vez de liberar `curl` para qualquer destino. Regras em `.claude/s
    senao troca um caminho que funciona por um que aponta para o vazio.
 4. **Escrever o conteudo do fluxo v3**: encaixar o opt-in a frente das 31 etapas e podar o que
    pressiona. O codigo garante que o portao exista; o texto e decisao do dono.
+
+---
+
+## 42. As 390 abordagens que nunca saíram, e a tela que dizia o contrário (02/09/2026)
+
+O dono abriu a aba Conversas e viu "chip 1 · 442 conversas". O chip 1 tinha mandado mensagem para
+**uma** pessoa. Investigar isso descobriu três defeitos empilhados, e o terceiro estava custando a
+operação inteira em silêncio.
+
+### O que estava errado
+
+**1. A atribuição era uma coluna mutável.** `mensagens` não tinha chip. A tela derivava o autor de
+`conversas.chip_id` — a coluna que o `fn_reatribuir_chip` (015) **reescreve** no failover. Depois do
+ban da conta oficial (§38), 430 conversas do número banido passaram para o chip Baileys, e com elas
+todo o histórico. O painel passou a dizer que um chip com dois dias de vida tinha falado 2.231 vezes.
+
+**2. O ponteiro do Chatwoot ficou para trás.** O `fn_reatribuir_chip` troca o chip e **não** o
+`chatwoot_conversation_id`. As 430 conversas continuaram apontando para a inbox 8
+(`Channel::Whatsapp`, a WABA banida). O disparador postava lá, o Chatwoot aceitava, devolvia um id, e
+a Meta descartava. **Os três lotes de 24/08, 25/08 e 01/09 — 129, 68 e 193 abordagens — falharam
+100%.** Zero entregas.
+
+**3. Nada disso aparecia porque `status_entrega` era sempre nulo.** A coluna existia desde a Fatia 3
+(§40) e ninguém escrevia nela. Sem recibo, "entregue" e "recusado pelo provedor" são o mesmo pixel —
+e uma conversa que nunca recebeu nada fica indistinguível de uma abordada e ignorada. Era o §31
+acontecendo de novo, com o sinal já previsto e não coletado.
+
+Como bônus do mesmo desenho, o painel aplicava a regra da Meta em toda conversa: janela de 24h e
+modelo aprovado. No chip Baileys isso **barrava** o operador de responder texto livre (que ali sempre
+pode) e o empurrava para modelos de uma WABA que não entrega mais nada.
+
+### O que foi feito
+
+| Peça | Entrega |
+| --- | --- |
+| Migration `20260902120000` | `mensagens.chip_id` + trigger `trg_mensagens_chip` (carimba no INSERT, imune a reatribuição); `conversas.chatwoot_inbox_id`; `status_entrega` passa a aceitar `0 = falhou` |
+| Backfill | chip de cada mensagem pela INBOX que a carregou — faixas conferidas conversa a conversa na API do Chatwoot (inbox 8 = 427..939, inbox 9 = 940..945) |
+| `scripts/entrega-do-chatwoot.py` | puxa o recibo real do Chatwoot e gera o SQL. 1.950 saídas lidas: **1.065 falhas**, 79 enviadas, 223 entregues, 583 lidas |
+| `_shared/entrega.ts` + testes | mapeamento e resolução de recibos fora de ordem. **Falha só cede a uma entrega confirmada** — um `sent` atrasado não apaga uma recusa, que era como a falha sumia |
+| `chatwoot-sync` | evento `message_updated` (recibo ao vivo) + **adoção**: a conversa é do devedor, então um chip novo reaponta a linha existente em vez de criar outra e rachar o dossiê (ADR-0001) |
+| `campanha-registrar` | mesma adoção no caminho da campanha, e grava `chatwoot_inbox_id` |
+| `bot-turno` | a auto-cura passa a atualizar inbox e chip junto com o ponteiro |
+| `lib/canal-conversa.ts` | **o conector do chip escolhe a regra.** Baileys: texto livre sempre, saída direta pela Evolution (ADR-0002), sem janela e sem template. Meta: como era. Bloqueio de contato (ADR-0003) vence os dois |
+| Painel | rodapé de cada balão mostra o número que carregou a mensagem e o recibo; a lista marca "não entregue"; o filtro do topo virou **"Atende hoje"**, que é o que `conversas.chip_id` sempre significou |
+| n8n | W02 deixa passar `message_updated`; W01 manda `inbox_id` ao registrar; `criar_workflows.py` aceita argumento para regerar UM workflow em vez dos cinco |
+| Chatwoot | webhook `savan-bot` assina `message_updated` |
+
+**102 testes Deno passando**, `npx tsc --noEmit` limpo, `npm run build` OK. O trigger foi provado em
+produção com uma transação abortada de propósito (insere, lê o carimbo, dá `raise` e reverte).
+
+### O número que importa
+
+Das 444 conversas do chip 1, **439 ainda apontam para a inbox banida e 391 têm a última mensagem
+marcada como não entregue**. Não é uma base fria: é uma base que nunca foi abordada. O caminho de
+saída novo (Evolution, endereçado pelo telefone) funciona nelas — o ponteiro morto deixou de ser
+impedimento para responder, e a adoção garante que, quando cada uma voltar pela inbox viva, ela
+continue na mesma linha em vez de virar uma segunda conversa.
+
+### A lição, que é a mesma de sempre
+
+Aceite do provedor nunca foi entrega (§31), e uma coluna que o failover reescreve nunca foi
+histórico. As duas vezes o dado certo existia e não era coletado; as duas vezes o painel preencheu o
+vazio com otimismo. **Estado derivado de coluna mutável é uma mentira com atraso.**

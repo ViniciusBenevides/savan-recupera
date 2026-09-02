@@ -51,7 +51,7 @@ export async function Dialogos({ podeAtender = false }: { podeAtender?: boolean 
     )),
     Promise.all(emLotes(convIds).map((ids) =>
       sb.from("mensagens")
-        .select("conversa_id, conteudo, criado_em, origem, privado")
+        .select("conversa_id, conteudo, criado_em, origem, privado, direcao, status_entrega")
         .in("conversa_id", ids)
         .order("criado_em", { ascending: false })
         .limit(4000),
@@ -75,9 +75,16 @@ export async function Dialogos({ podeAtender = false }: { podeAtender?: boolean 
   // Prévia = primeira mensagem encontrada por conversa (a query veio desc, então
   // a 1ª que aparece de cada conversa é a mais recente).
   const prev = new Map<number, { texto: string; origem: string; privado: boolean }>();
+  // Última mensagem de SAÍDA que o provedor recusou (status_entrega = 0). A query vem desc, então
+  // a 1ª saída de cada conversa é a mais recente — é ela que diz se a conversa está morta ou só
+  // sem resposta. Confundir as duas foi o que escondeu 390 abordagens que nunca chegaram (§38).
+  const falhou = new Map<number, boolean>();
   for (const m of (msgs ?? []) as any[]) {
     if (!prev.has(m.conversa_id)) {
       prev.set(m.conversa_id, { texto: m.conteudo ?? "", origem: m.origem, privado: m.privado === true });
+    }
+    if (m.direcao === "saida" && m.privado !== true && !falhou.has(m.conversa_id)) {
+      falhou.set(m.conversa_id, m.status_entrega === 0);
     }
   }
 
@@ -109,6 +116,7 @@ export async function Dialogos({ podeAtender = false }: { podeAtender?: boolean 
       preview: p?.texto ?? null,
       preview_de: p?.origem ?? null,
       preview_privado: p?.privado ?? false,
+      ultima_saida_falhou: falhou.get(c.id) === true,
     };
   });
 
@@ -118,10 +126,18 @@ export async function Dialogos({ podeAtender = false }: { podeAtender?: boolean 
   lista.forEach((c, i) => {
     if (c.chip_id != null && !ordemChip.has(c.chip_id)) ordemChip.set(c.chip_id, i);
   });
+  const paraChip = (c: any) => ({
+    id: c.id as number, nome: c.nome as string, numero: (c.numero_e164 as string) ?? null,
+  });
   const chips = [...ordemChip.keys()]
     .map((id) => chipMap.get(id))
     .filter((c: any) => c && (c.papel ?? "bot") === "bot")
-    .map((c: any) => ({ id: c.id as number, nome: c.nome as string, numero: (c.numero_e164 as string) ?? null }));
+    .map(paraChip);
+
+  // Todos os números conhecidos, para nomear o chip de mensagens antigas na thread — inclusive os
+  // que não atendem mais nenhuma conversa, como o número banido em 17/08/2026.
+  const { data: chipsTodosRaw } = await sb.from("chips").select("id, nome, numero_e164");
+  const chipsTodos = (chipsTodosRaw ?? []).map(paraChip);
 
   // Padrão pedido: a caixa abre no número oficial que está conversando AGORA — o chip
   // com a conversa mais recente. Com um chip só (o caso normal) é sempre ele.
@@ -131,6 +147,7 @@ export async function Dialogos({ podeAtender = false }: { podeAtender?: boolean 
     <Inbox
       lista={lista}
       chips={chips}
+      chipsTodos={chipsTodos}
       chipPadrao={chipPadrao}
       cwUrl={(cfg?.valor as any)?.url ?? ""}
       podeAtender={podeAtender}

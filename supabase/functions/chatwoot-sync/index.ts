@@ -1,6 +1,9 @@
 // SAVAN Recupera - espelha conversas e mensagens do Chatwoot no Supabase.
 // Chamado pelo n8n para message_created/conversation_created e manualmente para backfill.
 import { createClient, SupabaseClient } from "jsr:@supabase/supabase-js@2";
+import {
+  deveGravarEntrega, entregaConfirmada, statusEntregaDoChatwoot,
+} from "../_shared/entrega.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -74,6 +77,34 @@ function tipoMensagem(v: unknown): "entrada" | "saida" | null {
   if (t === "incoming" || t === "0") return "entrada";
   if (t === "outgoing" || t === "template" || t === "1" || t === "3") return "saida";
   return null;
+}
+
+/**
+ * Grava o recibo de entrega de uma mensagem já espelhada. A decisão (mapear o status e resolver
+ * conflito entre recibos fora de ordem) mora em `_shared/entrega.ts`, com testes; aqui é só o I/O.
+ */
+async function gravarEntrega(sb: SupabaseClient, messageId: number, bruto: unknown) {
+  const status = statusEntregaDoChatwoot(bruto);
+  if (status === null) return { status: "ignorado" as const, status_entrega: null };
+
+  const { data: atual, error: erroAtual } = await sb.from("mensagens")
+    .select("id, status_entrega").eq("chatwoot_message_id", messageId).maybeSingle();
+  if (erroAtual) throw erroAtual;
+  if (!atual) return { status: "sem_mensagem" as const, status_entrega: null };
+
+  const anterior = typeof atual.status_entrega === "number" ? atual.status_entrega : null;
+  if (!deveGravarEntrega(anterior, status)) {
+    return { status: "sem_mudanca" as const, status_entrega: anterior };
+  }
+
+  const patch: Record<string, unknown> = { status_entrega: status };
+  // `entregue_em` marca o instante em que a entrega foi CONFIRMADA. O Chatwoot não guarda carimbo
+  // próprio do recibo, então a hora em que o evento chegou é a informação honesta disponível.
+  if (entregaConfirmada(status)) patch.entregue_em = new Date().toISOString();
+
+  const { error } = await sb.from("mensagens").update(patch).eq("id", atual.id);
+  if (error) throw error;
+  return { status: "gravado" as const, status_entrega: status };
 }
 
 async function conversaDetalhe(base: string, token: string, accountId: number, convId: number) {
@@ -188,6 +219,41 @@ async function garantirConversa(
   const simulacao = typeof simulacaoRecebida === "boolean"
     ? simulacaoRecebida
     : semelhante?.simulacao === true;
+
+  // ── Adoção: a conversa é do DEVEDOR, não do transporte (ADR-0001) ──────────────────────────
+  // Quando um chip cai e outro assume, o ponteiro do Chatwoot fica para trás: o `fn_reatribuir_chip`
+  // troca `conversas.chip_id` e não o `chatwoot_conversation_id`. Foi o que aconteceu no ban da conta
+  // oficial (§38) — 430 conversas ficaram apontando para a inbox banida. Quando o devedor voltar a
+  // aparecer por uma inbox nova, criar linha nova RACHARIA o dossiê e o robô repetiria o que o número
+  // antigo já disse. Então reaproveitamos a linha existente e só trocamos o transporte.
+  //
+  // Só adotamos quando o ponteiro antigo é de OUTRA inbox (ou não existe). Se a linha já aponta para
+  // esta mesma inbox com outro id, aí é conversa realmente nova e merece linha própria.
+  const { data: adotavel } = await sb.from("conversas")
+    .select("id, devedor_id, carteira_id, chip_id, simulacao, estado, chatwoot_inbox_id")
+    .eq("devedor_id", devedorId)
+    .eq("simulacao", simulacao)
+    .or(`chatwoot_inbox_id.is.null,chatwoot_inbox_id.neq.${inboxId}`)
+    .order("ultima_msg_em", { ascending: false, nullsFirst: false })
+    .order("id", { ascending: false })
+    .limit(1).maybeSingle();
+
+  if (adotavel) {
+    const { data: adotada, error: erroAdotar } = await sb.from("conversas").update({
+      chatwoot_conversation_id: convId,
+      chatwoot_inbox_id: inboxId,
+      chatwoot_contact_id: contactId,
+      chip_id: chip.id,
+    }).eq("id", adotavel.id)
+      .select("id, devedor_id, carteira_id, chip_id, simulacao, estado").single();
+    if (erroAdotar) throw erroAdotar;
+    console.log(
+      `chatwoot-sync adoção: conversa ${adotavel.id} (devedor ${devedorId}) migrou da inbox ` +
+      `${adotavel.chatwoot_inbox_id ?? "n/d"} para a ${inboxId}, chatwoot_conversation_id ${convId}`,
+    );
+    return adotada;
+  }
+
   const quando = iso(detalhe?.last_activity_at ?? detalhe?.created_at);
   const resolvida = String(detalhe?.status ?? "open") === "resolved";
   // Resolver no Chatwoot nao pode apagar um desfecho mais especifico que ja
@@ -206,6 +272,7 @@ async function garantirConversa(
     chip_id: chip.id,
     telefone_id: telefoneId,
     chatwoot_conversation_id: convId,
+    chatwoot_inbox_id: inboxId,
     chatwoot_contact_id: contactId,
     fluxo_versao_id: carteiraFluxo?.fluxo_versao_ativa_id ?? null,
     estado,
@@ -301,6 +368,17 @@ async function espelharMensagem(
       } else if (error) {
         throw error;
       }
+    }
+  }
+
+  // O `message_created` de uma saída já vem com um status inicial (`sent`/`failed`). Aproveitar
+  // aqui garante recibo mesmo se o `message_updated` nunca chegar — e é o que faz o backfill
+  // (`executarBackfill`) trazer a história de entrega junto com o conteúdo.
+  if (direcao === "saida") {
+    try {
+      await gravarEntrega(sb, messageId, msg?.status);
+    } catch (e) {
+      console.error(`chatwoot-sync: falha ao gravar entrega de ${messageId}:`, e instanceof Error ? e.message : String(e));
     }
   }
 
@@ -405,6 +483,17 @@ Deno.serve(async (req) => {
     }
 
     const evento = String(body?.evento ?? body?.event ?? "");
+
+    // `message_updated` é o único evento que traz o recibo do provedor. Ele não cria nem altera
+    // conversa: só carimba a mensagem que já existe. Fica antes de tudo porque não precisa (e não
+    // deve) pagar o GET do detalhe da conversa.
+    if (evento === "message_updated") {
+      const messageId = numero(body?.chatwoot_message_id ?? body?.id);
+      if (!messageId) return json({ ok: false, erro: "message_id_ausente" }, 400);
+      const r = await gravarEntrega(sb, messageId, body?.status ?? body?.message?.status);
+      return json({ ok: true, entrega: r.status, status_entrega: r.status_entrega });
+    }
+
     if (evento !== "message_created" && evento !== "conversation_created") {
       return json({ ok: true, ignorado: "evento_nao_suportado" });
     }

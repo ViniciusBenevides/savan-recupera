@@ -209,6 +209,9 @@ def w01():
         '"status": "enviado", "simulacao": {{ $(\'Loop\').item.json.simulacao }}, '
         '"chatwoot_message_id": {{ $json.id || null }}, '
         '"chatwoot_conversation_id": {{ $(\'Criar contato\').item.json.conversation_id }}, '
+        # A inbox do chip que disparou. Sem ela o painel não sabe se o ponteiro do Chatwoot ainda
+        # vale, e uma conversa herdada de número banido parece atendível (§38).
+        '"inbox_id": {{ $(\'Loop\').item.json.inbox_id }}, '
         '"chatwoot_contact_id": {{ $(\'Criar contato\').item.json.contact_id }} }')
     reg_sem = http_edge("Registrar sem WA", "campanha-registrar", [1780, 520],
         '={ "fila_id": {{ $(\'Loop\').item.json.fila_id }}, "devedor_id": {{ $(\'Loop\').item.json.devedor_id }}, '
@@ -294,14 +297,18 @@ def w02():
     normalizar = node("Normalizar evento", "n8n-nodes-base.code", 2, [460, 300], {"jsClass": "", "jsCode": (
         "const b = $json.body || $json;\n"
         "const evento = String(b.event || '');\n"
-        "if (!['message_created', 'conversation_created'].includes(evento)) return [];\n"
+        "if (!['message_created', 'conversation_created', 'message_updated'].includes(evento)) return [];\n"
         "const conv = Number((b.conversation && b.conversation.id) || b.conversation_id || (evento === 'conversation_created' ? b.id : 0));\n"
-        "if (!conv) return [];\n"
+        # `message_updated` traz o recibo do provedor (sent/delivered/read/failed) e é endereçado
+        # pelo id da MENSAGEM: o chatwoot-sync só precisa disso. Exigir conversa aqui descartaria
+        # justamente o evento que revela entrega falhada — o sinal que faltava no §38.
+        "if (!conv && evento !== 'message_updated') return [];\n"
         "const labels = (b.conversation && b.conversation.labels) || b.labels || [];\n"
         "return [{ json: {\n"
         "  evento, chatwoot_conversation_id: conv, chatwoot_message_id: b.id || null,\n"
         "  message_type: b.message_type || null, private: b.private === true,\n"
         "  mensagem: b.content || '', content_type: b.content_type || null,\n"
+        "  status: b.status || null,\n"
         "  created_at: b.created_at || null, sender_type: (b.sender && b.sender.type) || null, labels\n"
         "} }];"
     )})
@@ -382,6 +389,19 @@ def w02():
 
 
 if __name__ == "__main__":
-    print("Criando workflows SAVAN...")
-    w01(); w02(); w07(); w08(); w09()
+    import sys
+
+    # Sem argumento, regenera os cinco (o comportamento de sempre). Com argumento, só os pedidos:
+    # `python n8n/criar_workflows.py w02`. Existe para que corrigir UM workflow não sobrescreva os
+    # outros quatro que estão no ar — regerar por cima já quebrou os cinco nós de Edge Function de
+    # uma vez, sem erro aparecer até a campanha rodar (ver o comentário do SUPA lá em cima).
+    TODOS = {"w01": w01, "w02": w02, "w07": w07, "w08": w08, "w09": w09}
+    pedidos = [a.lower() for a in sys.argv[1:]] or list(TODOS)
+    desconhecidos = [p for p in pedidos if p not in TODOS]
+    if desconhecidos:
+        raise SystemExit(f"workflow desconhecido: {', '.join(desconhecidos)}. Use: {', '.join(TODOS)}")
+
+    print(f"Criando workflows SAVAN: {', '.join(pedidos)}...")
+    for nome in pedidos:
+        TODOS[nome]()
     print("Pronto.")

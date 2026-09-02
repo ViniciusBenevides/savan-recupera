@@ -82,14 +82,36 @@ Deno.serve(async (req) => {
     const prox = new Date(Date.now() + horas * 3600 * 1000).toISOString();
 
     if (b.chatwoot_conversation_id) {
-      const { data: convUp } = await sb.from("conversas").upsert({
+      const linha = {
         devedor_id: b.devedor_id, carteira_id: carteiraId, chip_id: b.chip_id, telefone_id: b.telefone_id,
         fluxo_versao_id: fluxoVersaoId,
         chatwoot_conversation_id: b.chatwoot_conversation_id,
+        // Em qual inbox esse ponteiro vive. Sem isso o painel não sabe distinguir uma conversa
+        // atendível de uma que ficou apontando para a caixa de um número morto (§38).
+        chatwoot_inbox_id: b.inbox_id ?? null,
         chatwoot_contact_id: b.chatwoot_contact_id ?? null,
         estado: "aguardando_resposta", ultima_msg_em: new Date().toISOString(),
         ultima_msg_de: "bot", proximo_followup_em: prox, simulacao: sim,
-      }, { onConflict: "chatwoot_conversation_id" }).select("id").maybeSingle();
+      };
+
+      // A conversa é do DEVEDOR, não do transporte (ADR-0001). Quando um chip novo aborda alguém
+      // que já foi abordado pelo chip antigo, o `contato-criar` abre uma conversa NOVA no Chatwoot
+      // — em outra inbox — e o upsert por `chatwoot_conversation_id` não encontraria conflito:
+      // inseriria uma segunda linha para o mesmo devedor. O dossiê racharia bem no cenário para o
+      // qual ele foi feito (430 conversas herdadas do número banido), e o robô repetiria o que o
+      // número anterior já disse. Então procuramos a linha do devedor antes de criar outra.
+      const { data: existente } = await sb.from("conversas")
+        .select("id, chatwoot_conversation_id")
+        .eq("devedor_id", b.devedor_id)
+        .eq("simulacao", sim)
+        .order("ultima_msg_em", { ascending: false, nullsFirst: false })
+        .order("id", { ascending: false })
+        .limit(1).maybeSingle();
+
+      const { data: convUp } = existente && existente.chatwoot_conversation_id !== b.chatwoot_conversation_id
+        ? await sb.from("conversas").update(linha).eq("id", existente.id).select("id").maybeSingle()
+        : await sb.from("conversas").upsert(linha, { onConflict: "chatwoot_conversation_id" })
+            .select("id").maybeSingle();
 
       // Grava a mensagem de abordagem em `mensagens` (a aba "Conversas" do painel lê dessa
       // tabela; antes só `bot-turno`/`followup`/`disparar-teste` escreviam aqui, então a 1ª

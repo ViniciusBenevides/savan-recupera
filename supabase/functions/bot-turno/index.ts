@@ -197,8 +197,13 @@ async function resolverConversaPorEntrada(sb: SupabaseClient, cfg: any, seg: Rec
   else alvo = cands.find((c: any) => c.simulacao === true) ?? null;
   if (!alvo) return null;
 
-  await sb.from("conversas").update({ chatwoot_conversation_id: convId }).eq("id", alvo.id);
-  console.log(`bot-turno auto-cura: conversa ${alvo.id} vinculada ao chatwoot_conversation_id ${convId} (devedor ${alvo.devedor_id}, fone_entrada=${fone || "n/d"})`);
+  // A inbox vai junto: é ela que diz se o ponteiro ainda vale. Reapontar a conversa sem atualizar
+  // a inbox deixaria o painel achando que a conversa continua na caixa do número anterior (§38).
+  await sb.from("conversas").update({
+    chatwoot_conversation_id: convId,
+    ...(inboxId ? { chatwoot_inbox_id: inboxId, chip_id: chipId ?? alvo.chip_id } : {}),
+  }).eq("id", alvo.id);
+  console.log(`bot-turno auto-cura: conversa ${alvo.id} vinculada ao chatwoot_conversation_id ${convId} (devedor ${alvo.devedor_id}, inbox=${inboxId ?? "n/d"}, fone_entrada=${fone || "n/d"})`);
   return alvo;
 }
 

@@ -8,7 +8,7 @@ import { brl, dataHoraBR } from "@/lib/utils";
 import {
   Search, MessageSquareText, ExternalLink, FileText, ArrowLeft, RefreshCw,
   Bot, Headset, User, Cog, Loader2, FlaskConical, Smartphone, X, CornerDownRight,
-  AudioLines, StickyNote, Hand, Undo2, CheckCircle2, RotateCcw,
+  AudioLines, StickyNote, Hand, Undo2, CheckCircle2, RotateCcw, AlertTriangle,
 } from "lucide-react";
 import { Composer } from "./composer";
 
@@ -36,6 +36,8 @@ type Conversa = {
   preview: string | null;
   preview_de: string | null;
   preview_privado: boolean;
+  /** A última mensagem que o robô/operador mandou foi RECUSADA pelo provedor. */
+  ultima_saida_falhou: boolean;
 };
 
 type Chip = { id: number; nome: string; numero: string | null };
@@ -51,6 +53,21 @@ type Msg = {
   criado_em: string;
   privado: boolean | null;
   autor_nome: string | null;
+  /** Chip que carregou ESTA mensagem — congelado no envio, imune a reatribuição. */
+  chip_id: number | null;
+  /** Recibo do provedor: 0 falhou · 1 enviado · 2 entregue · 3 lido · 4 reproduzido · null sem recibo. */
+  status_entrega: number | null;
+};
+
+// Como cada recibo aparece no rodapé do balão. "Enviado" é deliberadamente discreto e "não
+// entregue" é deliberadamente vermelho: a lição do §31 é que aceite do provedor nunca foi entrega,
+// e foi por não mostrar essa diferença que 390 abordagens morreram invisíveis.
+const ENTREGA: Record<number, { texto: string; classe: string; titulo: string }> = {
+  0: { texto: "não entregue", classe: "text-rose", titulo: "O provedor recusou. Esta mensagem não chegou ao destinatário." },
+  1: { texto: "enviado", classe: "text-mist", titulo: "Aceita pelo provedor, sem confirmação de entrega ainda." },
+  2: { texto: "entregue", classe: "text-mist", titulo: "Entregue no aparelho." },
+  3: { texto: "lido", classe: "text-emerald-soft", titulo: "Lido pelo destinatário." },
+  4: { texto: "ouvido", classe: "text-emerald-soft", titulo: "Áudio reproduzido pelo destinatário." },
 };
 
 // Estado da conversa. `ring`/`dot` desenham o estado no próprio avatar da linha — a lista
@@ -146,8 +163,13 @@ function motivoBloqueio(c: Conversa): string | null {
   return null;
 }
 
-export function Inbox({ lista, chips, chipPadrao, cwUrl, podeAtender }: {
-  lista: Conversa[]; chips: Chip[]; chipPadrao: number | null; cwUrl: string; podeAtender: boolean;
+export function Inbox({ lista, chips, chipsTodos, chipPadrao, cwUrl, podeAtender }: {
+  lista: Conversa[];
+  /** Números que aparecem nos filtros: só os do robô. */
+  chips: Chip[];
+  /** TODOS os números conhecidos, para nomear o chip de mensagens antigas — inclusive o banido. */
+  chipsTodos: Chip[];
+  chipPadrao: number | null; cwUrl: string; podeAtender: boolean;
 }) {
   const sb = useMemo(() => supabaseBrowser(), []);
   const router = useRouter();
@@ -224,7 +246,7 @@ export function Inbox({ lista, chips, chipPadrao, cwUrl, podeAtender }: {
     }
     const { data } = await sb
       .from("mensagens")
-      .select("id, direcao, origem, conteudo, tipo_conteudo, transcricao, anexos, criado_em, privado, autor_nome")
+      .select("id, direcao, origem, conteudo, tipo_conteudo, transcricao, anexos, criado_em, privado, autor_nome, chip_id, status_entrega")
       .eq("conversa_id", convId)
       .order("criado_em", { ascending: true })
       .limit(800);
@@ -310,6 +332,10 @@ export function Inbox({ lista, chips, chipPadrao, cwUrl, podeAtender }: {
   }
 
   const chipAtivo = chips.find((c) => c.id === chipFiltro) ?? null;
+  const nomeDoChip = useMemo(
+    () => new Map(chipsTodos.map((c) => [c.id, c.nome])),
+    [chipsTodos],
+  );
 
   return (
     <Card className="grid h-[calc(100dvh-210px)] min-h-[520px] grid-rows-[auto_1fr] gap-0 overflow-hidden p-0">
@@ -319,8 +345,13 @@ export function Inbox({ lista, chips, chipPadrao, cwUrl, podeAtender }: {
           <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-emerald/10 text-emerald">
             <Smartphone className="h-3.5 w-3.5" />
           </span>
+          {/* "Atende hoje" e não "Número": `conversas.chip_id` é quem CARREGA a conversa agora, e
+              muda no failover. Uma conversa reatribuída traz junto o histórico do número anterior —
+              ler este filtro como "foi este número que mandou tudo isso" é a leitura errada, e foi
+              a que fez parecer que um chip novo tinha disparado 400 mensagens (§38). Quem mandou
+              cada mensagem está no rodapé de cada balão. */}
           <div className="min-w-0 leading-tight">
-            <div className="text-[10px] uppercase tracking-wider text-mist/70">Número</div>
+            <div className="text-[10px] uppercase tracking-wider text-mist/70">Atende hoje</div>
             <div className="truncate text-xs font-medium text-chalk">
               {chipAtivo ? chipAtivo.nome : "Todos os números"}
               {chipAtivo?.numero && (
@@ -480,6 +511,17 @@ export function Inbox({ lista, chips, chipPadrao, cwUrl, podeAtender }: {
                       </span>
                       {c.saldo > 0 && (
                         <span className="font-mono text-mist/70 tabnums">{brl(c.saldo)}</span>
+                      )}
+                      {/* A última mensagem que saiu foi recusada pelo provedor. Sem este selo, uma
+                          conversa que nunca recebeu nada é indistinguível de uma abordada e ignorada
+                          — e o "Aguardando" da linha vira mentira. */}
+                      {c.ultima_saida_falhou && (
+                        <span
+                          className="inline-flex items-center gap-1 font-medium text-rose"
+                          title="A última mensagem enviada não chegou ao destinatário."
+                        >
+                          <AlertTriangle className="h-3 w-3" /> não entregue
+                        </span>
                       )}
                       {c.simulacao && (
                         <span className="ml-auto rounded-full border border-amber/30 bg-amber/10 px-1.5 py-px font-medium text-amber">
@@ -715,16 +757,39 @@ export function Inbox({ lista, chips, chipPadrao, cwUrl, podeAtender }: {
                               </div>
                               {fim && (
                                 <div
-                                  className={`mt-1 flex items-center gap-1 px-1 text-[10px] text-mist ${
+                                  className={`mt-1 flex flex-wrap items-center gap-1 px-1 text-[10px] text-mist ${
                                     doContato ? "" : "justify-end"
                                   }`}
                                 >
                                   <Icon className="h-3 w-3" />
                                   {m.origem === "humano" && m.autor_nome ? m.autor_nome : meta.label}
+                                  {/* O número que carregou ESTA mensagem, quando não é o que atende
+                                      hoje. Sem isto, uma conversa reatribuída parece ter sido toda
+                                      falada pelo chip atual — inclusive o que o número banido disse. */}
+                                  {!doContato && m.chip_id != null && m.chip_id !== atual.chip_id && (
+                                    <>
+                                      <span className="opacity-50">·</span>
+                                      <span title="Esta mensagem saiu por outro número, antes da reatribuição.">
+                                        por {nomeDoChip.get(m.chip_id) ?? `chip ${m.chip_id}`}
+                                      </span>
+                                    </>
+                                  )}
                                   <span className="opacity-50">·</span>
                                   <span className="font-mono tabnums" title={dataHoraBR(m.criado_em)}>
                                     {HORA.format(new Date(m.criado_em))}
                                   </span>
+                                  {!doContato && m.status_entrega != null && ENTREGA[m.status_entrega] && (
+                                    <>
+                                      <span className="opacity-50">·</span>
+                                      <span
+                                        className={ENTREGA[m.status_entrega].classe}
+                                        title={ENTREGA[m.status_entrega].titulo}
+                                      >
+                                        {m.status_entrega === 0 && <AlertTriangle className="mr-0.5 inline h-3 w-3" />}
+                                        {ENTREGA[m.status_entrega].texto}
+                                      </span>
+                                    </>
+                                  )}
                                 </div>
                               )}
                             </div>

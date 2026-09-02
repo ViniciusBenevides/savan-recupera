@@ -23,6 +23,9 @@ export default async function ConversasPage({ searchParams }: { searchParams: Pr
   ];
   const aba = resolverAba(abas, pedida);
 
+  // O canal oficial da Meta acabou em 17/08/2026 (§38); hoje quem conversa são os números comuns.
+  // O filtro do topo mostra qual número ATENDE cada conversa agora — não quem mandou as mensagens
+  // antigas, que continuam com o número de origem no rodapé de cada balão.
   return (
     <>
       <SectionTitle
@@ -30,8 +33,8 @@ export default async function ConversasPage({ searchParams }: { searchParams: Pr
         sub={aba === "escaladas"
           ? "Casos que o robô passou para atendimento humano — com histórico, status e desfecho."
           : podeAtender
-            ? "A operação real do número oficial — leia e responda por aqui. Conversas de teste ficam ocultas até você pedir."
-            : "A operação real do número oficial. Conversas de teste ficam ocultas até você pedir."}
+            ? "A operação real — leia e responda por aqui. O filtro do topo é o número que atende hoje, não quem mandou o histórico. Conversas de teste ficam ocultas até você pedir."
+            : "A operação real. O filtro do topo é o número que atende hoje, não quem mandou o histórico. Conversas de teste ficam ocultas até você pedir."}
       />
 
       <Abas abas={abas} atual={aba} />

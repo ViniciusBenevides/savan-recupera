@@ -8,6 +8,9 @@ export type ConversaAtendimento = {
   devedor_id: number;
   chip_id: number | null;
   chatwoot_conversation_id: number | null;
+  /** Inbox onde o ponteiro do Chatwoot vive. Diferente da inbox do chip = ponteiro obsoleto. */
+  chatwoot_inbox_id: number | null;
+  telefone_id: number | null;
   estado: string;
   motivo_encerramento: string | null;
   simulacao: boolean;
@@ -17,7 +20,7 @@ export type ConversaAtendimento = {
 };
 
 const CAMPOS =
-  "id, carteira_id, devedor_id, chip_id, chatwoot_conversation_id, estado, motivo_encerramento, simulacao, ultima_entrada_em, atendente_id, atendente_nome";
+  "id, carteira_id, devedor_id, chip_id, chatwoot_conversation_id, chatwoot_inbox_id, telefone_id, estado, motivo_encerramento, simulacao, ultima_entrada_em, atendente_id, atendente_nome";
 
 // Estados que não voltam atrás: a conversa já teve desfecho e nada deve reabri-la por acidente.
 // `optout` é o mais sério — a pessoa pediu para não ser contatada e insistir tem custo legal.
