@@ -142,6 +142,15 @@ function anoDe(data: unknown): string {
   return m ? m[1] : "";
 }
 
+/**
+ * Dois últimos dígitos do CPF. Vazio quando o documento não é um CPF de 11 dígitos — melhor a
+ * frase perder o trecho do que anunciar "CPF final" com lixo dentro.
+ */
+function finalDoCpf(documento: unknown): string {
+  const digitos = String(documento ?? "").replace(/\D/g, "");
+  return digitos.length === 11 ? digitos.slice(-2) : "";
+}
+
 function formatarNomeCompleto(nome: unknown): string {
   const conectores = new Set(["da", "das", "de", "do", "dos", "e"]);
   return String(nome ?? "").trim().replace(/\s+/g, " ").toLocaleLowerCase("pt-BR")
@@ -453,7 +462,7 @@ Deno.serve(async (req) => {
     }
 
     for (const [indice, item] of selecionados.entries()) {
-      const { data: dev } = await sb.from("devedores").select("id, nome, processo, saldo, vencimento, chatwoot_contact_id, balde").eq("id", item.devedor_id).single();
+      const { data: dev } = await sb.from("devedores").select("id, nome, processo, saldo, vencimento, cpf_cnpj, chatwoot_contact_id, balde").eq("id", item.devedor_id).single();
       const { data: tel } = await sb.from("telefones_devedor").select("id, telefone_e164").eq("id", item.telefone_id).maybeSingle();
       if (!tel) { await sb.from("fila_envios").update({ status: "sem_whatsapp", erro: "sem_telefone" }).eq("id", item.id); continue; }
 
@@ -476,6 +485,11 @@ Deno.serve(async (req) => {
         valor: formatarBRL(dev?.saldo),
         vencimento: formatarDataBR(dev?.vencimento),
         ano: anoDe(dev?.vencimento),
+        // Prova de que temos o cadastro, sem expor o documento — é o que banco e operadora fazem.
+        // De tudo que a abordagem revela (nome completo, valor, data), estes dois dígitos são de
+        // longe o que menos identifica alguém.
+        cpf_final: finalDoCpf(dev?.cpf_cnpj),
+        processo: String(dev?.processo ?? "").trim(),
       };
 
       let tplMeta: TplMeta | null = null;

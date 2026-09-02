@@ -44,34 +44,71 @@ for fluxo in (sys.stdout, sys.stderr):
         pass
 
 # ─────────────────────────────────────────────────────────────────────────────────────────────
-# PREENCHER ANTES DE GRAVAR. Vai numa mensagem para 2.634 pessoas: endereço errado é pior que
-# endereço nenhum, então o script se recusa a gravar enquanto isto for o placeholder.
-ENDERECO_MC_CRED = "<<PREENCHER: endereço completo da MC Cred>>"
+# Identificação da MC Cred. Vai numa mensagem para 2.634 pessoas, então o script se recusa a gravar
+# se isto voltar a ser placeholder.
+#
+# O endereço veio do Google Maps traduzido: "Room 1619" e "St. Central" são *Sala 1619* e *Setor
+# Central* — o Google leu "St." como Street. Escrito em inglês, num WhatsApp de cobrança, parece
+# cadastro estrangeiro e joga contra a credibilidade que a linha inteira existe para construir.
+#
+# CNPJ conferido pelos dígitos verificadores em 02/09/2026: 46.189.300/0001-61 é válido.
+IDENTIFICACAO_MC_CRED = (
+    "MC Cred — CNPJ 46.189.300/0001-61 — Rua 4, nº 515, sala 1619, "
+    "Setor Central, Goiânia/GO, CEP 74020-045"
+)
 # ─────────────────────────────────────────────────────────────────────────────────────────────
 
 # Variáveis disponíveis no renderizador do campanha-lote: primeiro_nome, nome, credor, nome_bot,
 # saudacao, valor, vencimento, ano. `{a|b}` é spintax — sorteado por envio, para que dois devedores
 # nunca recebam o texto idêntico (remédio anti-ban, não enfeite).
+# O nome da CEDENTE vai literal, não em variável. `carteiras.credor` guarda "MC CRED SOLUCOES EM
+# CREDITOS" — a cessionária, não a loja de origem —, e `{{credor}}` renderizaria "a MC Cred comprou
+# a carteira da MC Cred". O nome bonito da cedente ("SAVAN Calçados") não existe em lugar nenhum do
+# banco: o que há é "00034 | SAVAN COMERCIO DE CALCADOS LTDA", sem acento e com código na frente.
+# Roteiro é por carteira, então escrever o nome aqui é correto e não limita nada.
+CEDENTE = "SAVAN Calçados"
+
+# Três variações do mesmo registro institucional (a variante 4, escolhida pelo dono em 02/09/2026).
+# São três e não uma porque dois devedores receberem texto idêntico é assinatura de robô — variação
+# é remédio anti-ban, não enfeite. Sem spintax de saudação de propósito: "Oi" quebraria o tom formal
+# que é justamente o que faz esta versão funcionar com quem desconfia.
+#
+# Variáveis usadas — todas conferidas contra os 2.634 registros da carteira 11:
+#   {{processo}}   100% preenchido e único por devedor (serve de protocolo)
+#   {{cpf_final}}  todos os documentos são CPF de 11 dígitos
+#   {{valor}} {{vencimento}} {{nome}} {{primeiro_nome}} {{nome_bot}}
 TEXTOS_ABORDAGEM = [
-    "{Olá|Oi}, {{primeiro_nome}}. Aqui é a {{nome_bot}}, da MC Cred.\n\n"
-    "A MC Cred comprou a carteira de contas da {{credor}} — por isso quem fala com você agora somos "
-    "nós, e não a loja. Consta aqui uma pendência de {{valor}}, com vencimento em {{vencimento}}, "
-    "no nome de {{nome}}.\n\n"
-    "Confirma que falo com a pessoa certa? Se este número não for dela, me avisa que eu corrijo. "
-    "E se você preferir não tratar disso por aqui, responde “não” que eu não te procuro mais.",
+    "Olá, {{primeiro_nome}}. Aqui é a {{nome_bot}}, da MC Cred. Referência {{processo}}.\n\n"
+    f"A MC Cred adquiriu a carteira de contas da {CEDENTE} e passou a ser a credora deste "
+    "registro: {{valor}}, vencimento em {{vencimento}}, titular {{nome}}, CPF final "
+    "{{cpf_final}}.\n\n"
+    "Há uma proposta de quitação voluntária disponível para encerrar o registro em definitivo, "
+    "com termo de quitação.\n\n"
+    "Confirma que falo com a titular? Caso o número não seja dela, me informe que faço a "
+    "correção. Caso prefira não ser mais contatada, responda “não”.\n\n"
+    + IDENTIFICACAO_MC_CRED,
 
-    "{Olá|Oi}, {{primeiro_nome}}! Meu nome é {{nome_bot}} e eu falo pela MC Cred.\n\n"
-    "Nós adquirimos a carteira de contas da {{credor}}, então esse assunto passou a ser conosco. "
-    "No sistema há uma pendência em nome de {{nome}}: {{valor}}, vencida em {{vencimento}}.\n\n"
-    "É com você mesmo que estou falando? Se o número não for da pessoa, me diz que eu tiro do "
-    "cadastro. Se não quiser tratar disso comigo, é só responder “não”.",
+    "Olá, {{primeiro_nome}}. Aqui quem fala é a {{nome_bot}}, da MC Cred. Protocolo "
+    "{{processo}}.\n\n"
+    f"A carteira de contas da {CEDENTE} foi cedida à MC Cred, que hoje é a credora deste "
+    "registro: titular {{nome}}, CPF final {{cpf_final}}, valor de {{valor}}, vencido em "
+    "{{vencimento}}.\n\n"
+    "Está disponível uma proposta de quitação voluntária para encerrar o registro em definitivo, "
+    "com termo de quitação em nome da titular.\n\n"
+    "Confirma que falo com a pessoa correta? Se este número não pertencer a ela, me informe que "
+    "faço a correção no cadastro. Se preferir não ser mais contatada, responda “não”.\n\n"
+    + IDENTIFICACAO_MC_CRED,
 
-    "{Olá|Oi}, {{primeiro_nome}}, tudo bem? Sou a {{nome_bot}}, da MC Cred.\n\n"
-    "A {{credor}} cedeu a carteira dessas contas para a MC Cred, que hoje é a responsável por elas. "
-    "Está registrada uma pendência de {{valor}}, com vencimento em {{vencimento}}, em nome de "
-    "{{nome}}.\n\n"
-    "Só preciso confirmar: é você? Se este número for de outra pessoa, me avisa. E se não quiser "
-    "falar sobre isso, responde “não” que eu encerro aqui.",
+    "Olá, {{primeiro_nome}}. Aqui é a {{nome_bot}}, falando pela MC Cred. Referência "
+    "{{processo}}.\n\n"
+    f"Informo que a MC Cred adquiriu da {CEDENTE} a carteira em que consta este registro: "
+    "{{valor}}, com vencimento em {{vencimento}}, em nome de {{nome}}, CPF final {{cpf_final}}. "
+    "O assunto passa a ser tratado conosco.\n\n"
+    "Temos uma proposta de quitação voluntária para encerrar o registro em definitivo, com termo "
+    "de quitação ao final.\n\n"
+    "Peço que confirme se falo com a titular. Se o número não for dela, me avise para que eu "
+    "corrija. E se preferir não receber mais contato, responda “não”.\n\n"
+    + IDENTIFICACAO_MC_CRED,
 ]
 
 # A etapa que substitui o vaivém optin → identificar → abrir_assunto → proposta. Uma mensagem só.
@@ -88,7 +125,7 @@ INSTRUCAO_APRESENTAR_TUDO = (
     "isso que a pessoa não nos reconhece.\n"
     "2. O que consta: pendência de {{valor}}, vencida em {{vencimento}}, em nome de {{nome}}.\n"
     "3. Que o assunto passa a ser tratado com a MC Cred a partir de agora.\n"
-    "4. Nosso endereço: " + ENDERECO_MC_CRED + "\n"
+    "4. A identificação completa, no fim da mensagem: " + IDENTIFICACAO_MC_CRED + "\n"
     "5. A condição de quitação: chame a ferramenta de proposta e diga o VALOR COM DESCONTO e o que "
     "ele encerra — pagamento único, com termo de quitação. Nunca invente esse número.\n"
     "6. Que é voluntário: a dívida está prescrita, não há consequência se a pessoa não quiser "
@@ -289,8 +326,10 @@ def validar(roteiro):
     # Só o bloco de disparo passa pelo renderizador do `campanha-lote`. As mensagens de
     # pós-pagamento são montadas em outro lugar, com outro conjunto de variáveis — checá-las com
     # esta lista acusaria erro em texto que funciona.
+    # Espelha `vars` em supabase/functions/campanha-lote/index.ts. Quando uma variável nova entrar
+    # lá, ela precisa entrar aqui — é esta lista que impede um {{...}} vazio chegar ao devedor.
     variaveis_ok = {"primeiro_nome", "nome", "credor", "nome_bot", "saudacao",
-                    "valor", "vencimento", "ano"}
+                    "valor", "vencimento", "ano", "cpf_final", "processo"}
     for e in etapas:
         if e.get("tipo") != "disparo":
             continue
