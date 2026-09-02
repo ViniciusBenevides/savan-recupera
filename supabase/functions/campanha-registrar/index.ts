@@ -4,6 +4,7 @@
 // Em teste: carimba os registros mas NÃO conta métricas reais nem consome aquecimento do chip.
 // SEGURANÇA (auditoria 2026-06-26): A1 — só o service_role (n8n) pode chamar; anon key recusada (401).
 import { createClient, SupabaseClient } from "jsr:@supabase/supabase-js@2";
+import { carregarSegredos } from "../_shared/lib.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -165,14 +166,66 @@ Deno.serve(async (req) => {
     });
   } else if (b.status === "sem_whatsapp") {
     await sb.from("fila_envios").update({ status: "sem_whatsapp", erro: b.erro ?? "on_whatsapp_false" }).eq("id", b.fila_id);
+
+    // ── Casca vazia: o contato é criado ANTES de saber se dá para enviar ──────────────────────
+    // O `contato-criar` abre contato E conversa no Chatwoot; só depois a Evolution responde que o
+    // número não tem WhatsApp. Sobra uma conversa sem nenhuma mensagem — no Chatwoot e, via
+    // webhook do `chatwoot-sync`, também em `conversas`. Para o operador é uma pessoa na caixa de
+    // entrada que ninguém nunca falou e que não dá para responder.
+    //
+    // A linha vazia não guarda informação: que este número não tem WhatsApp já fica em
+    // `fila_envios.status` e em `telefones_devedor.whatsapp_valido`. Então some — mas SÓ se estiver
+    // mesmo sem mensagem, para nunca engolir histórico se a ordem dos eventos surpreender.
+    if (b.chatwoot_conversation_id) {
+      const { data: casca } = await sb.from("conversas")
+        .select("id").eq("chatwoot_conversation_id", b.chatwoot_conversation_id).maybeSingle();
+      if (casca) {
+        const { count } = await sb.from("mensagens")
+          .select("id", { count: "exact", head: true }).eq("conversa_id", casca.id);
+        if ((count ?? 0) === 0) await sb.from("conversas").delete().eq("id", casca.id);
+      }
+
+      // Do lado do Chatwoot a conversa também fica aberta. Resolver tira da caixa sem apagar nada.
+      // Best-effort: se falhar, o registro do envio não pode cair junto.
+      try {
+        const seg = await carregarSegredos(sb);
+        const cwUrl = String(cfg.chatwoot?.url ?? "").replace(/\/$/, "");
+        const acc = cfg.chatwoot?.account_id ?? 1;
+        if (cwUrl && seg.CHATWOOT_TOKEN) {
+          await fetch(`${cwUrl}/api/v1/accounts/${acc}/conversations/${b.chatwoot_conversation_id}/toggle_status`, {
+            method: "POST",
+            headers: { "api_access_token": seg.CHATWOOT_TOKEN, "Content-Type": "application/json" },
+            body: JSON.stringify({ status: "resolved" }),
+          });
+        }
+      } catch (e) {
+        console.error("campanha-registrar: falha ao resolver conversa sem whatsapp:", e instanceof Error ? e.message : String(e));
+      }
+    }
     let carteiraId = b.carteira_id ?? null;
     if (!carteiraId) {
       const { data: d } = await sb.from("devedores").select("carteira_id").eq("id", b.devedor_id).maybeSingle();
       carteiraId = d?.carteira_id ?? null;
     }
+    // O número que acabou de falhar fica registrado como sem WhatsApp. Sem isso ele continua
+    // elegível em `fn_proximo_telefone` (que só filtra `whatsapp_valido is null or true`) e volta
+    // a ser sorteado numa próxima rodada — o `p_excluir` só vale para esta chamada.
+    if (b.telefone_id) {
+      await sb.from("telefones_devedor")
+        .update({ whatsapp_valido: false, verificado_em: new Date().toISOString() })
+        .eq("id", b.telefone_id);
+    }
+
+    // `fn_proximo_telefone` é `RETURNS telefones_devedor` — UMA linha, não SETOF. Pelo PostgREST
+    // isso chega como OBJETO, e `objeto.length` é `undefined`. O teste antigo (`prox.length`)
+    // portanto era sempre falso: o failover caía direto no else e o devedor era desistido com o
+    // segundo número nunca tentado. Em 02/09/2026 havia 31 pessoas assim — todas com um móvel
+    // ainda válido e nenhum item na fila. O `Array.isArray` cobre os dois formatos, caso a função
+    // um dia vire SETOF.
     const { data: prox } = await sb.rpc("fn_proximo_telefone", { p_devedor_id: b.devedor_id, p_excluir: b.telefone_id });
-    if (prox && prox.length) {
-      await sb.from("fila_envios").insert({ devedor_id: b.devedor_id, telefone_id: prox[0].id, carteira_id: carteiraId, prioridade: b.prioridade ?? 0, status: "aguardando", simulacao: sim });
+    const proximo = Array.isArray(prox) ? prox[0] : prox;
+    if (proximo?.id) {
+      await sb.from("fila_envios").insert({ devedor_id: b.devedor_id, telefone_id: proximo.id, carteira_id: carteiraId, prioridade: b.prioridade ?? 0, status: "aguardando", simulacao: sim });
     } else {
       await sb.from("devedores").update({ status_cobranca: "sem_whatsapp" }).eq("id", b.devedor_id);
     }
