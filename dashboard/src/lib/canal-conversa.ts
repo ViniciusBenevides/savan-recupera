@@ -96,26 +96,47 @@ function impedimentoPeloEstado(conversa: ConversaAtendimento): string | null {
   return null;
 }
 
+/**
+ * Para onde a mensagem vai. Quando a conversa não aponta para um telefone, cai no MESMO critério
+ * que a importação usa para escolher o número da abordagem: o primeiro móvel por `ordem`; sem
+ * móvel, o primeiro da lista (`api/carteiras/[id]/importar`).
+ *
+ * A `conversas.telefone_id` fica nula com facilidade — a FK é `on delete set null`, e conversa
+ * que nasce de uma resposta recebida pode vir sem ela. O filtro antigo era
+ * `.eq("principal", true)`, e `telefones_devedor` nunca teve coluna `principal`: o Postgres
+ * devolvia 42703, o cliente devolvia `data: null` sem lançar, e o painel dizia ao operador que o
+ * devedor não tinha telefone enquanto a ficha, que lê a tabela direto, listava quatro.
+ */
+async function telefoneDaConversa(conversa: ConversaAtendimento): Promise<string | null> {
+  const admin = supabaseAdmin();
+  if (conversa.telefone_id) {
+    const { data } = await admin.from("telefones_devedor")
+      .select("telefone_e164").eq("id", conversa.telefone_id).maybeSingle();
+    if (data?.telefone_e164) return data.telefone_e164 as string;
+  }
+  const { data: tels } = await admin.from("telefones_devedor")
+    .select("telefone_e164, tipo").eq("devedor_id", conversa.devedor_id).order("ordem");
+  const lista = (tels ?? []) as { telefone_e164: string; tipo: string | null }[];
+  const escolhido = lista.find((t) => t.tipo === "movel") ?? lista[0];
+  return escolhido?.telefone_e164 ?? null;
+}
+
 export async function canalDaConversa(conversa: ConversaAtendimento): Promise<CanalConversa> {
   const admin = supabaseAdmin();
 
-  const [{ data: chipRaw }, { data: telRaw }] = await Promise.all([
+  const [{ data: chipRaw }, telefone] = await Promise.all([
     conversa.chip_id
       ? admin.from("chips")
           .select("id, nome, conector, papel, status, numero_e164, instancia_evolution, chatwoot_inbox_id, cobrador_id")
           .eq("id", conversa.chip_id).maybeSingle()
       : Promise.resolve({ data: null }),
-    conversa.telefone_id
-      ? admin.from("telefones_devedor").select("telefone_e164").eq("id", conversa.telefone_id).maybeSingle()
-      : admin.from("telefones_devedor").select("telefone_e164")
-          .eq("devedor_id", conversa.devedor_id).eq("principal", true).limit(1).maybeSingle(),
+    telefoneDaConversa(conversa),
   ]);
 
   const chip: ChipDaConversa | null = chipRaw
     ? { ...(chipRaw as any), conector: normalizarConector((chipRaw as any).conector) }
     : null;
   const conector = chip?.conector ?? CONECTOR_PADRAO;
-  const telefone = (telRaw?.telefone_e164 as string | null) ?? null;
 
   const naJanela = dentroDaJanela(conversa.ultima_entrada_em);
   const janelaExpira = conversa.ultima_entrada_em

@@ -207,10 +207,16 @@ async function garantirConversa(
     .select("id, carteira_id").eq("id", devedorId).maybeSingle();
   if (erroDev) throw erroDev;
   if (!dev) return null;
+  // Sem telefone identificado pelo remetente, vale o mesmo critério da importação: o primeiro
+  // móvel por `ordem`; sem móvel, o primeiro da lista. O filtro antigo era `principal = true`,
+  // coluna que `telefones_devedor` nunca teve — o 42703 vinha silencioso (`data: null`, sem
+  // exceção), a conversa nascia sem telefone e o painel dizia ao operador que não havia para
+  // onde enviar, mesmo com a ficha listando quatro números.
   if (!telefoneId) {
-    const { data: tel } = await sb.from("telefones_devedor")
-      .select("id").eq("devedor_id", devedorId).eq("principal", true).limit(1).maybeSingle();
-    telefoneId = numero(tel?.id);
+    const { data: tels } = await sb.from("telefones_devedor")
+      .select("id, tipo").eq("devedor_id", devedorId).order("ordem");
+    const lista = tels ?? [];
+    telefoneId = numero((lista.find((t: any) => t.tipo === "movel") ?? lista[0])?.id);
   }
 
   const { data: semelhante } = await sb.from("conversas")
@@ -227,13 +233,20 @@ async function garantirConversa(
   // aparecer por uma inbox nova, criar linha nova RACHARIA o dossiê e o robô repetiria o que o número
   // antigo já disse. Então reaproveitamos a linha existente e só trocamos o transporte.
   //
-  // Só adotamos quando o ponteiro antigo é de OUTRA inbox (ou não existe). Se a linha já aponta para
-  // esta mesma inbox com outro id, aí é conversa realmente nova e merece linha própria.
+  // Adotamos qualquer linha do devedor, INCLUSIVE na mesma inbox. Antes havia um filtro de inbox
+  // diferente, apoiado na ideia de que "mesma inbox com outro id" seria conversa realmente nova.
+  // Não é: o `contato-criar` abre uma conversa NOVA no Chatwoot a cada abordagem, sem procurar uma
+  // aberta, e o `campanha-registrar` move o ponteiro da linha para o id novo — o id anterior fica
+  // órfão. Quando a pessoa respondia por um desses órfãos, o filtro barrava a adoção e nascia mais
+  // uma linha. Como `etapa_roteiro` é por linha, o robô recomeçava o roteiro do zero e a mesma
+  // pessoa aparecia três vezes na caixa de entrada, recebendo três aberturas de apresentação.
+  //
+  // Adotar também protege o desfecho: linha nova nasceria sem o `optout`/`pago` já registrado, e o
+  // robô voltaria a falar com quem pediu para não ser contatado.
   const { data: adotavel } = await sb.from("conversas")
-    .select("id, devedor_id, carteira_id, chip_id, simulacao, estado, chatwoot_inbox_id")
+    .select("id, devedor_id, carteira_id, chip_id, simulacao, estado, chatwoot_inbox_id, telefone_id")
     .eq("devedor_id", devedorId)
     .eq("simulacao", simulacao)
-    .or(`chatwoot_inbox_id.is.null,chatwoot_inbox_id.neq.${inboxId}`)
     .order("ultima_msg_em", { ascending: false, nullsFirst: false })
     .order("id", { ascending: false })
     .limit(1).maybeSingle();
@@ -244,6 +257,9 @@ async function garantirConversa(
       chatwoot_inbox_id: inboxId,
       chatwoot_contact_id: contactId,
       chip_id: chip.id,
+      // A linha pode ter vindo sem telefone (FK `on delete set null`, ou a coluna `principal` que
+      // não existia). A resposta que chegou agora diz de qual número ela veio — aproveita.
+      ...(adotavel.telefone_id == null && telefoneId ? { telefone_id: telefoneId } : {}),
     }).eq("id", adotavel.id)
       .select("id, devedor_id, carteira_id, chip_id, simulacao, estado").single();
     if (erroAdotar) throw erroAdotar;
