@@ -122,6 +122,26 @@ function renderTemplate(tpl: string, vars: Record<string, unknown>): string {
   txt = txt.replace(/\{\{\s*([a-z_]+)\s*\}\}/gi, (_m, k) => { const v = vars[k]; return v === undefined || v === null ? "" : String(v); });
   return txt;
 }
+// Valor e data entram no texto já formatados em pt-BR. Fazer isso aqui, e não no roteiro, garante
+// que "55.08" nunca chegue ao devedor como "55.08" — e mantém o roteiro sendo texto, não código.
+function formatarBRL(valor: unknown): string {
+  const n = Number(valor);
+  if (!Number.isFinite(n)) return "";
+  return n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+
+/** `2014-03-07` → `07/03/2014`. Vazio quando não há data — melhor omitir que inventar. */
+function formatarDataBR(data: unknown): string {
+  const bruto = String(data ?? "").slice(0, 10);
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(bruto);
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : "";
+}
+
+function anoDe(data: unknown): string {
+  const m = /^(\d{4})/.exec(String(data ?? ""));
+  return m ? m[1] : "";
+}
+
 function formatarNomeCompleto(nome: unknown): string {
   const conectores = new Set(["da", "das", "de", "do", "dos", "e"]);
   return String(nome ?? "").trim().replace(/\s+/g, " ").toLocaleLowerCase("pt-BR")
@@ -449,6 +469,13 @@ Deno.serve(async (req) => {
       const vars = {
         primeiro_nome: primeiroNomeCap, nome: nomeCompleto, credor: credor ?? "", nome_bot: nomeBot,
         saudacao: saudacaoNaTz(tzMensagem),
+        // Dados da dívida na PRIMEIRA mensagem — decisão do dono em 02/09/2026, tomada com o risco
+        // na mesa (número reciclado aprende dívida alheia; ver ADR-0003 e §31). Existem para que o
+        // texto de abordagem possa se identificar por completo em vez de pedir licença no vago,
+        // que é o que estava produzindo conversa com cara de golpe.
+        valor: formatarBRL(dev?.saldo),
+        vencimento: formatarDataBR(dev?.vencimento),
+        ano: anoDe(dev?.vencimento),
       };
 
       let tplMeta: TplMeta | null = null;
