@@ -6,14 +6,15 @@
 // para modelos de uma conta que não entrega mais nada.
 //
 // A regra do canal é a mesma do fluxo do robô: **o conector do chip escolhe o caminho de saída.**
-//   • baileys    → texto livre sempre, envio direto pela Evolution (ADR-0002), sem template
+//   • baileys / baileys_chatwoot → texto livre sempre, envio direto pela Edge Function
+//     `enviar-mensagem` (ADR-0002), que escolhe o transporte pelo conector. Sem template.
 //   • meta_cloud → janela de 24h e, fora dela, só modelo aprovado — pelo Chatwoot
 //
 // O que NÃO muda com o conector: bloqueio de contato. "Não perturbe" é trava de banco e vale para
 // todos os chips, presentes e futuros (ADR-0003).
 
 import { supabaseAdmin } from "@/lib/supabase-server";
-import { CONECTOR_PADRAO, ehConectorSuportado, type Conector } from "@/lib/conector";
+import { CONECTOR_PADRAO, ehConectorBaileys, ehConectorSuportado, type Conector } from "@/lib/conector";
 import { dentroDaJanela, JANELA_MS } from "@/lib/chatwoot-atendimento";
 import type { ConversaAtendimento } from "@/lib/conversas";
 
@@ -175,8 +176,10 @@ export async function canalDaConversa(conversa: ConversaAtendimento): Promise<Ca
   // Sai direto pela Evolution, com presença e "digitando…" (ADR-0002). Não depende do ponteiro do
   // Chatwoot — o endereço é o telefone — e por isso funciona também nas conversas que ficaram
   // apontando para a inbox do número banido.
-  if (conector === "baileys") {
-    if (!chip.instancia_evolution) {
+  if (ehConectorBaileys(conector)) {
+    // Só a Evolution é endereçada por instância; no baileys_chatwoot o endereço é o próprio
+    // numero_e164 do chip, então exigir instância aqui fecharia um canal que está no ar.
+    if (conector === "baileys" && !chip.instancia_evolution) {
       return fechado(`O número ${chip.nome} ainda não foi conectado por QR — não há sessão para enviar.`);
     }
     if (!telefone) {

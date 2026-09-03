@@ -3,6 +3,7 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { Card, Button, Label, Badge, HelpHint } from "@/components/ui/primitives";
 import { Smartphone, Loader2, CheckCircle2, AlertTriangle, QrCode, Cloud } from "lucide-react";
+import { ehConectorBaileys } from "@/lib/conector";
 
 type ChipItem = {
   id: number; nome: string; numero_e164: string | null;
@@ -49,8 +50,8 @@ export function ChipsVinculados({ carteiraId }: { carteiraId: number }) {
   }, [sel, original]);
 
   const marcados = (chips ?? []).filter((c) => sel.has(c.id));
-  const temBaileys = marcados.some((c) => c.conector === "baileys");
-  const temMeta = marcados.some((c) => c.conector !== "baileys");
+  const temBaileys = marcados.some((c) => ehConectorBaileys(c.conector));
+  const temMeta = marcados.some((c) => !ehConectorBaileys(c.conector));
   const nenhumPronto = marcados.length > 0 && !marcados.some((c) => PRONTO.has(c.status));
 
   function alternar(id: number) {
@@ -116,7 +117,7 @@ export function ChipsVinculados({ carteiraId }: { carteiraId: number }) {
                   <span className="block truncate text-sm text-chalk">{c.nome}</span>
                   <span className="block font-mono text-[11px] text-mist tabnums">{c.numero_e164 ?? "sem número"}</span>
                 </span>
-                {c.conector === "baileys"
+                {ehConectorBaileys(c.conector)
                   ? <Badge tone="amber"><QrCode className="h-3 w-3" /> QR</Badge>
                   : <Badge tone="green"><Cloud className="h-3 w-3" /> Meta</Badge>}
                 <Badge tone={PRONTO.has(c.status) ? "blue" : "neutral"}>{c.status}</Badge>

@@ -21,6 +21,7 @@ import {
   type EtapaRoteiro, type TipoEtapa, type CasoRoteiro,
 } from "./roteiro-layout";
 import { TemplateMetaAbordagem } from "./template-meta";
+import { ehConectorBaileys } from "@/lib/conector";
 
 /* ---------------------------------------------------------------- nó de etapa */
 
@@ -188,8 +189,8 @@ function Canvas({ carteira, padrao, salvar }: {
         if (!vivo || !d?.chips) return;
         const ligados = d.chips.filter((c: any) => c.vinculado);
         setCanais({
-          baileys: ligados.filter((c: any) => c.conector === "baileys").length,
-          meta: ligados.filter((c: any) => c.conector !== "baileys").length,
+          baileys: ligados.filter((c: any) => ehConectorBaileys(c.conector)).length,
+          meta: ligados.filter((c: any) => !ehConectorBaileys(c.conector)).length,
         });
       })
       .catch(() => {});

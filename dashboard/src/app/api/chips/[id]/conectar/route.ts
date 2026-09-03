@@ -41,9 +41,16 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     .eq("id", chipId).maybeSingle();
   if (!chip) return NextResponse.json({ erro: "Chip não encontrado." }, { status: 404 });
 
+  // Estrito à Evolution: é o único provedor que este endpoint provisiona por QR. O baileys_chatwoot
+  // é Baileys também, mas pareia pelo baileys-api, fora do painel — dizer "não é Baileys" ali
+  // mandaria o dono procurar o problema no lugar errado.
   if (chip.conector !== "baileys") {
     return NextResponse.json(
-      { erro: "Este chip não usa o canal Baileys. O canal oficial da Meta está suspenso desde 17/08/2026." },
+      {
+        erro: chip.conector === "baileys_chatwoot"
+          ? "Este chip está no baileys-api (Chatwoot), e o pareamento por QR dele não passa pelo painel."
+          : "Este chip não usa o canal Baileys. O canal oficial da Meta está suspenso desde 17/08/2026.",
+      },
       { status: 400 },
     );
   }
