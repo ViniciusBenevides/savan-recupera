@@ -8,6 +8,7 @@
 #   bash scripts/evolution.sh estado <instancia>
 #   bash scripts/evolution.sh detalhe <instancia>
 #   bash scripts/evolution.sh logout <instancia> --confirmo    (so depois de um 401)
+#   bash scripts/evolution.sh apagar-instancia <instancia> --confirmo    (remove de vez, sem volta)
 #   bash scripts/evolution.sh proxy-set <instancia> <url> [<rotulo>]
 #   bash scripts/evolution.sh proxy-get <instancia>
 #   bash scripts/evolution.sh chatwoot-set <instancia> <nome-da-inbox>
@@ -107,6 +108,35 @@ if cmd == 'info':
     for i in (r if isinstance(r, list) else []):
         inst = i.get('instance', i)
         print(f"  {inst.get('instanceName') or inst.get('name')}  estado={inst.get('connectionStatus') or inst.get('state')}  numero={inst.get('owner') or inst.get('number') or '-'}")
+
+elif cmd == 'apagar-instancia':
+    # Remove a instancia da Evolution DE VERDADE — nao e logout, e delete. Diferente do logout,
+    # nao ha volta: a instancia (nome, config do Chatwoot vinculado, historico local na Evolution)
+    # deixa de existir. Uso: instancia morta que nao vai ser reaproveitada (ex.: numero migrado
+    # para outro provedor Baileys).
+    #
+    # CONFIRMACAO OBRIGATORIA (politica de credenciais + guia do Baileys secao 10.4).
+    instancia = args[1]
+    confirmou = '--confirmo' in args[2:]
+    if not confirmou:
+        print('EXCLUSAO NAO EXECUTADA - falta confirmacao.')
+        print('')
+        print('  instancia : %s' % instancia)
+        print('  apaga     : a instancia inteira na Evolution (nome, config, historico local)')
+        print('  nao apaga : nada no Supabase (chips, conversas, mensagens, fila_envios)')
+        print('  nao apaga : o inbox correspondente no Chatwoot, se houver — fica orfao la')
+        print('')
+        print('  risco: sem volta. So use em instancia que nao vai ser reaproveitada.')
+        print('')
+        print('  para executar de fato:')
+        print('    bash scripts/evolution.sh apagar-instancia %s --confirmo' % instancia)
+        sys.exit(2)
+
+    c, r = call('DELETE', f'instance/delete/{urllib.parse.quote(instancia)}')
+    if c not in ('200', '201'):
+        sys.stderr.write('FALHOU exclusao: HTTP %s%s%s%s' % (c, chr(10), r, chr(10)))
+        sys.exit(1)
+    print('instancia apagada: %s' % instancia)
 
 elif cmd == 'logout':
     # Limpa o estado de auth (creds/keys) de uma instancia e a deixa pronta para novo QR.
