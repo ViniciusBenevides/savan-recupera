@@ -327,7 +327,7 @@ Deno.serve(async (req) => {
   }
 
   // chips com o dono (cobrador) p/ resolver a config/template de cada um
-  const { data: chips } = await sb.from("chips").select("id, nome, chatwoot_inbox_id, status, cobrador_id, proximo_disparo_em, conector, instancia_evolution").in("status", ["ativo", "aquecendo"]);
+  const { data: chips } = await sb.from("chips").select("id, nome, chatwoot_inbox_id, status, cobrador_id, proximo_disparo_em, conector, instancia_evolution, numero_e164").in("status", ["ativo", "aquecendo"]);
   const itens: any[] = [];
   const pulados: Record<string, number> = {}; // motivo -> nº de chips
 
@@ -349,11 +349,15 @@ Deno.serve(async (req) => {
     // pulado com o motivo — melhor lote vazio explicado do que envio fantasma marcado como
     // "enviado", ou texto livre que a Meta recusa.
     //
-    // baileys: não existe modelo para aprovar, e a 1ª mensagem sai do bloco de disparo do fluxo da
-    // carteira, com as variações sorteadas. O gate acima não se aplica e, aplicado, era fatal: o
-    // chip Baileys nunca tem template, então caía em `meta_template_ausente` toda rodada e o número
-    // conectado ficava parado sem ninguém entender por quê.
-    const ehBaileys = (chip.conector ?? "meta_cloud") === "baileys";
+    // baileys / baileys_chatwoot: não existe modelo para aprovar, e a 1ª mensagem sai do bloco de
+    // disparo do fluxo da carteira, com as variações sorteadas. O gate acima não se aplica e,
+    // aplicado, era fatal: o chip nunca tem template, então caía em `meta_template_ausente` toda
+    // rodada e o número conectado ficava parado sem ninguém entender por quê. As duas variantes
+    // são o mesmo transporte não-oficial por baixo — só a Edge Function `enviar-mensagem` sabe (e
+    // precisa saber) qual API falar; aqui é tudo "baileys" (ver `_shared/conector.ts`).
+    const conectorChip = String(chip.conector ?? "meta_cloud");
+    const ehBaileysChatwoot = conectorChip === "baileys_chatwoot";
+    const ehBaileys = conectorChip === "baileys" || ehBaileysChatwoot;
     const tzAbordagem = cfg.janela_envio?.tz ?? "America/Sao_Paulo";
     let refTpl: any = null;
 
@@ -377,10 +381,10 @@ Deno.serve(async (req) => {
       qAprov = chip.cobrador_id ? qAprov.eq("cobrador_id", chip.cobrador_id) : qAprov.is("cobrador_id", null);
       const { data: aprov } = await qAprov.maybeSingle();
       if (!aprov) { pulados.meta_template_nao_aprovado = (pulados.meta_template_nao_aprovado ?? 0) + 1; continue; }
-    } else if (!chip.instancia_evolution) {
-      // Chip Baileys sem instância nunca escaneou o QR. Deixar passar geraria envio para uma
-      // instância inexistente — falha 404 na Evolution, item marcado como falha e o chip levando
-      // a culpa por um problema de cadastro.
+    } else if (ehBaileysChatwoot ? !chip.numero_e164 : !chip.instancia_evolution) {
+      // Chip Baileys sem instância (ou baileys_chatwoot sem número) nunca escaneou o QR. Deixar
+      // passar geraria envio para uma conexão inexistente — falha 404 no provedor, item marcado
+      // como falha e o chip levando a culpa por um problema de cadastro.
       pulados.baileys_sem_instancia = (pulados.baileys_sem_instancia ?? 0) + 1;
       continue;
     }

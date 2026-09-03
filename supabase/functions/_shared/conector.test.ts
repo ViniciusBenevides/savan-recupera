@@ -2,6 +2,7 @@ import { assertEquals, assertThrows } from "jsr:@std/assert@1";
 import {
   chipPodeAbordar,
   conectorDoChip,
+  ehConectorBaileys,
   ehConectorSuportado,
   nomeInstanciaEvolution,
 } from "./conector.ts";
@@ -18,11 +19,18 @@ Deno.test("conector conhecido e preservado, desconhecido cai no padrao", () => {
   assertEquals(conectorDoChip({ conector: "zap_qualquer" }), "baileys");
 });
 
-Deno.test("ehConectorSuportado aceita so os dois valores do check do banco", () => {
+Deno.test("ehConectorSuportado aceita so os tres valores do check do banco", () => {
   assertEquals(ehConectorSuportado("baileys"), true);
+  assertEquals(ehConectorSuportado("baileys_chatwoot"), true);
   assertEquals(ehConectorSuportado("meta_cloud"), true);
   assertEquals(ehConectorSuportado("zap_qualquer"), false);
   assertEquals(ehConectorSuportado(""), false);
+});
+
+Deno.test("ehConectorBaileys agrupa os dois transportes nao-oficiais", () => {
+  assertEquals(ehConectorBaileys("baileys"), true);
+  assertEquals(ehConectorBaileys("baileys_chatwoot"), true);
+  assertEquals(ehConectorBaileys("meta_cloud"), false);
 });
 
 Deno.test("nome de instancia e um slug estavel e unico por chip", () => {
@@ -50,6 +58,25 @@ Deno.test("chip baileys so aborda com instancia definida", () => {
   assertEquals(
     chipPodeAbordar({ conector: "baileys", papel: "bot", instancia_evolution: null }),
     { pode: false, motivo: "sem_instancia_evolution" },
+  );
+});
+
+Deno.test("chip baileys_chatwoot so aborda com numero_e164 definido", () => {
+  assertEquals(
+    chipPodeAbordar({ conector: "baileys_chatwoot", papel: "bot", numero_e164: "+5562982624555" }),
+    { pode: true },
+  );
+  assertEquals(
+    chipPodeAbordar({ conector: "baileys_chatwoot", papel: "bot", numero_e164: null }),
+    { pode: false, motivo: "sem_numero_e164" },
+  );
+  // instancia_evolution nao importa para este conector — o identificador e o numero
+  assertEquals(
+    chipPodeAbordar({
+      conector: "baileys_chatwoot", papel: "bot",
+      numero_e164: "+5562982624555", instancia_evolution: null,
+    }),
+    { pode: true },
   );
 });
 

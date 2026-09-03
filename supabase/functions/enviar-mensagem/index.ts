@@ -1,17 +1,24 @@
-// SAVAN Recupera — enviar-mensagem (saída pelo canal Baileys, via Evolution API)
+// SAVAN Recupera — enviar-mensagem (saída pelos canais Baileys: Evolution API ou baileys-api)
 //
 // Função ADITIVA: o `campanha-lote` e o n8n W01 seguem exatamente como estão. A troca do elo de
-// envio é um passo de operação, feito quando houver uma Evolution no ar para testar contra —
-// mexer no disparador crítico às cegas é o que custou uma campanha no §36.
+// envio é um passo de operação, feito quando houver o provedor no ar para testar contra — mexer
+// no disparador crítico às cegas é o que custou uma campanha no §36.
 //
-// Por que o envio sai daqui e não pelo Chatwoot (ADR-0002): a Evolution expõe presença e
+// Dois provedores Baileys convivem aqui desde 03/09/2026 (`chips.conector` decide qual):
+// `baileys` fala com a Evolution API; `baileys_chatwoot` fala com o baileys-api (fazer-ai), o
+// provedor nativo do Chatwoot self-hosted. Mesma semântica de negócio, transporte diferente —
+// ver `_shared/conector.ts` e `_shared/baileys-api-client.ts`.
+//
+// Por que o envio sai daqui e não pelo Chatwoot (ADR-0002): os dois provedores expõem presença e
 // "digitando…", que são os sinais comportamentais pelos quais o WhatsApp separa humano de robô.
 // Mandando pelo Chatwoot, perde-se esse controle — e num canal não-oficial o juiz é comportamental.
 //
 // SEGURANÇA: A1 — só o service_role pode chamar (mesma trava das outras 9 funções, §29/§30).
 import { createClient, SupabaseClient } from "jsr:@supabase/supabase-js@2";
-import { chipPodeAbordar } from "../_shared/conector.ts";
+import { chipPodeAbordar, conectorDoChip } from "../_shared/conector.ts";
 import { configEvolution, enviarTexto } from "../_shared/evolution-client.ts";
+import { configBaileysApi, enviarTextoBaileysApi } from "../_shared/baileys-api-client.ts";
+import { numeroParaJid } from "../_shared/evolution.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -61,7 +68,7 @@ Deno.serve(async (req) => {
   const sb = admin();
 
   const { data: chip } = await sb.from("chips")
-    .select("id, conector, papel, instancia_evolution, status")
+    .select("id, conector, papel, instancia_evolution, numero_e164, status")
     .eq("id", chipId).maybeSingle();
   if (!chip) return json({ ok: false, erro: "chip_nao_encontrado" }, 404);
 
@@ -75,6 +82,29 @@ Deno.serve(async (req) => {
   }
 
   const seg = await carregarSegredos(sb);
+  const conector = conectorDoChip(chip);
+
+  // baileys_chatwoot (baileys-api, fazer-ai) e baileys (Evolution) são dois transportes para a
+  // mesma coisa: qual API o chip fala é decisão de `chips.conector`, tudo o resto (ritmo, opt-in,
+  // §36/§38) é igual — ver `_shared/conector.ts`.
+  if (conector === "baileys_chatwoot") {
+    const cfg = configBaileysApi(seg);
+    if (!cfg) return json({ ok: false, erro: "baileys_api_nao_configurada" }, 503);
+
+    const jidDestino = numeroParaJid(numeroE164);
+    const r = await enviarTextoBaileysApi(cfg, chip.numero_e164 as string, jidDestino, texto);
+
+    if (!r.ok) {
+      if (r.resultado === "chip_caido") {
+        await sb.from("chips").update({ status: "desconectado" }).eq("id", chipId);
+      }
+      return json({ ok: false, resultado: r.resultado, status_provedor: r.status }, 502);
+    }
+
+    await sb.from("chips").update({ ultimo_envio_em: new Date().toISOString() }).eq("id", chipId);
+    return json({ ok: true, message_id: r.messageId, delay_ms: r.delayMs });
+  }
+
   const cfg = configEvolution(seg);
   if (!cfg) return json({ ok: false, erro: "evolution_nao_configurada" }, 503);
 

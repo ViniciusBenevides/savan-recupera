@@ -5,8 +5,17 @@
  * escreveu não passa por aqui — um chip degradado continua respondendo.
  */
 
-export const CONECTORES = ["baileys", "meta_cloud"] as const;
+// `baileys` = Evolution API. `baileys_chatwoot` = baileys-api (fazer-ai), o provedor Baileys
+// nativo do Chatwoot self-hosted — segundo transporte não-oficial, adicionado em 03/09/2026
+// depois de um bloqueio de pareamento na Evolution. As DUAS variantes têm a mesma semântica de
+// negócio (texto livre do bloco de disparo, ritmo, digitação) — só o transporte muda.
+export const CONECTORES = ["baileys", "baileys_chatwoot", "meta_cloud"] as const;
 export type Conector = (typeof CONECTORES)[number];
+
+/** Os dois transportes não-oficiais — em oposição a `meta_cloud`, o canal suspenso. */
+export function ehConectorBaileys(conector: Conector): boolean {
+  return conector === "baileys" || conector === "baileys_chatwoot";
+}
 
 export const CONECTOR_PADRAO: Conector = "baileys";
 
@@ -46,18 +55,24 @@ export function nomeInstanciaEvolution(nome: string, chipId: number): string {
 
 export type VeredictoAbordagem =
   | { pode: true }
-  | { pode: false; motivo: "chip_de_equipe" | "canal_meta_suspenso" | "sem_instancia_evolution" };
+  | {
+    pode: false;
+    motivo: "chip_de_equipe" | "canal_meta_suspenso" | "sem_instancia_evolution" | "sem_numero_e164";
+  };
 
 /**
  * O chip está apto a abordar?
  *
  * Nada aqui olha ritmo, janela ou aquecimento — isso é da Fatia 5. Aqui é só o transporte:
- * existe caminho de saída para este chip?
+ * existe caminho de saída para este chip? O identificador da conexão muda por provedor: a
+ * Evolution usa `instancia_evolution` (nome que ela escolheu); o baileys-api usa o próprio
+ * `numero_e164` do chip como identificador — é assim que a API dele endereça a conexão.
  */
 export function chipPodeAbordar(chip: {
   conector?: unknown;
   papel?: unknown;
   instancia_evolution?: unknown;
+  numero_e164?: unknown;
 }): VeredictoAbordagem {
   // Escalador humano recebe a conversa escalada; nunca inicia contato.
   if (chip.papel === "equipe") return { pode: false, motivo: "chip_de_equipe" };
@@ -66,6 +81,12 @@ export function chipPodeAbordar(chip: {
 
   // A WABA da MC CRED está banida (§38). O código continua no repo, o caminho fica fechado.
   if (conector === "meta_cloud") return { pode: false, motivo: "canal_meta_suspenso" };
+
+  if (conector === "baileys_chatwoot") {
+    const numero = typeof chip.numero_e164 === "string" ? chip.numero_e164.trim() : "";
+    if (!numero) return { pode: false, motivo: "sem_numero_e164" };
+    return { pode: true };
+  }
 
   const instancia = typeof chip.instancia_evolution === "string"
     ? chip.instancia_evolution.trim()

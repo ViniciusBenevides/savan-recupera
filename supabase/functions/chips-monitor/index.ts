@@ -7,6 +7,7 @@
 import { createClient, SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { carregarSegredos } from "../_shared/lib.ts";
 import { configEvolution, instanciasEvolution } from "../_shared/evolution-client.ts";
+import { configBaileysApi, saudeConexaoBaileysApi } from "../_shared/baileys-api-client.ts";
 
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, content-type", "Access-Control-Allow-Methods": "POST, OPTIONS" };
 const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { ...cors, "Content-Type": "application/json" } });
@@ -125,6 +126,79 @@ Deno.serve(async (req) => {
 
         baileys.push({ chip: chip.id, estado: saude.estado, status: novoStatus, precisa_qr: revogada });
       }
+    }
+  }
+
+  // ── Canal baileys_chatwoot (baileys-api, fazer-ai) ─────────────────────────────────────
+  // Segundo provedor Baileys, adicionado em 03/09/2026 quando o chip 1 pareou por aqui depois de
+  // um bloqueio de pareamento na Evolution (§8 do guia do Baileys). Mesmo motivo do bloco acima
+  // para existir separado do loop da Meta: sem isso, chip deste conector nunca seria monitorado.
+  //
+  // A saúde vem de `/connections/{numero}/health` — mais simples que a Evolution (só
+  // `connected`, sem um sinal explícito de "sessão revogada"), então não há `precisa_qr` aqui: a
+  // recuperação desse provedor passa pela tela do Chatwoot, não pelo QR do nosso painel.
+  const cfgBai = configBaileysApi(segredos);
+  const { data: chipsBaileysChatwoot } = await sb.from("chips")
+    .select("id, nome, status, saude, numero_e164")
+    .eq("conector", "baileys_chatwoot")
+    .not("numero_e164", "is", null);
+
+  if (cfgBai) {
+    for (const chip of chipsBaileysChatwoot ?? []) {
+      const saudeConsulta = await saudeConexaoBaileysApi(cfgBai, String(chip.numero_e164));
+      // Consulta falhou (API fora do ar, rede): não mexe em nada — mesma disciplina do §36, não
+      // confundir indisponibilidade nossa com chip caído.
+      if (!saudeConsulta.ok) continue;
+
+      const atual = String(chip.status ?? "cadastrado");
+      const operando = ["conectado", "ativo", "aquecendo", "pausado"].includes(atual);
+      const saudeAnterior = (chip.saude ?? {}) as Record<string, any>;
+
+      let novoStatus = atual;
+      let statusAntes = saudeAnterior.status_antes ?? null;
+
+      if (saudeConsulta.connected) {
+        if (atual === "desconectado" && ["ativo", "aquecendo"].includes(String(statusAntes))) {
+          novoStatus = String(statusAntes);
+          statusAntes = null;
+        }
+      } else if (operando) {
+        statusAntes = atual;
+        novoStatus = "desconectado";
+      }
+
+      const saude = {
+        conector: "baileys_chatwoot",
+        connected: saudeConsulta.connected,
+        send_state: saudeConsulta.sendState,
+        consecutivos_timeout: saudeConsulta.consecutivosTimeout,
+        status_antes: statusAntes,
+        atualizado_em: new Date().toISOString(),
+      };
+
+      await sb.from("chips").update({ saude, status: novoStatus }).eq("id", chip.id);
+
+      if (novoStatus !== atual) {
+        await sb.from("eventos_campanha").insert({
+          tipo: "chip_status", chip_id: chip.id,
+          payload: {
+            status: novoStatus, nome: chip.nome,
+            motivo: novoStatus === "desconectado" ? "queda" : "reconectado",
+          },
+        });
+      }
+
+      if (novoStatus === "desconectado" && atual !== "desconectado") {
+        const { data: resumo } = await sb.rpc("fn_failover_resumo", { p_chip_id: chip.id });
+        const tem = ((resumo?.aguardando ?? 0) + (resumo?.conversas_ativas ?? 0) + (resumo?.escaladas ?? 0)) > 0;
+        if (tem) {
+          const { data: existe } = await sb.from("failover_eventos")
+            .select("id").eq("chip_caido_id", chip.id).eq("status", "pendente").maybeSingle();
+          if (!existe) await sb.from("failover_eventos").insert({ chip_caido_id: chip.id, resumo });
+        }
+      }
+
+      baileys.push({ chip: chip.id, conector: "baileys_chatwoot", connected: saudeConsulta.connected, status: novoStatus });
     }
   }
 
