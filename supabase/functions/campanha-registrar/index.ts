@@ -230,8 +230,57 @@ Deno.serve(async (req) => {
       await sb.from("devedores").update({ status_cobranca: "sem_whatsapp" }).eq("id", b.devedor_id);
     }
   } else {
-    await sb.from("fila_envios").update({ status: "falha", erro: b.erro ?? "erro_envio", tentativas: (b.tentativas ?? 0) + 1 }).eq("id", b.fila_id);
-    if (!sim) await sb.rpc("fn_inc_metrica_dia", { p_dia: hoje, p_campo: "falhas", p_n: 1 });
+    // ── Falha nossa NAO mata a pessoa na fila ────────────────────────────────────────────────
+    // `falha` e estado terminal: o item nunca mais e sorteado. Quando a causa e do NOSSO lado
+    // (chip caido, rate limit, chip mal configurado), enterrar o devedor ali e perder alguem por
+    // um problema que nao era dele.
+    //
+    // Aconteceu em 03/09/2026: a sessao do chip 1 foi revogada as 16:59 do dia anterior; a AMANDA
+    // foi a primeira a ser sorteada depois disso, o envio voltou `chip_caido` e o item morreu como
+    // `falha`. Com o chip de volta ela continuaria parada para sempre.
+    //
+    // A LISTA E FECHADA de proposito. So entra erro em que e CERTO que nada saiu — requeue de um
+    // envio que talvez tenha ido embora manda a abordagem duas vezes para a mesma pessoa, que e
+    // padrao de robo e queima o numero (§31). Por isso `resposta_sem_id` fica de FORA: nesse caso
+    // o WhatsApp pode ter entregue e so o Chatwoot nao devolveu id.
+    const ERROS_NOSSOS = [
+      "chip_caido",               // sessao do Baileys caiu — a Evolution recusou antes de enviar
+      "retentar",                 // 429 da Evolution — recusado antes de enviar
+      "chip_nao_encontrado",      // gates do `enviar-mensagem`: todos recusam ANTES de qualquer envio
+      "chip_de_equipe",
+      "canal_meta_suspenso",
+      "sem_instancia_evolution",
+      "evolution_nao_configurada",
+    ];
+    // Teto de tentativas: sem ele um chip meio quebrado devolve o mesmo item para sempre. Depois do
+    // teto vira `falha` de verdade, com erro proprio, para o painel mostrar que desistimos e por que.
+    const MAX_TENTATIVAS = 5;
+
+    const erro = String(b.erro ?? "erro_envio");
+    // `tentativas` vem da LINHA, nao do corpo: o W01 nunca manda esse campo, entao o `b.tentativas`
+    // de antes era sempre undefined e o contador ficava travado em 1 para sempre.
+    const { data: linha } = await sb.from("fila_envios")
+      .select("tentativas").eq("id", b.fila_id).maybeSingle();
+    const tentativas = Number(linha?.tentativas ?? 0) + 1;
+
+    const nossa = ERROS_NOSSOS.includes(erro);
+    if (nossa && tentativas < MAX_TENTATIVAS) {
+      // Espera crescente antes de ficar elegivel de novo. Nao e para "dar tempo do chip voltar" —
+      // o `fn_selecionar_lote` ja nao sorteia chip fora de ativo/aquecendo — e sim para o caso do
+      // 429, onde o chip continua elegivel e reenfileirar na hora viraria martelo.
+      const esperaMin = Math.min(15 * tentativas, 120);
+      await sb.from("fila_envios").update({
+        status: "aguardando", erro, tentativas, chip_id: null,
+        agendado_para: new Date(Date.now() + esperaMin * 60_000).toISOString(),
+      }).eq("id", b.fila_id);
+      // Nao conta como falha na metrica do dia: nada falhou para o devedor, o envio nem saiu.
+    } else {
+      await sb.from("fila_envios").update({
+        status: "falha", tentativas,
+        erro: nossa ? `${erro}_sem_tentativas` : erro,
+      }).eq("id", b.fila_id);
+      if (!sim) await sb.rpc("fn_inc_metrica_dia", { p_dia: hoje, p_campo: "falhas", p_n: 1 });
+    }
   }
 
   return json({ ok: true });
