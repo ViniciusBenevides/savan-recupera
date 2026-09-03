@@ -1,9 +1,16 @@
 // Espelho de supabase/functions/_shared/conector.ts — mantenha os dois em sincronia.
 // A fonte da verdade e os testes estão do lado do Deno.
 
-export const CONECTORES = ["baileys", "meta_cloud"] as const;
+// baileys_chatwoot = baileys-api (fazer-ai), o provedor Baileys nativo do Chatwoot self-hosted.
+// Adicionado em 03/09/2026 como segundo transporte não-oficial, ao lado de baileys (Evolution).
+export const CONECTORES = ["baileys", "baileys_chatwoot", "meta_cloud"] as const;
 export type Conector = (typeof CONECTORES)[number];
 export const CONECTOR_PADRAO: Conector = "baileys";
+
+/** Os dois transportes não-oficiais — em oposição a `meta_cloud`, o canal suspenso. */
+export function ehConectorBaileys(conector: unknown): boolean {
+  return conector === "baileys" || conector === "baileys_chatwoot";
+}
 
 const MAX_NOME_INSTANCIA = 48;
 

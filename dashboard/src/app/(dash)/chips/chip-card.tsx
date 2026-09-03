@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { Card, Badge, Button, Input, Label } from "@/components/ui/primitives";
 import { MaturidadeField, type MaturidadeValor } from "@/components/MaturidadeField";
 import { num } from "@/lib/utils";
+import { ehConectorBaileys } from "@/lib/conector";
 import { ConectarChip } from "./conectar-chip";
 import { Play, Pause, Smartphone, MoreVertical, Pencil, Trash2, X, Eye, EyeOff, Loader2, Cloud, Activity, RotateCw, Gauge, PauseCircle, Webhook, QrCode } from "lucide-react";
 
@@ -69,7 +70,12 @@ export function ChipCard({ chip, metrica, donoNome, ritmoHora }: {
   // A coluna tem default 'baileys' no banco, então isto sempre vem preenchido; o fallback é rede
   // de segurança e escolhe Meta de propósito — é o que os chips anteriores à fatia realmente são.
   const conector: string = chip.conector ?? "meta_cloud";
+  // `ehBaileys` fica estrito à Evolution de propósito: é o único provedor que o painel sabe
+  // provisionar/reconectar por QR hoje. `usaTransporteBaileys` cobre os dois transportes
+  // não-oficiais (Evolution e baileys-api/Chatwoot) para tudo que é comum aos dois — ritmo,
+  // rótulo de canal, esconder o bloco de saúde da Meta.
   const ehBaileys = conector === "baileys";
+  const usaTransporteBaileys = ehConectorBaileys(conector);
 
   const [eNome, setENome] = useState(chip.nome);
   const [eMaturidade, setEMaturidade] = useState<MaturidadeValor>({ maturidade: "novo", limite_dia_override: null, limite_hora_override: null });
@@ -209,7 +215,7 @@ export function ChipCard({ chip, metrica, donoNome, ritmoHora }: {
   // No Baileys, "ativar" um chip que nunca escaneou o QR o coloca na seleção do `campanha-lote` sem
   // sessão nenhuma — todo envio falharia e o chip apanharia por um problema que é de cadastro.
   // Só o número já conectado pode ser ativado. Na Meta o cadastro já é a conexão, então nada muda.
-  const podeAtivar = ehBaileys
+  const podeAtivar = usaTransporteBaileys
     ? chip.status === "conectado"
     : ["cadastrado", "conectado", "desconectado"].includes(chip.status);
   const podePausar = ["ativo", "aquecendo"].includes(chip.status);
@@ -268,7 +274,7 @@ export function ChipCard({ chip, metrica, donoNome, ritmoHora }: {
                   Com DDD. É o número que recebe as transferências. Este escalador não conecta na Meta nem aparece no Chatwoot.
                 </p>
               </div>
-            ) : ehBaileys ? (
+            ) : usaTransporteBaileys ? (
               <>
                 <div>
                   <Label>Número de WhatsApp deste chip</Label>
@@ -276,7 +282,10 @@ export function ChipCard({ chip, metrica, donoNome, ritmoHora }: {
                          placeholder="(11) 99999-9999" inputMode="tel" />
                   <p className="mt-1.5 text-xs text-mist">
                     Com DDD. Trocar o número aqui <b className="text-chalk">não religa nada</b>: é só o rótulo que o
-                    painel mostra. Quem vincula de verdade é o QR, no botão <b className="text-chalk">Conectar</b>.
+                    painel mostra.{" "}
+                    {ehBaileys
+                      ? <>Quem vincula de verdade é o QR, no botão <b className="text-chalk">Conectar</b>.</>
+                      : "Quem vincula de verdade é o pareamento feito pelo Chatwoot."}
                   </p>
                 </div>
                 <MaturidadeField value={eMaturidade} onChange={setEMaturidade} />
@@ -365,7 +374,7 @@ export function ChipCard({ chip, metrica, donoNome, ritmoHora }: {
               {(chip.papel ?? "bot") === "equipe"
                 ? <Badge tone="violet">Cobrador{chip.agente_nome ? ` · ${chip.agente_nome}` : ""}</Badge>
                 : <Badge tone="blue">Bot</Badge>}
-              {!escalador && (ehBaileys
+              {!escalador && (usaTransporteBaileys
                 ? <Badge tone="amber"><QrCode className="h-3 w-3" /> WhatsApp comum</Badge>
                 : <Badge tone="green"><Cloud className="h-3 w-3" /> Meta oficial</Badge>)}
               {donoNome && <Badge tone="neutral">Conta: {donoNome}</Badge>}
@@ -414,7 +423,7 @@ export function ChipCard({ chip, metrica, donoNome, ritmoHora }: {
       {/* Ritmo por hora do chip Baileys. O bloco de saúde abaixo é da Graph API da Meta e não tem
           equivalente aqui: no canal não-oficial não existe "qualidade do número" para consultar —
           o que sinaliza queda é a taxa de entrega (_shared/saude-chip.ts). */}
-      {!escalador && ehBaileys && ritmoHora?.limite ? (
+      {!escalador && usaTransporteBaileys && ritmoHora?.limite ? (
         <div className="flex items-center justify-between rounded-xl border border-line bg-ink-850 px-3 py-2.5">
           <span className="flex items-center gap-1.5 text-xs text-mist">
             <Gauge className="h-3.5 w-3.5" /> Ritmo desta hora
@@ -435,7 +444,7 @@ export function ChipCard({ chip, metrica, donoNome, ritmoHora }: {
           O texto aponta para o botão pelo NOME EXATO que ele mostra logo abaixo (ver `podeConectar`)
           — dizer só "não resolve sozinho" sem apontar o caminho gerou confusão em 03/09/2026: o
           operador leu como "não clique em nada". */}
-      {ehBaileys && saude?.precisa_qr && (
+      {usaTransporteBaileys && saude?.precisa_qr && (
         <div className="flex items-start gap-2 rounded-lg border border-rose/30 bg-rose/10 px-3 py-2 text-xs text-rose">
           <QrCode className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           <div className="space-y-1">
@@ -458,7 +467,7 @@ export function ChipCard({ chip, metrica, donoNome, ritmoHora }: {
         </div>
       )}
 
-      {!escalador && !ehBaileys && (() => {
+      {!escalador && !usaTransporteBaileys && (() => {
         const q = QUALIDADE[saude?.quality_rating ?? "UNKNOWN"] ?? QUALIDADE.UNKNOWN;
         const tier = saude?.messaging_limit_tier ?? "TIER_250";
         const teto = TETO_TIER[tier];
@@ -539,7 +548,17 @@ export function ChipCard({ chip, metrica, donoNome, ritmoHora }: {
           Escalador humano — recebe as transferências no WhatsApp. Não dispara campanha nem aparece no Chatwoot.
         </div>
       ) : (
-        <div className="flex gap-2">
+        <div className="flex flex-col gap-2">
+          {/* baileys_chatwoot cai (chip caiu, mesmo status) mas o painel não sabe religar por QR —
+              essa é a Evolution. Sem esta nota, um chip nesse estado ficava sem nenhum botão e sem
+              explicação de onde ir. */}
+          {usaTransporteBaileys && !ehBaileys && chip.status === "desconectado" && (
+            <div className="rounded-lg border border-amber/30 bg-amber/10 px-3 py-2 text-xs text-amber">
+              Sessão caiu. Reconecte pela tela do Chatwoot (canal Baileys nativo) — este painel não
+              faz o pareamento desse provedor ainda.
+            </div>
+          )}
+          <div className="flex gap-2">
           {podeConectar && (
             <Button size="sm" className="flex-1" onClick={() => setConectando(true)} disabled={pending}>
               {/* Sessão revogada é diagnóstico, não simples queda: "Reconectar" sugeria religar
@@ -565,6 +584,7 @@ export function ChipCard({ chip, metrica, donoNome, ritmoHora }: {
               <Play className="h-4 w-4" /> Retomar
             </Button>
           )}
+          </div>
         </div>
       )}
     </Card>
