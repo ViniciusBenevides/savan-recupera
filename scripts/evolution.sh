@@ -6,6 +6,8 @@
 #   bash scripts/evolution.sh criar-instancia <nome>
 #   bash scripts/evolution.sh qr <instancia>
 #   bash scripts/evolution.sh estado <instancia>
+#   bash scripts/evolution.sh detalhe <instancia>
+#   bash scripts/evolution.sh logout <instancia> --confirmo    (so depois de um 401)
 #   bash scripts/evolution.sh proxy-set <instancia> <url> [<rotulo>]
 #   bash scripts/evolution.sh proxy-get <instancia>
 #   bash scripts/evolution.sh chatwoot-set <instancia> <nome-da-inbox>
@@ -105,6 +107,73 @@ if cmd == 'info':
     for i in (r if isinstance(r, list) else []):
         inst = i.get('instance', i)
         print(f"  {inst.get('instanceName') or inst.get('name')}  estado={inst.get('connectionStatus') or inst.get('state')}  numero={inst.get('owner') or inst.get('number') or '-'}")
+
+elif cmd == 'logout':
+    # Limpa o estado de auth (creds/keys) de uma instancia e a deixa pronta para novo QR.
+    #
+    # Quando usar: SO depois de um 401. O guia do Baileys (secao 6.4) e explicito — sessao
+    # revogada nao volta por reconexao; a Evolution fica retentando com a credencial morta e o
+    # socket faz connecting -> close em loop, sem nunca chegar em open. Foi o que travou o
+    # chip-1-14 em 03/09/2026 (disconnectionReasonCode 401, type device_removed).
+    #
+    # Confira o motivo ANTES:  bash scripts/evolution.sh detalhe <instancia>
+    #
+    # PRESERVA a instancia, o vinculo com o Chatwoot e as configuracoes. Nao e `delete`: apagar a
+    # instancia destruiria a inbox e deixaria conversa apontando para caixa de numero morto (secao 38).
+    #
+    # CONFIRMACAO OBRIGATORIA (politica de credenciais + guia do Baileys secao 10.4): sem
+    # --confirmo o comando so explica e sai. Existe um risco real e sem volta — um numero que ja
+    # rodou automacao nem sempre volta a registrar por QR.
+    instancia = args[1]
+    confirmou = '--confirmo' in args[2:]
+    if not confirmou:
+        print('LOGOUT NAO EXECUTADO - falta confirmacao.')
+        print('')
+        print('  instancia : %s' % instancia)
+        print('  apaga     : estado de auth (creds/keys) - o numero sai de Aparelhos Conectados')
+        print('  preserva  : a instancia, o vinculo com o Chatwoot, as configuracoes')
+        print('  nao toca  : nada no Supabase (chips, conversas, mensagens, fila_envios)')
+        print('')
+        print('  risco: depois disso so volta por QR novo, e numero que ja rodou automacao')
+        print('         nem sempre consegue registrar de novo.')
+        print('')
+        print('  para executar de fato:')
+        print('    bash scripts/evolution.sh logout %s --confirmo' % instancia)
+        sys.exit(2)
+
+    c, r = call('DELETE', f'instance/logout/{urllib.parse.quote(instancia)}')
+    if c not in ('200', '201'):
+        sys.stderr.write('FALHOU logout: HTTP %s%s%s%s' % (c, chr(10), r, chr(10)))
+        sys.stderr.write('dica: se disser que a instancia nao esta conectada, o estado ja pode ter'
+                         ' sido limpo — confira com `estado` e tente `qr` direto.' + chr(10))
+        sys.exit(1)
+    print('logout ok: %s' % instancia)
+    print('proximo passo: bash scripts/evolution.sh qr %s' % instancia)
+
+elif cmd == 'detalhe':
+    # Registro completo da instancia. O que importa aqui e o motivo da queda:
+    # disconnectionReasonCode / disconnectionAt (401 = loggedOut = numero morto, ver
+    # "Baileys - Guia Operacional" secao 6.4). Segredo NUNCA e impresso.
+    c, r = call('GET', 'instance/fetchInstances')
+    ok(c, r, 'listar instancias')
+    alvo = args[1]
+    SENSIVEL = ('token', 'apikey', 'hash', 'secret', 'password', 'creds', 'key')
+    def limpar(v):
+        if isinstance(v, dict):
+            return {k: ('<oculto>' if any(t in k.lower() for t in SENSIVEL) else limpar(x))
+                    for k, x in v.items()}
+        if isinstance(v, list):
+            return [limpar(x) for x in v]
+        return v
+    achou = False
+    for i in (r if isinstance(r, list) else []):
+        inst = i.get('instance', i)
+        if (inst.get('instanceName') or inst.get('name')) != alvo:
+            continue
+        achou = True
+        print(json.dumps(limpar(i), indent=2, ensure_ascii=False)[:3000])
+    if not achou:
+        sys.stderr.write('instancia nao encontrada: %s' % alvo + chr(10)); sys.exit(1)
 
 elif cmd == 'criar-instancia':
     nome = args[1]

@@ -427,6 +427,32 @@ export function ChipCard({ chip, metrica, donoNome, ritmoHora }: {
         </div>
       ) : null}
 
+      {/* Sessão revogada (401). O `chips-monitor` carimba `precisa_qr` quando a Evolution reporta
+          `disconnectionReasonCode: 401`. Precisa gritar aqui porque é a única falha do canal que
+          NÃO se resolve sozinha: reconectar não adianta (§6.4 do guia do Baileys), e enquanto o
+          operador não refizer o QR a campanha inteira fica parada. Ficou 15h invisível em 02/09/2026. */}
+      {ehBaileys && saude?.precisa_qr && (
+        <div className="flex items-start gap-2 rounded-lg border border-rose/30 bg-rose/10 px-3 py-2 text-xs text-rose">
+          <QrCode className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <div className="space-y-1">
+            <p>
+              <b>Sessão revogada — precisa de QR novo.</b> Reconectar não resolve: o aparelho saiu
+              da lista de conectados do WhatsApp e o pareamento tem que ser refeito do zero.
+            </p>
+            <p className="text-mist">
+              {saude?.motivo_desconexao === "conflict/device_removed"
+                ? "O aparelho foi removido da conta — alguém desvinculou, ou o número foi registrado em outro lugar."
+                : saude?.motivo_desconexao
+                  ? `Motivo: ${saude.motivo_desconexao}.`
+                  : "Motivo não informado pela Evolution."}
+              {saude?.desconectado_em
+                ? ` Caiu em ${new Date(saude.desconectado_em).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}.`
+                : ""}
+            </p>
+          </div>
+        </div>
+      )}
+
       {!escalador && !ehBaileys && (() => {
         const q = QUALIDADE[saude?.quality_rating ?? "UNKNOWN"] ?? QUALIDADE.UNKNOWN;
         const tier = saude?.messaging_limit_tier ?? "TIER_250";

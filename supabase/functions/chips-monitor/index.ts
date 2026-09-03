@@ -1,9 +1,12 @@
 // SAVAN Recupera — chips-monitor
 // Consulta a saude de cada numero na Graph API da Meta e atualiza chips.status/saude.
 // Se desconectar, pausa o chip e registra evento (o dashboard alerta o gestor).
-// NOTA: versão self-contained (igual à deployada via MCP). Chamada pelo W08 (n8n, 15 min).
+// Cobre os DOIS canais: Meta (Graph API) e Baileys (Evolution). Chamada pelo W08 (n8n, 15 min).
+// NOTA: o deploy é pela CLI (scripts/supabase-deploy.sh), que empacota os imports de ../_shared.
 // SEGURANÇA (auditoria 2026-06-26): A1 — só o service_role (n8n) pode chamar; anon key recusada (401).
 import { createClient, SupabaseClient } from "jsr:@supabase/supabase-js@2";
+import { carregarSegredos } from "../_shared/lib.ts";
+import { configEvolution, instanciasEvolution } from "../_shared/evolution-client.ts";
 
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, content-type", "Access-Control-Allow-Methods": "POST, OPTIONS" };
 const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { ...cors, "Content-Type": "application/json" } });
@@ -27,6 +30,103 @@ Deno.serve(async (req) => {
   // config "ritmo" (§33): controla a auto-trava de abordagem quando a qualidade Meta cai para RED
   const { data: cfgRitmo } = await sb.from("configuracoes").select("valor").eq("chave", "ritmo").is("cobrador_id", null).maybeSingle();
   const ritmoCfg: Record<string, any> = cfgRitmo?.valor ?? {};
+
+  // ── Canal Baileys ──────────────────────────────────────────────────────────────────────
+  // Por que este bloco existe: o loop da Meta (abaixo) faz `continue` em quem não tem credencial
+  // da Graph, e chip Baileys NUNCA tem. O efeito era que nenhum chip Baileys era monitorado —
+  // justamente o único canal vivo, já que a WABA está banida (§38).
+  //
+  // O preço apareceu em 02/09/2026: a sessão do chip 1 foi revogada às 16:59 (401,
+  // `conflict/device_removed`) e ninguém soube por 15 horas. A campanha inteira ficou parada com
+  // 2.071 pessoas na fila, e a descoberta veio de um operador abrindo o painel.
+  const baileys: any[] = [];
+  const segredos = await carregarSegredos(sb);
+  const cfgEvo = configEvolution(segredos);
+  const { data: chipsBaileys } = await sb.from("chips")
+    .select("id, nome, status, saude, instancia_evolution")
+    .eq("conector", "baileys")
+    .not("instancia_evolution", "is", null);
+
+  if (cfgEvo && (chipsBaileys?.length ?? 0) > 0) {
+    const instancias = await instanciasEvolution(cfgEvo);
+    // `null` = a consulta falhou. Sair sem tocar em ninguém é obrigatório: indisponibilidade da
+    // Evolution não pode virar "todos os chips caíram" e disparar failover em massa (lição do §36).
+    if (instancias) {
+      for (const chip of chipsBaileys ?? []) {
+        const inst = instancias.get(String(chip.instancia_evolution));
+        const atual = String(chip.status ?? "cadastrado");
+        // Mesma definição do painel: estes são os estados em que o chip está EM OPERAÇÃO. Serve
+        // para não rebaixar chip ativo (ele sairia do `campanha-lote`, que só olha ativo/aquecendo)
+        // e para saber quando uma queda é notícia.
+        const operando = ["conectado", "ativo", "aquecendo", "pausado"].includes(atual);
+        const saudeAnterior = (chip.saude ?? {}) as Record<string, any>;
+
+        const aberta = inst?.estado === "open";
+        // O 401 fica CARIMBADO no registro da instância mesmo enquanto ela tenta reconectar, então
+        // é ele que decide — não o estado do momento, que oscila entre connecting e close.
+        const revogada = inst?.codigoDesconexao === 401 && !aberta;
+
+        let novoStatus = atual;
+        let statusAntes = saudeAnterior.status_antes ?? null;
+
+        if (!inst) {
+          // Instância sumiu da Evolution (apagada, ou servidor trocado).
+          if (operando) { statusAntes = atual; novoStatus = "desconectado"; }
+        } else if (aberta) {
+          // Voltou. Só devolve ao ar quem o operador tinha armado antes de cair — nunca arma
+          // sozinho um chip que o operador nunca colocou para abordar (aquecimento é decisão dele).
+          if (atual === "desconectado" && ["ativo", "aquecendo"].includes(String(statusAntes))) {
+            novoStatus = String(statusAntes);
+            statusAntes = null;
+          }
+        } else if (revogada || inst.estado === "close") {
+          // `connecting` puro fica de fora de propósito: é o estado normal de quem está pareando.
+          if (operando) { statusAntes = atual; novoStatus = "desconectado"; }
+        }
+
+        const saude = {
+          conector: "baileys",
+          estado: inst?.estado ?? "nao_existe",
+          codigo_desconexao: inst?.codigoDesconexao ?? null,
+          motivo_desconexao: inst?.motivoDesconexao ?? null,
+          desconectado_em: inst?.desconectadoEm ?? null,
+          // O que o operador precisa fazer: sessão revogada não volta por reconexão (§6.4 do guia
+          // do Baileys). Exige `logout` + QR novo — e é isso que o painel tem que gritar.
+          precisa_qr: revogada,
+          status_antes: statusAntes,
+          atualizado_em: new Date().toISOString(),
+        };
+
+        await sb.from("chips").update({ saude, status: novoStatus }).eq("id", chip.id);
+
+        // Evento só na TRANSIÇÃO: o monitor roda a cada 15 min e um evento por rodada viraria ruído
+        // no feed em vez de alerta.
+        if (novoStatus !== atual) {
+          await sb.from("eventos_campanha").insert({
+            tipo: "chip_status", chip_id: chip.id,
+            payload: {
+              status: novoStatus, nome: chip.nome,
+              motivo: revogada ? "sessao_revogada" : (novoStatus === "desconectado" ? "queda" : "reconectado"),
+              detalhe: inst?.motivoDesconexao ?? null,
+              precisa_qr: revogada,
+            },
+          });
+        }
+
+        if (novoStatus === "desconectado" && atual !== "desconectado") {
+          const { data: resumo } = await sb.rpc("fn_failover_resumo", { p_chip_id: chip.id });
+          const tem = ((resumo?.aguardando ?? 0) + (resumo?.conversas_ativas ?? 0) + (resumo?.escaladas ?? 0)) > 0;
+          if (tem) {
+            const { data: existe } = await sb.from("failover_eventos")
+              .select("id").eq("chip_caido_id", chip.id).eq("status", "pendente").maybeSingle();
+            if (!existe) await sb.from("failover_eventos").insert({ chip_caido_id: chip.id, resumo });
+          }
+        }
+
+        baileys.push({ chip: chip.id, estado: saude.estado, status: novoStatus, precisa_qr: revogada });
+      }
+    }
+  }
 
   const { data: chips } = await sb.from("chips").select("id, nome, status, cobrador_id").not("status", "in", "(cadastrado,banido)");
   const resultados: any[] = [];
@@ -106,5 +206,5 @@ Deno.serve(async (req) => {
     } catch (_e) { /* nao derruba o monitor de chips */ }
   }
 
-  return json({ ok: true, chips: resultados, templates: templatesSincronizados });
+  return json({ ok: true, chips: resultados, baileys, templates: templatesSincronizados });
 });

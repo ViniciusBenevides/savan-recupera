@@ -125,3 +125,74 @@ export async function estadoInstancia(
     bruto: corpo,
   };
 }
+
+// ── Registro completo das instâncias (o que `connectionState` não conta) ──────────────────
+
+export type InstanciaEvolution = {
+  nome: string;
+  estado: string;                     // open | connecting | close
+  codigoDesconexao: number | null;
+  motivoDesconexao: string | null;    // ex.: "conflict/device_removed"
+  desconectadoEm: string | null;
+};
+
+/**
+ * Extrai o motivo legível de `disconnectionObject`, que a Evolution guarda como STRING de JSON.
+ *
+ * O corpo real de uma sessão revogada é:
+ * `{"error":{"data":{"tag":"conflict","attrs":{"type":"device_removed"}},"output":{"statusCode":401,...}}}`
+ *
+ * A distinção importa e custou uma manhã em 03/09/2026: `401` sozinho parece ban, mas
+ * `conflict/device_removed` é o aparelho vinculado sendo REMOVIDO da conta — recuperável com
+ * logout + QR novo. Ban de verdade não tem essa assinatura.
+ */
+export function motivoDaDesconexao(bruto: unknown): string | null {
+  if (typeof bruto !== "string" || !bruto.trim()) return null;
+  try {
+    const o = JSON.parse(bruto) as Record<string, any>;
+    const dados = o?.error?.data;
+    const partes = [dados?.tag, dados?.attrs?.type].filter((p) => typeof p === "string" && p);
+    if (partes.length) return partes.join("/");
+    const msg = o?.error?.output?.payload?.message;
+    return typeof msg === "string" && msg ? msg : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Lê TODAS as instâncias de uma vez.
+ *
+ * Uma chamada só para todos os chips: o monitor roda a cada 15 min e não faz sentido bater N vezes
+ * na Evolution. Devolve `null` quando a consulta falha — o chamador não pode confundir
+ * "Evolution fora do ar" com "chip caído" e derrubar todo mundo por engano.
+ */
+export async function instanciasEvolution(
+  cfg: ConfigEvolution,
+): Promise<Map<string, InstanciaEvolution> | null> {
+  let r: Response;
+  try {
+    r = await fetch(`${cfg.url}/instance/fetchInstances`, { headers: { apikey: cfg.apiKey } });
+  } catch {
+    return null;
+  }
+  if (!r.ok) return null;
+  const corpo = await lerJson(r);
+  if (!Array.isArray(corpo)) return null;
+
+  const mapa = new Map<string, InstanciaEvolution>();
+  for (const item of corpo) {
+    const inst = (item as Record<string, any>)?.instance ?? item;
+    const nome = inst?.instanceName ?? inst?.name;
+    if (typeof nome !== "string" || !nome) continue;
+    const codigo = inst?.disconnectionReasonCode;
+    mapa.set(nome, {
+      nome,
+      estado: String(inst?.connectionStatus ?? inst?.state ?? ""),
+      codigoDesconexao: typeof codigo === "number" ? codigo : null,
+      motivoDesconexao: motivoDaDesconexao(inst?.disconnectionObject),
+      desconectadoEm: typeof inst?.disconnectionAt === "string" ? inst.disconnectionAt : null,
+    });
+  }
+  return mapa;
+}
