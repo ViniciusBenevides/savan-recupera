@@ -6,6 +6,7 @@
 // SEGURANÇA (auditoria 2026-06-26): A1 — só o service_role (n8n) pode chamar; a resposta carrega
 // PII (nome/telefone/valor), então a anon key pública é recusada (401).
 import { createClient, SupabaseClient } from "jsr:@supabase/supabase-js@2";
+import { descontoEfetivoPP, resolverOpcionais } from "../_shared/oferta.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -118,7 +119,7 @@ function resolverSpintax(texto: string): string {
   return cur;
 }
 function renderTemplate(tpl: string, vars: Record<string, unknown>): string {
-  let txt = resolverSpintax(tpl);
+  let txt = resolverOpcionais(resolverSpintax(tpl), vars);
   txt = txt.replace(/\{\{\s*([a-z_]+)\s*\}\}/gi, (_m, k) => { const v = vars[k]; return v === undefined || v === null ? "" : String(v); });
   return txt;
 }
@@ -471,6 +472,18 @@ Deno.serve(async (req) => {
       if (!tel) { await sb.from("fila_envios").update({ status: "sem_whatsapp", erro: "sem_telefone" }).eq("id", item.id); continue; }
 
       const credor = await credorDaCarteira(item.carteira_id);
+
+      // A oferta da abordagem sai da MESMA `fn_proposta` que a ferramenta usa dentro da conversa
+      // (§227: o LLM nunca faz aritmética). Reimplementar a conta aqui faria a 1ª mensagem
+      // prometer um número e o bot dizer outro dois turnos depois — que é como se perde a
+      // credibilidade que esta abordagem inteira existe para construir.
+      //
+      // Falha fechada: se a RPC não responder, as duas variáveis ficam vazias, o trecho `[[...]]`
+      // some e a mensagem sai sem oferta. Um disparo sem desconto é recuperável na conversa; um
+      // disparo com valor errado, não.
+      const { data: proposta } = await sb.rpc("fn_proposta", { p_devedor_id: item.devedor_id });
+      const descontoPP = proposta?.erro ? null : descontoEfetivoPP(proposta?.valor_original, proposta?.valor_final);
+
       const primeiroNome = (dev?.nome ?? "").split(" ")[0];
       const primeiroNomeCap = primeiroNome.charAt(0) + primeiroNome.slice(1).toLowerCase();
       const nomeCompleto = formatarNomeCompleto(dev?.nome);
@@ -494,6 +507,11 @@ Deno.serve(async (req) => {
         // longe o que menos identifica alguém.
         cpf_final: finalDoCpf(dev?.cpf_cnpj),
         processo: String(dev?.processo ?? "").trim(),
+        // Oferta. Andam em par e só existem juntas: as duas vazias fazem o `[[...]]` do roteiro
+        // sumir por inteiro. `valor_quitacao` é o valor_final da fn_proposta, já com o piso
+        // aplicado — é o que o Pix vai cobrar, não o resultado do percentual.
+        valor_quitacao: descontoPP === null ? "" : formatarBRL(proposta?.valor_final),
+        desconto_pct: descontoPP === null ? "" : `${descontoPP}%`,
       };
 
       let tplMeta: TplMeta | null = null;

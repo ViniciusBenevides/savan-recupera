@@ -904,7 +904,7 @@ function PainelBloco({ aberta, etapas, canais, carteiraId, mudar, renomear, dupl
         <div>
           <Label className="flex items-center gap-1.5 text-xs">
             Texto que sai
-            <HelpHint text="Texto pronto, sem IA. Use {{primeiro_nome}}, {{nome_bot}} e {{credor}} para personalizar, e {oi|olá} para o sistema sortear uma palavra. Cada variação abaixo é sorteada por envio — texto repetido é o que o WhatsApp lê como robô." />
+            <HelpHint text="Texto pronto, sem IA. Use {{primeiro_nome}}, {{nome_bot}}, {{credor}}, {{valor}}, {{vencimento}}, {{cpf_final}} e {{processo}} para personalizar, e {oi|olá} para o sistema sortear uma palavra. Cada variação abaixo é sorteada por envio — texto repetido é o que o WhatsApp lê como robô. Para a oferta, {{valor_quitacao}} e {{desconto_pct}} vêm da proposta e ficam vazias em quem não tem desconto que valha anunciar: escreva a frase dentro de [[colchetes duplos]] e ela some inteira nesses casos, em vez de sair pela metade." />
           </Label>
           <div className="mt-1 flex flex-col gap-2">
             {textos.map((t, j) => (
