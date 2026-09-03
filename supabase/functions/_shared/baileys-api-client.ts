@@ -28,6 +28,71 @@ async function lerJson(r: Response): Promise<unknown> {
   }
 }
 
+// ── Ambiguidade do 9º dígito brasileiro ─────────────────────────────────────────────────────
+//
+// Achado em 03/09/2026: a Amanda (devedor 573) tinha `+5564999185731` cadastrado, o envio saiu
+// (HTTP 200) mas nunca chegou. Mandando manualmente pelo Chatwoot SEM o 9 extra (`+556499185731`)
+// chegou na hora. Causa: `evolution.ts` (`numeroParaJid`) documenta que "quem concilia [o 9º
+// dígito] é a Evolution, via mergeBrazilContacts" — mas esse provedor é outro serviço (fazer-ai/
+// baileys-api), sem esse recurso e sem endpoint de verificação de número. A reconciliação que
+// a Evolution fazia de graça sumiu quando o chip 1 migrou pra cá.
+
+/**
+ * Devolve as variantes de E.164 a tentar, na ordem — só quando o número é celular brasileiro e a
+ * ambiguidade existe de fato. Fora do Brasil, ou fora do formato DDD + 8/9 dígitos, devolve só o
+ * original: nada a tentar, e nenhuma latência extra é adicionada pelo chamador.
+ *
+ * Quando o telefone está guardado com 9 dígitos locais (o padrão desde o mandato da ANATEL),
+ * tenta PRIMEIRO sem o 9 extra — achado com o usuário no caso da Amanda (DDD 64, Goiás):
+ * "geralmente" é esse o formato que o WhatsApp resolve de verdade pra conta, e foi o que
+ * confirmadamente entregou no teste manual. O formato de 9 dígitos original fica como alternativa,
+ * não descartado — a ordem é sobre qual tentar primeiro, a verificação por ack decide de fato.
+ */
+export function variantesE164Br(e164: string): string[] {
+  const digitos = String(e164 ?? "").replace(/\D/g, "");
+  if (!digitos.startsWith("55") || (digitos.length !== 12 && digitos.length !== 13)) {
+    return [e164];
+  }
+  const ddd = digitos.slice(2, 4);
+  const local = digitos.slice(4);
+  const original = `+${digitos}`;
+  if (local.length === 9 && local[0] === "9") {
+    return [`+55${ddd}${local.slice(1)}`, original];
+  }
+  if (local.length === 8) {
+    return [original, `+55${ddd}9${local}`];
+  }
+  return [original];
+}
+
+/**
+ * Espera até `tentativas * intervaloMs` por um ack NOVO (posterior ao momento em que esta função
+ * foi chamada) em `/connections/{numeroChip}/health`. `lastOutgoingAckAgoMs` é agregado da
+ * CONEXÃO, não da mensagem — funciona como prova per-mensagem só porque este projeto manda uma
+ * mensagem de cada vez, bem espaçadas (§8 do guia Baileys: 2/hora por número). Não usar isto sob
+ * envio concorrente no mesmo chip.
+ */
+export async function aguardarAckBaileysApi(
+  cfg: ConfigBaileysApi,
+  numeroChip: string,
+  opts: { tentativas?: number; intervaloMs?: number } = {},
+): Promise<boolean> {
+  const tentativas = opts.tentativas ?? 4;
+  const intervaloMs = opts.intervaloMs ?? 3000;
+  const inicio = Date.now();
+  for (let i = 0; i < tentativas; i++) {
+    await new Promise((resolve) => setTimeout(resolve, intervaloMs));
+    const saude = await saudeConexaoBaileysApi(cfg, numeroChip);
+    const decorridoMs = Date.now() - inicio;
+    // margem de 2s: o relógio do servidor do baileys-api não é o daqui, e a consulta em si leva
+    // um instante — sem a margem, um ack genuíno bem no limite do intervalo seria rejeitado.
+    if (saude.ok && typeof saude.ultimoAckAgoMs === "number" && saude.ultimoAckAgoMs <= decorridoMs + 2000) {
+      return true;
+    }
+  }
+  return false;
+}
+
 // ── Envio ────────────────────────────────────────────────────────────────────────────────
 
 export type ResultadoEnvioBaileysApi = "chip_caido" | "retentar" | "falha";
@@ -130,6 +195,12 @@ export type SaudeConexaoBaileysApi = {
   connected: boolean | null;
   sendState: string | null;
   consecutivosTimeout: number | null;
+  // `lastOutgoingAckAgoMs` é, segundo a doc oficial, "the only end-to-end proof that sending
+  // works" — a confirmação que o WhatsApp manda pra uma mensagem NOSSA. `connected: true` só
+  // prova que o socket está de pé; não prova que o que sai está chegando (§8 do guia Baileys:
+  // "numa conta já restrita, o WhatsApp aceita e descarta em silêncio"). Ver `chips-monitor`.
+  ultimoAckAgoMs: number | null;
+  ultimoEnvioCompletoAgoMs: number | null;
   bruto: unknown;
 };
 
@@ -149,19 +220,31 @@ export async function saudeConexaoBaileysApi(
       headers: { "x-api-key": cfg.apiKey },
     });
   } catch (e) {
-    return { ok: false, connected: null, sendState: null, consecutivosTimeout: null, bruto: String(e) };
+    return {
+      ok: false, connected: null, sendState: null, consecutivosTimeout: null,
+      ultimoAckAgoMs: null, ultimoEnvioCompletoAgoMs: null, bruto: String(e),
+    };
   }
 
   // 404 aqui É dado válido: "esta conexão não existe" — não é falha da consulta.
   if (r.status === 404) {
-    return { ok: true, connected: false, sendState: null, consecutivosTimeout: null, bruto: null };
+    return {
+      ok: true, connected: false, sendState: null, consecutivosTimeout: null,
+      ultimoAckAgoMs: null, ultimoEnvioCompletoAgoMs: null, bruto: null,
+    };
   }
   if (!r.ok) {
-    return { ok: false, connected: null, sendState: null, consecutivosTimeout: null, bruto: await lerJson(r) };
+    return {
+      ok: false, connected: null, sendState: null, consecutivosTimeout: null,
+      ultimoAckAgoMs: null, ultimoEnvioCompletoAgoMs: null, bruto: await lerJson(r),
+    };
   }
 
   const corpo = await lerJson(r) as {
-    data?: { connected?: unknown; sendState?: unknown; consecutiveSendTimeouts?: unknown };
+    data?: {
+      connected?: unknown; sendState?: unknown; consecutiveSendTimeouts?: unknown;
+      lastOutgoingAckAgoMs?: unknown; lastSendCompletedAgoMs?: unknown;
+    };
   } | null;
   const d = corpo?.data ?? {};
   return {
@@ -169,6 +252,8 @@ export async function saudeConexaoBaileysApi(
     connected: typeof d.connected === "boolean" ? d.connected : null,
     sendState: typeof d.sendState === "string" ? d.sendState : null,
     consecutivosTimeout: typeof d.consecutiveSendTimeouts === "number" ? d.consecutiveSendTimeouts : null,
+    ultimoAckAgoMs: typeof d.lastOutgoingAckAgoMs === "number" ? d.lastOutgoingAckAgoMs : null,
+    ultimoEnvioCompletoAgoMs: typeof d.lastSendCompletedAgoMs === "number" ? d.lastSendCompletedAgoMs : null,
     bruto: corpo,
   };
 }

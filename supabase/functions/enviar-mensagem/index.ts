@@ -17,7 +17,12 @@
 import { createClient, SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { chipPodeAbordar, conectorDoChip } from "../_shared/conector.ts";
 import { configEvolution, enviarTexto } from "../_shared/evolution-client.ts";
-import { configBaileysApi, enviarTextoBaileysApi } from "../_shared/baileys-api-client.ts";
+import {
+  aguardarAckBaileysApi,
+  configBaileysApi,
+  enviarTextoBaileysApi,
+  variantesE164Br,
+} from "../_shared/baileys-api-client.ts";
 import { numeroParaJid } from "../_shared/evolution.ts";
 
 const cors = {
@@ -91,18 +96,53 @@ Deno.serve(async (req) => {
     const cfg = configBaileysApi(seg);
     if (!cfg) return json({ ok: false, erro: "baileys_api_nao_configurada" }, 503);
 
-    const jidDestino = numeroParaJid(numeroE164);
-    const r = await enviarTextoBaileysApi(cfg, chip.numero_e164 as string, jidDestino, texto);
+    // Ambiguidade do 9º dígito (ver _shared/baileys-api-client.ts): a Evolution conciliava sozinha
+    // via mergeBrazilContacts; este provedor não tem equivalente. Tenta o número como está
+    // cadastrado; se o WhatsApp aceitar mas nunca confirmar (mesmo padrão do §8 — aceito e
+    // descartado em silêncio), tenta a variante alternativa (com/sem o 9) antes de desistir.
+    const variantes = variantesE164Br(numeroE164);
+    let resultado: Awaited<ReturnType<typeof enviarTextoBaileysApi>> | null = null;
+    let numeroUsado: string | null = null;
+    let confirmado = false;
 
-    if (!r.ok) {
-      if (r.resultado === "chip_caido") {
-        await sb.from("chips").update({ status: "desconectado" }).eq("id", chipId);
+    for (let i = 0; i < variantes.length; i++) {
+      const alvo = variantes[i];
+      const jidDestino = numeroParaJid(alvo);
+      const r = await enviarTextoBaileysApi(cfg, chip.numero_e164 as string, jidDestino, texto);
+
+      if (!r.ok) {
+        // A 1ª tentativa decide o motivo/derruba o chip. Se o envio nem sai pra variante 1, não sai
+        // pra variante 2 também (o problema é do NOSSO lado, não do formato do destino).
+        if (i === 0) {
+          if (r.resultado === "chip_caido") {
+            await sb.from("chips").update({ status: "desconectado" }).eq("id", chipId);
+          }
+          return json({ ok: false, resultado: r.resultado, status_provedor: r.status }, 502);
+        }
+        break; // variante alternativa falhou ao enviar — fica com o resultado da 1ª tentativa
       }
-      return json({ ok: false, resultado: r.resultado, status_provedor: r.status }, 502);
+
+      resultado = r;
+      numeroUsado = alvo;
+      if (variantes.length === 1) { confirmado = true; break; } // nada ambíguo a checar
+      confirmado = await aguardarAckBaileysApi(cfg, chip.numero_e164 as string);
+      if (confirmado) break;
+    }
+
+    if (!resultado) return json({ ok: false, erro: "baileys_chatwoot_sem_envio" }, 502);
+
+    // Autocorreção: só grava a variante alternativa como o telefone bom quando ELA foi a que
+    // recebeu o ack. Sem confirmação, não sobrescreve um dado que pode estar certo — a única coisa
+    // pior que o 9º dígito errado é trocar um número bom por um chute.
+    if (confirmado && numeroUsado && numeroUsado !== numeroE164) {
+      await sb.from("telefones_devedor").update({ telefone_e164: numeroUsado }).eq("telefone_e164", numeroE164);
     }
 
     await sb.from("chips").update({ ultimo_envio_em: new Date().toISOString() }).eq("id", chipId);
-    return json({ ok: true, message_id: r.messageId, delay_ms: r.delayMs });
+    return json({
+      ok: true, message_id: resultado.messageId, delay_ms: resultado.delayMs,
+      numero_usado: numeroUsado, entrega_confirmada: confirmado,
+    });
   }
 
   const cfg = configEvolution(seg);

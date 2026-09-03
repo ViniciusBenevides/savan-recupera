@@ -157,8 +157,24 @@ Deno.serve(async (req) => {
       let novoStatus = atual;
       let statusAntes = saudeAnterior.status_antes ?? null;
 
+      // Sinal de bloqueio silencioso (03/09/2026, ver Guias Operacionais/Baileys §8 e o ADR do
+      // baileys-api): `connected: true` só prova que o socket está de pé, não que o WhatsApp está
+      // confirmando o que sai. `lastOutgoingAckAgoMs` é a única prova de ponta a ponta — se já
+      // passou tempo suficiente desde um envio completo e NUNCA veio ack, tratar como suspeito.
+      // Sem essa trava, o monitor religou o chip 1 sozinho hoje com a conta possivelmente
+      // restrita, quase reabrindo o disparo em massa (ver `contexto-projeto.md`).
+      const LIMITE_ACK_SUSPEITO_MS = 5 * 60_000;
+      const semAckConfirmado =
+        typeof saudeConsulta.ultimoEnvioCompletoAgoMs === "number" &&
+        saudeConsulta.ultimoEnvioCompletoAgoMs > LIMITE_ACK_SUSPEITO_MS &&
+        saudeConsulta.ultimoAckAgoMs === null;
+
       if (saudeConsulta.connected) {
-        if (atual === "desconectado" && ["ativo", "aquecendo"].includes(String(statusAntes))) {
+        if (
+          atual === "desconectado" &&
+          ["ativo", "aquecendo"].includes(String(statusAntes)) &&
+          !semAckConfirmado
+        ) {
           novoStatus = String(statusAntes);
           statusAntes = null;
         }
@@ -172,6 +188,9 @@ Deno.serve(async (req) => {
         connected: saudeConsulta.connected,
         send_state: saudeConsulta.sendState,
         consecutivos_timeout: saudeConsulta.consecutivosTimeout,
+        ultimo_ack_ago_ms: saudeConsulta.ultimoAckAgoMs,
+        ultimo_envio_completo_ago_ms: saudeConsulta.ultimoEnvioCompletoAgoMs,
+        sem_ack_confirmado: semAckConfirmado,
         status_antes: statusAntes,
         atualizado_em: new Date().toISOString(),
       };
@@ -184,6 +203,18 @@ Deno.serve(async (req) => {
           payload: {
             status: novoStatus, nome: chip.nome,
             motivo: novoStatus === "desconectado" ? "queda" : "reconectado",
+          },
+        });
+      }
+
+      // Evento só na transição para o estado suspeito — mesma disciplina do resto do arquivo,
+      // não reemitir a cada rodada de 15 min enquanto a condição persistir.
+      if (semAckConfirmado && !saudeAnterior.sem_ack_confirmado) {
+        await sb.from("eventos_campanha").insert({
+          tipo: "chip_status", chip_id: chip.id,
+          payload: {
+            status: novoStatus, nome: chip.nome, motivo: "sem_ack_confirmado",
+            detalhe: "conectado, envio completa, mas o WhatsApp nunca confirmou entrega — possível bloqueio silencioso da conta",
           },
         });
       }
