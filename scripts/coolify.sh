@@ -7,6 +7,7 @@
 #   bash scripts/coolify.sh criar-evolution <project_uuid> [<nome-do-servico>]
 #   bash scripts/coolify.sh envs <service_uuid>
 #   bash scripts/coolify.sh servico <service_uuid>
+#   bash scripts/coolify.sh expor-app <service_uuid> <app_uuid> <fqdn> <porta> --confirmo
 #
 # Por que existe: o Coolify é o único serviço da matriz de credenciais SEM guia operacional local
 # (ver "Guias Operacionais/Credenciais — Política para Agentes.md"). Este script concentra as
@@ -200,6 +201,38 @@ elif cmd == 'sincronizar-env':
 
     io.open('.env', 'w', encoding='utf-8').write('\n'.join(novas) + '\n')
     print(f'.env atualizado: EVOLUTION_URL={url}  EVOLUTION_API_KEY=<{len(chave)} chars>')
+
+elif cmd == 'expor-app':
+    # Da uma URL publica a um sub-aplicativo de um Service (ex.: baileys-api dentro do stack do
+    # Chatwoot), que por padrao so existe na rede interna do Coolify.
+    #
+    # Quando usar: um sub-servico precisa ser alcancado de FORA da rede do Coolify — por uma Edge
+    # Function no Supabase, por exemplo. Confira antes com `servico <service_uuid>` que o app_uuid
+    # e o certo (procure pelo campo "applications" na resposta).
+    #
+    # CONFIRMACAO OBRIGATORIA: expor um servico interno muda a superficie de rede publica —
+    # mesma classe de risco de "modificar infraestrutura compartilhada". Sem --confirmo o comando
+    # so explica e sai.
+    servico, app, fqdn, porta = args[1], args[2], args[3], args[4]
+    confirmou = '--confirmo' in args[5:]
+    if not confirmou:
+        print('EXPOSICAO NAO EXECUTADA — falta confirmacao.')
+        print('')
+        print('  servico : %s' % servico)
+        print('  app     : %s' % app)
+        print('  fqdn    : %s' % fqdn)
+        print('  porta   : %s' % porta)
+        print('')
+        print('  isso da uma URL publica a um servico que hoje so existe na rede interna do')
+        print('  Coolify. A protecao passa a ser so a chave de API do servico (mesmo padrao que')
+        print('  ja usamos para a Evolution).')
+        print('')
+        print('  para executar de fato:')
+        print('    bash scripts/coolify.sh expor-app %s %s %s %s --confirmo' % (servico, app, fqdn, porta))
+        sys.exit(2)
+
+    st, r = call('PATCH', f'services/{servico}/applications/{app}', {'fqdn': fqdn, 'ports': porta})
+    print(exigir_ok(st, r, 'expor aplicacao do servico'))
 
 else:
     sys.stderr.write(f'comando desconhecido: {cmd}\n'); sys.exit(1)
