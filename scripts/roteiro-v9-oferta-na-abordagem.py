@@ -3,7 +3,12 @@
 
 DECISÃO DO DONO (03/09/2026): a primeira mensagem, que desde a v8 já se identifica por completo,
 passa a dizer também o valor com desconto — "de {{valor}} por {{valor_quitacao}}, {{desconto_pct}}
-de desconto". O resto da v8 fica como está.
+de desconto". O resto do texto fica exatamente como está.
+
+"Exatamente como está" é literal: este script NÃO carrega um texto pronto. Ele lê o que está no ar
+e encaixa a oferta na frase de proposta que já existe, variação por variação. A primeira versão
+sobrescrevia com as constantes da v8 e teria desfeito as edições feitas à mão no painel desde
+então (o `protocolo {{processo}}` e a redução de três variações para uma).
 
 O QUE MUDA SÓ AQUI (o texto), E O QUE MUDOU NO CÓDIGO JUNTO:
   · `supabase/functions/_shared/oferta.ts` — desconto EFETIVO e o trecho opcional `[[...]]`
@@ -52,59 +57,28 @@ for fluxo in (sys.stdout, sys.stderr):
         pass
 
 # Idêntico ao da v8 — CNPJ conferido pelos dígitos verificadores em 02/09/2026.
-IDENTIFICACAO_MC_CRED = (
-    "MC Cred — CNPJ 46.189.300/0001-61 — Rua 4, nº 515, sala 1619, "
-    "Setor Central, Goiânia/GO, CEP 74020-045"
-)
-CEDENTE = "SAVAN Calçados"
+# O texto de abordagem NÃO é escrito aqui, e essa é a correção que mais importa neste arquivo.
+#
+# A primeira versão deste script carregava as três variações da v8 como constante e sobrescrevia
+# `textos`. Entre a v8 e hoje o texto foi editado à mão no painel — `Referência {{processo}}` na
+# primeira linha virou `protocolo {{processo}}` no fim do bloco de dados, e as três variações
+# viraram uma. Gravar as constantes teria desfeito silenciosamente as duas mudanças.
+#
+# Então a regra aqui é: o roteiro que está no ar é a verdade. Este script lê os textos atuais,
+# sejam quantos forem, e faz UMA emenda cirúrgica em cada um — encaixar a oferta na frase da
+# proposta que já existe. O que ele não reconhece, ele recusa em vez de reescrever.
 
-# A linha da oferta, uma por variação. Sempre dentro de `[[...]]`: sem as duas variáveis
-# preenchidas, o trecho some inteiro em vez de sair pela metade ("de R$ 45,00 por  —  de desconto").
-# O "de {{valor}} por {{valor_quitacao}}" repete o valor que já apareceu duas linhas acima; a
-# repetição é o contraste, e é o ponto da mudança.
-OFERTAS = [
-    "[[Há uma proposta de quitação voluntária: de {{valor}} por {{valor_quitacao}} — "
-    "{{desconto_pct}} de desconto, em pagamento único e com termo de quitação.]]",
+# Onde a emenda entra: logo depois desta expressão, que as três variações da v8 e o texto editado
+# à mão têm em comum.
+ANCORA_PROPOSTA = "proposta de quitação voluntária"
 
-    "[[Está disponível uma proposta de quitação voluntária: de {{valor}} por {{valor_quitacao}}, "
-    "{{desconto_pct}} de desconto, em pagamento único, com termo de quitação em nome da titular.]]",
-
-    "[[Temos uma proposta de quitação voluntária: de {{valor}} por {{valor_quitacao}} — "
-    "{{desconto_pct}} de desconto —, em pagamento único e com termo de quitação ao final.]]",
-]
-
-# As três variações da v8, com a linha da proposta trocada pela oferta com valor. Todo o resto
-# (identificação, dados, pergunta de titularidade, opt-out, rodapé) é palavra por palavra a v8.
-TEXTOS_ABORDAGEM = [
-    "Olá, {{primeiro_nome}}. Aqui é a {{nome_bot}}, da MC Cred. Referência {{processo}}.\n\n"
-    f"A MC Cred adquiriu a carteira de contas da {CEDENTE} e passou a ser a credora deste "
-    "registro: {{valor}}, vencimento em {{vencimento}}, titular {{nome}}, CPF final "
-    "{{cpf_final}}.\n\n"
-    + OFERTAS[0] + "\n\n"
-    "Confirma que falo com a titular? Caso o número não seja dela, me informe que faço a "
-    "correção. Caso prefira não ser mais contatada, responda “não”.\n\n"
-    + IDENTIFICACAO_MC_CRED,
-
-    "Olá, {{primeiro_nome}}. Aqui quem fala é a {{nome_bot}}, da MC Cred. Protocolo "
-    "{{processo}}.\n\n"
-    f"A carteira de contas da {CEDENTE} foi cedida à MC Cred, que hoje é a credora deste "
-    "registro: titular {{nome}}, CPF final {{cpf_final}}, valor de {{valor}}, vencido em "
-    "{{vencimento}}.\n\n"
-    + OFERTAS[1] + "\n\n"
-    "Confirma que falo com a pessoa correta? Se este número não pertencer a ela, me informe que "
-    "faço a correção no cadastro. Se preferir não ser mais contatada, responda “não”.\n\n"
-    + IDENTIFICACAO_MC_CRED,
-
-    "Olá, {{primeiro_nome}}. Aqui é a {{nome_bot}}, falando pela MC Cred. Referência "
-    "{{processo}}.\n\n"
-    f"Informo que a MC Cred adquiriu da {CEDENTE} a carteira em que consta este registro: "
-    "{{valor}}, com vencimento em {{vencimento}}, em nome de {{nome}}, CPF final {{cpf_final}}. "
-    "O assunto passa a ser tratado conosco.\n\n"
-    + OFERTAS[2] + "\n\n"
-    "Peço que confirme se falo com a titular. Se o número não for dela, me avise para que eu "
-    "corrija. E se preferir não receber mais contato, responda “não”.\n\n"
-    + IDENTIFICACAO_MC_CRED,
-]
+# A emenda. Inline e entre travessões, para caber na frase que já existe sem refazer a pontuação:
+#   com desconto → "…proposta de quitação voluntária — de R$ 1.000,00 por R$ 400,00, 60% de
+#                   desconto — disponível para encerrar o registro…"
+#   no piso      → "…proposta de quitação voluntária disponível para encerrar o registro…"
+# O `[[...]]` é o que faz o trecho sumir inteiro quando as variáveis vêm vazias; sem ele a frase
+# sairia quebrada ("de R$ 45,00 por  —  de desconto") para quem cai no piso do Pix.
+EMENDA_OFERTA = "[[ — de {{valor}} por {{valor_quitacao}}, {{desconto_pct}} de desconto —]]"
 
 # A abordagem agora anuncia um número. Se a etapa seguinte recalcular e disser outro, a conversa
 # perde a credibilidade que a v8 inteira existe para construir — daí esta frase entrar na instrução.
@@ -150,6 +124,19 @@ def literal(texto):
     return "'" + str(texto).replace("'", "''") + "'"
 
 
+def emendar_oferta(texto):
+    """Encaixa a oferta na frase de proposta que o texto já tem. Devolve (novo, motivo_se_pulou)."""
+    if "{{valor_quitacao}}" in texto:
+        return texto, "já tem a oferta"
+    pos = texto.lower().find(ANCORA_PROPOSTA)
+    if pos < 0:
+        # Recusa em vez de inventar posição: chutar onde a oferta entra num texto que vai para
+        # milhares de pessoas é pior do que não mexer e deixar a pessoa editar à mão.
+        return texto, f"não achei “{ANCORA_PROPOSTA}” — emende à mão"
+    corte = pos + len(ANCORA_PROPOSTA)
+    return texto[:corte] + EMENDA_OFERTA + texto[corte:], None
+
+
 def transformar(roteiro):
     novo = copy.deepcopy(roteiro)
     etapas = novo.get("etapas", [])
@@ -159,8 +146,24 @@ def transformar(roteiro):
     disparo = next((e for e in etapas if e.get("tipo") == "disparo"), None)
     if disparo is None:
         raise SystemExit("erro: o roteiro não tem bloco de disparo")
-    disparo["textos"] = TEXTOS_ABORDAGEM
-    mudancas.append("abordagem: 3 textos com a oferta (de X por Y, Z% de desconto) em trecho opcional")
+
+    textos = disparo.get("textos") or []
+    if not textos:
+        raise SystemExit("erro: o bloco de disparo não tem nenhum texto")
+
+    novos, pulados = [], []
+    for i, t in enumerate(textos, 1):
+        emendado, motivo = emendar_oferta(t)
+        novos.append(emendado)
+        if motivo:
+            pulados.append(f"variação {i}: {motivo}")
+    if len(novos) == len(pulados):
+        raise SystemExit("erro: nenhuma variação pôde receber a oferta:\n  " + "\n  ".join(pulados))
+
+    disparo["textos"] = novos
+    mudancas.append(f"abordagem: oferta encaixada em {len(novos) - len(pulados)} de {len(novos)} variação(ões)")
+    for p in pulados:
+        mudancas.append(f"abordagem: PULADA — {p}")
 
     # A abordagem passou a citar um número; a etapa que negocia precisa saber disso.
     apresentar = por_id.get("apresentar_tudo")
@@ -252,11 +255,20 @@ def main():
         print(f"  · {m}")
     print(f"\netapas: {len(atual.get('etapas', []))} → {len(novo.get('etapas', []))}")
 
-    print("\nPRIMEIRA MENSAGEM (variação 1, com oferta)")
-    print("  " + TEXTOS_ABORDAGEM[0].replace("[[", "").replace("]]", "").replace("\n", "\n  "))
-    print("\nA MESMA, em quem cai no piso do Pix (o trecho da oferta some)")
-    sem = re.sub(r"\n*\[\[[\s\S]*?\]\]\n*", "\n\n", TEXTOS_ABORDAGEM[0])
-    print("  " + sem.replace("\n", "\n  "))
+    # Antes/depois lado a lado: é isso que torna a mudança revisável por quem decide o texto.
+    disparo_antes = next(e for e in atual["etapas"] if e.get("tipo") == "disparo")
+    disparo_depois = next(e for e in novo["etapas"] if e.get("tipo") == "disparo")
+    antes = (disparo_antes.get("textos") or [""])[0]
+    depois = (disparo_depois.get("textos") or [""])[0]
+
+    def bloco(titulo, texto):
+        print(f"\n{titulo}")
+        print("  " + texto.replace("\n", "\n  "))
+
+    bloco("HOJE (variação 1, como está no ar)", antes)
+    bloco("COM OFERTA (quem tem desconto)", depois.replace("[[", "").replace("]]", ""))
+    bloco("NO PISO DO PIX (o trecho da oferta some)",
+          re.sub(r"\[\[[\s\S]*?\]\]", "", depois))
 
     if problemas:
         print("\nPROBLEMAS")
