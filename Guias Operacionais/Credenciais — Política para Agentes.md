@@ -33,6 +33,7 @@ conector MCP e não copie segredos para arquivos auxiliares.
 | Variáveis / prefixo | Serviço | Skills obrigatórias, se disponíveis | Guia operacional |
 |---|---|---|---|
 | `ASAAS_*` | Asaas | Não há skill específica instalada | [Asaas](<Asaas — Guia Operacional.md>) |
+| `BAILEYS_API_*` | baileys-api (fazer-ai) — canal Baileys nativo do Chatwoot | Não há skill específica instalada | [baileys-api (Chatwoot)](<baileys-api (Chatwoot) — Guia Operacional.md>) e [Baileys](<Baileys — Guia Operacional.md>) |
 | `CHATWOOT_*` | Chatwoot | Não há skill específica instalada | [Chatwoot](<Chatwoot — Guia Operacional.md>) |
 | `CNPJBIZ_*` | CNPJ Biz | Não há skill específica instalada | **Não existe guia local atualmente** |
 | `COOLIFY_*` | Coolify | Não há skill específica instalada | **Não existe guia local atualmente** |
@@ -74,9 +75,13 @@ Meta ou de um BSP oficial.
 
 ## Regra adicional para Evolution/Baileys
 
+Vale para os **dois** transportes Baileys do projeto: `EVOLUTION_*` (Evolution API) e `BAILEYS_API_*`
+(baileys-api da fazer-ai, o canal nativo do Chatwoot). São serviços diferentes, com credenciais e guias
+diferentes, mas o risco é o mesmo — quem está do outro lado é o WhatsApp, não uma API com contrato.
+
 A sessão de WhatsApp do Baileys **é a credencial** e não tem substituto: não existe token para rotacionar.
-O que autentica cada número é um par de chaves Signal guardado no banco da Evolution, equivalente a uma
-chave SSH privada.
+O que autentica cada número é um par de chaves Signal guardado no banco do provedor — Postgres na
+Evolution, Redis no baileys-api —, equivalente a uma chave SSH privada.
 
 - Nunca exibir, logar, versionar ou copiar o conteúdo do estado de auth (`creds`/`keys`).
 - Nunca desconectar, deslogar ou apagar uma instância sem autorização específica: perder a sessão obriga
@@ -84,3 +89,7 @@ chave SSH privada.
 - Enviar mensagem por esse canal atinge uma pessoa real e não tem desfazer — confirmar antes, sempre.
 - Ler integralmente o [guia do Baileys](<Baileys — Guia Operacional.md>), em especial a §8 (sinais de ban)
   e a §10 (regras de segurança), antes de qualquer operação no canal.
+- Quando a operação for no canal nativo do Chatwoot (`BAILEYS_API_*`, `chips.conector =
+  'baileys_chatwoot'`), ler **também** o [guia do baileys-api](<baileys-api (Chatwoot) — Guia Operacional.md>):
+  a autenticação, o endereço de cada número e o caminho de pareamento são outros, e quem abre a conexão
+  é o Chatwoot, não o painel.
