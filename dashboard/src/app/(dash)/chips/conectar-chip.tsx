@@ -6,6 +6,10 @@ import { Loader2, CheckCircle2, AlertTriangle, RotateCw, QrCode, Smartphone, X }
 // O QR da Evolution roda sozinho a cada poucas dezenas de segundos. Pedimos um novo um pouco antes
 // disso: um QR morto na tela é indistinguível de um QR vivo, e a pessoa fica apontando o celular
 // para um código que já não vale.
+//
+// No canal nativo do Chatwoot é ao contrário: o baileys-api empurra o QR novo sozinho e o polling
+// já traz. Lá o servidor responde `auto_renova_qr` e este relógio some da tela — pedir outro
+// recriaria o socket e mataria o pareamento em andamento.
 const VIDA_QR_S = 38;
 // De quanto em quanto tempo perguntamos ao servidor se o número já entrou.
 const PASSO_ESTADO_S = 3;
@@ -31,6 +35,7 @@ export function ConectarChip({ chipId, nome, onConectado, onFechar }: {
   const [erro, setErro] = useState("");
   const [avisoChatwoot, setAvisoChatwoot] = useState<string | null>(null);
   const [inboxId, setInboxId] = useState<number | null>(null);
+  const [autoRenovaQr, setAutoRenovaQr] = useState(false);
   const [, redesenhar] = useState(0);
 
   const vivo = useRef(true);
@@ -47,10 +52,11 @@ export function ConectarChip({ chipId, nome, onConectado, onFechar }: {
       const r = await fetch(`/api/chips/${chipId}/conectar`, { method: "POST" });
       const d = await r.json().catch(() => ({}));
       if (!vivo.current) return;
-      if (!r.ok) { setErro(d.erro ?? "A Evolution não respondeu."); setFase("erro"); return; }
+      if (!r.ok) { setErro(d.erro ?? "O provedor do WhatsApp não respondeu."); setFase("erro"); return; }
       idadeQr.current = 0;
       setQr(d.qr ?? null);
       setPareamento(d.pairing_code ?? null);
+      setAutoRenovaQr(!!d.auto_renova_qr);
       setInboxId(d.inbox_id ?? null);
       setAvisoChatwoot(d.chatwoot?.ok === false ? (d.chatwoot?.mensagem ?? "Chatwoot não vinculado.") : null);
       setFase("aguardando");
@@ -65,6 +71,9 @@ export function ConectarChip({ chipId, nome, onConectado, onFechar }: {
       const d = await r.json().catch(() => ({}));
       if (!vivo.current || !r.ok) return;
       if (d.inbox_id) setInboxId(d.inbox_id);
+      // No canal nativo o QR chega por aqui: o baileys-api empurra cada código novo para o
+      // Chatwoot e é o polling que os vê. Sem esta linha a tela abriria sem QR nenhum.
+      if (d.qr) { setQr(d.qr); idadeQr.current = 0; }
       if (d.status === "conectado" || d.estado === "open") { setFase("conectado"); aoConectar.current?.(); }
       else if (d.status === "banido") setFase("banido");
     } catch {
@@ -84,10 +93,10 @@ export function ConectarChip({ chipId, nome, onConectado, onFechar }: {
       idadeQr.current += 1;
       redesenhar((n) => n + 1);
       if (idadeQr.current % PASSO_ESTADO_S === 0) verEstado();
-      if (idadeQr.current >= VIDA_QR_S) pedirQr();
+      if (!autoRenovaQr && idadeQr.current >= VIDA_QR_S) pedirQr();
     }, 1000);
     return () => clearInterval(t);
-  }, [fase, pedirQr, verEstado]);
+  }, [fase, autoRenovaQr, pedirQr, verEstado]);
 
   const restante = Math.max(0, VIDA_QR_S - idadeQr.current);
 
@@ -172,8 +181,11 @@ export function ConectarChip({ chipId, nome, onConectado, onFechar }: {
           <img src={qr} alt="QR code para conectar o número" className="h-56 w-56" />
         ) : (
           <div className="flex h-56 w-56 items-center justify-center px-4 text-center text-xs text-ink-900">
-            A Evolution não devolveu a imagem do QR.
-            {pareamento ? " Use o código de pareamento abaixo." : " Gere um novo código."}
+            {autoRenovaQr
+              ? "O código ainda não chegou do provedor. Ele aparece aqui em alguns segundos."
+              : pareamento
+                ? "O provedor não devolveu a imagem do QR. Use o código de pareamento abaixo."
+                : "O provedor não devolveu a imagem do QR. Gere um novo código."}
           </div>
         )}
       </div>
@@ -184,12 +196,16 @@ export function ConectarChip({ chipId, nome, onConectado, onFechar }: {
             <span className="inline-flex items-center gap-1.5">
               <Loader2 className="h-3 w-3 animate-spin" /> Esperando você escanear…
             </span>
-            <span className="font-mono tabnums">novo código em {restante}s</span>
+            <span className="font-mono tabnums">
+              {autoRenovaQr ? "o código se renova sozinho" : `novo código em ${restante}s`}
+            </span>
           </div>
-          <div className="h-1 overflow-hidden rounded-full bg-ink-800">
-            <div className="h-full rounded-full bg-emerald transition-[width] duration-1000 ease-linear"
-                 style={{ width: `${(restante / VIDA_QR_S) * 100}%` }} />
-          </div>
+          {!autoRenovaQr && (
+            <div className="h-1 overflow-hidden rounded-full bg-ink-800">
+              <div className="h-full rounded-full bg-emerald transition-[width] duration-1000 ease-linear"
+                   style={{ width: `${(restante / VIDA_QR_S) * 100}%` }} />
+            </div>
+          )}
         </div>
       )}
 
@@ -218,8 +234,11 @@ export function ConectarChip({ chipId, nome, onConectado, onFechar }: {
         </div>
       )}
 
+      {/* No canal nativo isto não é "pegar o próximo código" — é recomeçar a conexão do zero, e
+          joga fora o pareamento que estiver em andamento. Daí o rótulo diferente: o botão só serve
+          para quando a tela travar sem QR nenhum. */}
       <Button variant="outline" size="sm" onClick={pedirQr} disabled={fase === "carregando"}>
-        <RotateCw className="h-4 w-4" /> Gerar novo código
+        <RotateCw className="h-4 w-4" /> {autoRenovaQr ? "Recomeçar o pareamento" : "Gerar novo código"}
       </Button>
     </Card>
   );

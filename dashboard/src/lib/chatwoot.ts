@@ -164,3 +164,163 @@ export async function nomeDoInbox(inboxId: number): Promise<string | null> {
     return typeof nome === "string" && nome.trim() ? nome : null;
   } catch { return null; }
 }
+
+// ── Canal WhatsApp nativo do Chatwoot (provider `baileys`) ──────────────────────────────────
+//
+// O outro transporte Baileys do projeto (`chips.conector = 'baileys_chatwoot'`), que fala com o
+// baileys-api (fazer-ai). A diferença de arquitetura em relação à Evolution decide tudo o que vem
+// abaixo: lá o inbox é um `Channel::Api` que a Evolution cria sozinha durante o `chatwoot/set` e
+// quem pareia é a Evolution; aqui o inbox é um `Channel::Whatsapp` de provider `baileys` e **quem
+// pareia é o próprio Chatwoot** — ele abre a conexão no baileys-api e recebe o QR pelo webhook.
+// O painel nunca chama o baileys-api para conectar um número: chama o Chatwoot.
+//
+// São três passos, nesta ordem:
+//   1. `POST /inboxes`                             cria o canal (o Chatwoot valida a credencial do
+//                                                  baileys-api sozinho, via `BAILEYS_PROVIDER_*`);
+//   2. `POST /inboxes/{id}/setup_channel_provider` manda abrir a conexão — é o que gera o QR;
+//   3. `GET  /inboxes/{id}`                        lê `provider_connection`: `connection` e
+//                                                  `qr_data_url` (a imagem do QR já em data URL).
+//
+// Enquanto ninguém escaneia, o baileys-api empurra um QR novo pelo webhook e o Chatwoot atualiza o
+// `qr_data_url` sozinho. Por isso a tela deste canal só repete o passo 3: repetir o passo 2 mataria
+// a conexão em andamento a cada rodada e o QR nunca terminaria de valer.
+
+/** `connection` do Chatwoot: `close` · `connecting` · `reconnecting` · `open`. */
+export type ConexaoBaileys = {
+  connection: string | null;
+  qr: string | null;
+  erro: string | null;
+};
+
+async function corpoErro(r: Response): Promise<string> {
+  const t = await r.text().catch(() => "");
+  try {
+    const j = JSON.parse(t);
+    const m = j?.message ?? j?.error ?? j?.errors;
+    return typeof m === "string" ? m : JSON.stringify(m ?? j).slice(0, 300);
+  } catch {
+    return t.slice(0, 300) || `HTTP ${r.status}`;
+  }
+}
+
+/**
+ * Acha um inbox WhatsApp pelo telefone.
+ *
+ * O `phone_number` de um `Channel::Whatsapp` é único na instância inteira do Chatwoot: criar um
+ * inbox para um número que já tem um é recusado com 422. Isso não é um erro a mostrar para o dono —
+ * é o caso normal de religar um chip cujo inbox continua lá. Reaproveitar o inbox existente também
+ * preserva as conversas: um inbox novo começaria vazio e o histórico ficaria órfão no antigo.
+ */
+export async function acharInboxWhatsappPorTelefone(e164: string): Promise<number | null> {
+  const { url, token, accountId } = cfgCw();
+  if (!url || !token) return null;
+  const alvo = e164.trim();
+  if (!alvo) return null;
+  try {
+    const r = await fetch(`${url}/api/v1/accounts/${accountId}/inboxes`, {
+      headers: { api_access_token: token }, cache: "no-store",
+    });
+    if (!r.ok) return null;
+    const corpo = await r.json().catch(() => null);
+    const lista: any[] = Array.isArray(corpo?.payload) ? corpo.payload : Array.isArray(corpo) ? corpo : [];
+    const inbox = lista.find((i) => String(i?.phone_number ?? "").trim() === alvo);
+    return typeof inbox?.id === "number" ? inbox.id : null;
+  } catch { return null; }
+}
+
+/**
+ * Cria (ou reencontra) o inbox nativo do chip e grava o id no banco.
+ *
+ * `provider_config` vai com os mesmos dois campos do chip que já roda neste canal — o resto
+ * (`webhook_verify_token`, URL e chave do baileys-api) o Chatwoot preenche sozinho a partir do
+ * `BAILEYS_PROVIDER_*` da instância. Mandar URL ou chave daqui seria copiar credencial de serviço
+ * para dentro de um payload nosso sem necessidade nenhuma.
+ */
+export async function criarInboxBaileys(opts: {
+  chipId: number; nome: string; numeroE164: string;
+}): Promise<ResultadoChatwoot> {
+  const { url, token, accountId } = cfgCw();
+  if (!url || !token) {
+    return { ok: false, motivo: "sem_config", mensagem: "Chatwoot não configurado no painel (CHATWOOT_URL/CHATWOOT_TOKEN)." };
+  }
+
+  async function vincular(inboxId: number, jaExistia: boolean): Promise<ResultadoChatwoot> {
+    await supabaseAdmin().from("chips").update({ chatwoot_inbox_id: inboxId }).eq("id", opts.chipId);
+    return { ok: true, inbox_id: inboxId, ja_existia: jaExistia };
+  }
+
+  try {
+    const r = await fetch(`${url}/api/v1/accounts/${accountId}/inboxes`, {
+      method: "POST",
+      headers: { api_access_token: token, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: opts.nome,
+        channel: {
+          type: "whatsapp",
+          provider: "baileys",
+          phone_number: opts.numeroE164,
+          provider_config: { mark_as_read: true, presence_subscribe: false },
+        },
+      }),
+    });
+
+    if (!r.ok) {
+      // 422 é quase sempre "este telefone já tem inbox". Procurar antes de desistir transforma o
+      // erro no caminho feliz de religar um chip.
+      const existente = await acharInboxWhatsappPorTelefone(opts.numeroE164);
+      if (existente) return vincular(existente, true);
+      return { ok: false, motivo: "falha", mensagem: await corpoErro(r) };
+    }
+
+    const corpo = await r.json().catch(() => null);
+    const inboxId: number | null = corpo?.id ?? corpo?.payload?.id ?? null;
+    if (!inboxId) return { ok: false, motivo: "falha", mensagem: "Chatwoot não retornou o id do inbox." };
+    return vincular(inboxId, false);
+  } catch (e) {
+    return { ok: false, motivo: "falha", mensagem: String(e) };
+  }
+}
+
+/**
+ * Manda o Chatwoot abrir a conexão no baileys-api — é esta chamada que faz nascer o QR.
+ *
+ * Chamar de novo com a conexão já de pé recria o socket e joga fora um pareamento em andamento, e é
+ * por isso que só o cadastro e o botão de reconectar chegam aqui: o polling da tela nunca chama.
+ */
+export async function abrirConexaoBaileys(inboxId: number): Promise<{ ok: true } | { ok: false; mensagem: string }> {
+  const { url, token, accountId } = cfgCw();
+  if (!url || !token) return { ok: false, mensagem: "Chatwoot não configurado no painel." };
+  try {
+    const r = await fetch(`${url}/api/v1/accounts/${accountId}/inboxes/${inboxId}/setup_channel_provider`, {
+      method: "POST", headers: { api_access_token: token, "Content-Type": "application/json" },
+    });
+    if (!r.ok) return { ok: false, mensagem: await corpoErro(r) };
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, mensagem: String(e) };
+  }
+}
+
+/**
+ * Estado do pareamento: o que a tela do Chatwoot mostra, lido pela API.
+ *
+ * Devolve `null` só quando a CONSULTA falha — a mesma disciplina do resto do projeto (§36): não
+ * confundir Chatwoot fora do ar com "o chip caiu". `connection: 'close'` é dado; `null` é ignorância.
+ */
+export async function conexaoBaileys(inboxId: number): Promise<ConexaoBaileys | null> {
+  const { url, token, accountId } = cfgCw();
+  if (!url || !token) return null;
+  try {
+    const r = await fetch(`${url}/api/v1/accounts/${accountId}/inboxes/${inboxId}`, {
+      headers: { api_access_token: token }, cache: "no-store",
+    });
+    if (!r.ok) return null;
+    const corpo = await r.json().catch(() => null);
+    const pc = (corpo?.payload ?? corpo)?.provider_connection ?? {};
+    return {
+      connection: typeof pc.connection === "string" ? pc.connection : null,
+      qr: typeof pc.qr_data_url === "string" && pc.qr_data_url ? pc.qr_data_url : null,
+      erro: typeof pc.error === "string" && pc.error ? pc.error : null,
+    };
+  } catch { return null; }
+}

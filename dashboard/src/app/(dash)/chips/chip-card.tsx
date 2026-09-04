@@ -70,10 +70,10 @@ export function ChipCard({ chip, metrica, donoNome, ritmoHora }: {
   // A coluna tem default 'baileys' no banco, então isto sempre vem preenchido; o fallback é rede
   // de segurança e escolhe Meta de propósito — é o que os chips anteriores à fatia realmente são.
   const conector: string = chip.conector ?? "meta_cloud";
-  // `ehBaileys` fica estrito à Evolution de propósito: é o único provedor que o painel sabe
-  // provisionar/reconectar por QR hoje. `usaTransporteBaileys` cobre os dois transportes
-  // não-oficiais (Evolution e baileys-api/Chatwoot) para tudo que é comum aos dois — ritmo,
-  // rótulo de canal, esconder o bloco de saúde da Meta.
+  // `ehBaileys` é estrito à Evolution: é dela o diagnóstico de sessão revogada (`precisa_qr`), que
+  // o baileys-api não dá. `usaTransporteBaileys` cobre os dois transportes não-oficiais (Evolution
+  // e baileys-api/Chatwoot) para tudo que é comum aos dois — ritmo, rótulo de canal, esconder o
+  // bloco de saúde da Meta, e o pareamento por QR, que desde 04/09/2026 o painel faz nos dois.
   const ehBaileys = conector === "baileys";
   const usaTransporteBaileys = ehConectorBaileys(conector);
 
@@ -220,7 +220,7 @@ export function ChipCard({ chip, metrica, donoNome, ritmoHora }: {
     : ["cadastrado", "conectado", "desconectado"].includes(chip.status);
   const podePausar = ["ativo", "aquecendo"].includes(chip.status);
   // 'banido' fica de fora: no Baileys um 401 é definitivo e reconectar não resolve (§8 do guia).
-  const podeConectar = ehBaileys && !escalador && ["cadastrado", "desconectado"].includes(chip.status);
+  const podeConectar = usaTransporteBaileys && !escalador && ["cadastrado", "desconectado"].includes(chip.status);
 
   if (conectando) {
     return (
@@ -282,10 +282,9 @@ export function ChipCard({ chip, metrica, donoNome, ritmoHora }: {
                          placeholder="(11) 99999-9999" inputMode="tel" />
                   <p className="mt-1.5 text-xs text-mist">
                     Com DDD. Trocar o número aqui <b className="text-chalk">não religa nada</b>: é só o rótulo que o
-                    painel mostra.{" "}
-                    {ehBaileys
-                      ? <>Quem vincula de verdade é o QR, no botão <b className="text-chalk">Conectar</b>.</>
-                      : "Quem vincula de verdade é o pareamento feito pelo Chatwoot."}
+                    painel mostra. Quem vincula de verdade é o QR, no botão{" "}
+                    <b className="text-chalk">Conectar</b>.
+                    {!ehBaileys && " Neste canal o número também é o endereço da conexão no provedor: trocá-lo aqui e religar cria outra conexão, não muda a que está de pé."}
                   </p>
                 </div>
                 <MaturidadeField value={eMaturidade} onChange={setEMaturidade} />
@@ -549,15 +548,6 @@ export function ChipCard({ chip, metrica, donoNome, ritmoHora }: {
         </div>
       ) : (
         <div className="flex flex-col gap-2">
-          {/* baileys_chatwoot cai (chip caiu, mesmo status) mas o painel não sabe religar por QR —
-              essa é a Evolution. Sem esta nota, um chip nesse estado ficava sem nenhum botão e sem
-              explicação de onde ir. */}
-          {usaTransporteBaileys && !ehBaileys && chip.status === "desconectado" && (
-            <div className="rounded-lg border border-amber/30 bg-amber/10 px-3 py-2 text-xs text-amber">
-              Sessão caiu. Reconecte pela tela do Chatwoot (canal Baileys nativo) — este painel não
-              faz o pareamento desse provedor ainda.
-            </div>
-          )}
           <div className="flex gap-2">
           {podeConectar && (
             <Button size="sm" className="flex-1" onClick={() => setConectando(true)} disabled={pending}>

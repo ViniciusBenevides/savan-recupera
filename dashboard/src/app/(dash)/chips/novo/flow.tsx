@@ -36,20 +36,29 @@ function CampoCopiavel({ rotulo, valor, onCopiar }: { rotulo: string; valor: str
   );
 }
 
-// Cadastro de número. Três caminhos:
-//  - Baileys (padrão): número comum, vinculado por QR na Evolution. É o canal em uso desde que a
-//    conta oficial foi banida em 17/08/2026 (§38);
+// Cadastro de número. Quatro caminhos:
+//  - Baileys/Chatwoot nativo (padrão): número comum por QR, pelo baileys-api (fazer-ai), o
+//    provedor nativo do Chatwoot. Entrou em 03/09/2026, quando o chip 1 pareou aqui depois de a
+//    Evolution passar a recusar o pareamento daquele número — e virou o padrão em 04/09/2026 pelo
+//    mesmo motivo: entre dois transportes equivalentes, o padrão é o que pareou por último;
+//  - Baileys/Evolution: o mesmo WhatsApp comum por QR, pelo serviço que era o único até então. É o
+//    canal em uso desde que a conta oficial foi banida em 17/08/2026 (§38);
 //  - Meta Cloud API: continua existindo para o dia em que houver conta oficial de novo, mas é
 //    escolha explícita — ninguém cai nela por omissão;
 //  - escalador humano: não conecta em nada, fica registrado só para receber transferências.
+type Canal = "baileys" | "baileys_chatwoot" | "meta_cloud";
+
 export function NovoChipFlow() {
   const router = useRouter();
 
   const [etapa, setEtapa] = useState<"form" | "conectar" | "meta_ok">("form");
   const [nome, setNome] = useState("");
   const [papel, setPapel] = useState<"bot" | "equipe">("bot");
-  const [canal, setCanal] = useState<"baileys" | "meta_cloud">("baileys");
+  const [canal, setCanal] = useState<Canal>("baileys_chatwoot");
   const [maturidade, setMaturidade] = useState<MaturidadeValor>({ maturidade: "novo", limite_dia_override: null, limite_hora_override: null });
+
+  // Os dois canais por QR (Evolution e Chatwoot nativo) pedem exatamente os mesmos campos.
+  const porQr = canal !== "meta_cloud";
 
   // Baileys
   const [numero, setNumero] = useState("");
@@ -88,8 +97,8 @@ export function NovoChipFlow() {
     // O `conector` vai SEMPRE explícito. Sem ele a API cai no padrão e o erro mente sobre a causa.
     const body = equipe
       ? { nome, papel: "equipe", agente_nome: agente, numero_e164: numeroEquipe }
-      : canal === "baileys"
-        ? { nome, papel: "bot", conector: "baileys", numero_e164: numero, ...ritmo }
+      : porQr
+        ? { nome, papel: "bot", conector: canal, numero_e164: numero, ...ritmo }
         : {
             nome, papel: "bot", conector: "meta_cloud",
             meta_phone_number_id: metaPhone, meta_waba_id: metaWaba, meta_token: metaToken,
@@ -106,7 +115,7 @@ export function NovoChipFlow() {
     // escalador humano só registrado: não conecta em nada — volta para a lista
     if (equipe) { voltarParaLista(); return; }
 
-    if (canal === "baileys") {
+    if (porQr) {
       setChipCriado({ id: d.chip_id, nome });
       setEtapa("conectar");
       return;
@@ -165,14 +174,23 @@ export function NovoChipFlow() {
             <>
               <div>
                 <Label>Canal</Label>
-                <select value={canal} onChange={(e) => setCanal(e.target.value as "baileys" | "meta_cloud")}
+                <select value={canal} onChange={(e) => setCanal(e.target.value as Canal)}
                         className="h-10 w-full rounded-xl border border-line bg-ink-850 px-3 text-sm text-chalk outline-none">
-                  <option value="baileys">WhatsApp comum (QR) — em uso</option>
+                  <option value="baileys_chatwoot">WhatsApp comum (QR) — canal nativo do Chatwoot</option>
+                  <option value="baileys">WhatsApp comum (QR) — via Evolution</option>
                   <option value="meta_cloud">API oficial da Meta (Cloud API) — suspensa</option>
                 </select>
+                {porQr && (
+                  <p className="mt-1.5 text-xs text-mist">
+                    Os dois são o <b className="text-chalk">mesmo WhatsApp comum, vinculado por QR</b> — muda só o
+                    serviço que segura a sessão. O <b className="text-chalk">nativo</b> vem marcado por ser o que o
+                    chip 1 usa desde 03/09/2026, quando a Evolution passou a recusar o pareamento daquele número; ele
+                    aparece no Chatwoot como uma caixa de WhatsApp de verdade, e não como caixa de API.
+                  </p>
+                )}
               </div>
 
-              {canal === "baileys" ? (
+              {porQr ? (
                 <>
                   <div className="flex gap-2 rounded-lg border border-emerald/30 bg-emerald/10 px-3 py-2.5 text-[11px] leading-relaxed text-emerald-soft">
                     <QrCode className="mt-0.5 h-3.5 w-3.5 shrink-0" />
@@ -269,7 +287,7 @@ export function NovoChipFlow() {
             {salvando ? "Cadastrando…"
               : papel === "equipe"
                 ? <>Cadastrar escalador <ArrowRight className="h-4 w-4" /></>
-                : canal === "baileys"
+                : porQr
                   ? <>Cadastrar e ler o QR <QrCode className="h-4 w-4" /></>
                   : <>Conectar número oficial <ArrowRight className="h-4 w-4" /></>}
           </Button>

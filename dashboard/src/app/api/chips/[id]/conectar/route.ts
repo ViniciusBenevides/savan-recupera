@@ -2,7 +2,9 @@ import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-server";
 import { exigirCobrador, podeEditarChip, erroDono } from "@/lib/auth";
 import { criarInstancia, estadoInstancia, ligarChatwoot } from "@/lib/evolution";
-import { buscarInboxPorNome, nomeDoInbox } from "@/lib/chatwoot";
+import {
+  abrirConexaoBaileys, buscarInboxPorNome, conexaoBaileys, criarInboxBaileys, nomeDoInbox,
+} from "@/lib/chatwoot";
 import { nomeInstanciaEvolution } from "@/lib/conector";
 
 type Admin = ReturnType<typeof supabaseAdmin>;
@@ -26,8 +28,11 @@ async function garantirInbox(
   return id;
 }
 
-// POST — provisiona a instância do chip na Evolution e devolve o QR para escanear.
-// Idempotente: apertar de novo (o QR expira em segundos) devolve um QR novo da mesma instância.
+// POST — provisiona a conexão do chip no provedor dele e devolve o QR para escanear.
+// Idempotente: apertar de novo (o QR expira em segundos) devolve um QR novo da mesma conexão.
+// Os dois transportes Baileys entram aqui, por caminhos que não se parecem: a Evolution é
+// provisionada por instância e pareada por nós; o baileys_chatwoot é pareado pelo Chatwoot, que é
+// quem fala com o baileys-api.
 export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const chipId = Number(id);
@@ -41,22 +46,62 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     .eq("id", chipId).maybeSingle();
   if (!chip) return NextResponse.json({ erro: "Chip não encontrado." }, { status: 404 });
 
-  // Estrito à Evolution: é o único provedor que este endpoint provisiona por QR. O baileys_chatwoot
-  // é Baileys também, mas pareia pelo baileys-api, fora do painel — dizer "não é Baileys" ali
-  // mandaria o dono procurar o problema no lugar errado.
-  if (chip.conector !== "baileys") {
-    return NextResponse.json(
-      {
-        erro: chip.conector === "baileys_chatwoot"
-          ? "Este chip está no baileys-api (Chatwoot), e o pareamento por QR dele não passa pelo painel."
-          : "Este chip não usa o canal Baileys. O canal oficial da Meta está suspenso desde 17/08/2026.",
-      },
-      { status: 400 },
-    );
-  }
   if (chip.papel === "equipe") {
     return NextResponse.json(
       { erro: "Chip de equipe é só um número de escalação — não conecta ao sistema." },
+      { status: 400 },
+    );
+  }
+
+  // ── baileys_chatwoot: quem pareia é o Chatwoot ────────────────────────────────────────
+  // Nada aqui fala com o baileys-api. O inbox nativo é o dono da conexão: nós criamos o inbox,
+  // pedimos a abertura e lemos o QR que o provedor empurrou para lá. Ver `lib/chatwoot.ts`.
+  if (chip.conector === "baileys_chatwoot") {
+    const numero = String(chip.numero_e164 ?? "").trim();
+    if (!numero) {
+      return NextResponse.json(
+        { erro: "Este chip está sem número gravado, e no baileys-api o número É o endereço da conexão." },
+        { status: 400 },
+      );
+    }
+
+    let inboxId = chip.chatwoot_inbox_id as number | null;
+    if (!inboxId) {
+      const cw = await criarInboxBaileys({ chipId, nome: chip.nome as string, numeroE164: numero });
+      if (!cw.ok) return NextResponse.json({ erro: `Chatwoot: ${cw.mensagem}` }, { status: 502 });
+      inboxId = cw.inbox_id;
+    }
+
+    const abriu = await abrirConexaoBaileys(inboxId);
+    if (!abriu.ok) return NextResponse.json({ erro: `Chatwoot: ${abriu.mensagem}`, inbox_id: inboxId }, { status: 502 });
+
+    // O QR não nasce junto com a resposta: ele chega ao Chatwoot pelo webhook do baileys-api, um
+    // instante depois. Damos alguns segundos para poupar a tela de abrir vazia — e se não vier,
+    // o polling do GET traz assim que aparecer, sem ninguém apertar nada.
+    let conexao = await conexaoBaileys(inboxId);
+    for (let i = 0; i < 6 && !conexao?.qr && conexao?.connection !== "open"; i++) {
+      await new Promise((r) => setTimeout(r, 800));
+      conexao = await conexaoBaileys(inboxId);
+    }
+
+    return NextResponse.json({
+      ok: true,
+      conector: "baileys_chatwoot",
+      qr: conexao?.qr ?? null,
+      pairing_code: null,
+      conexao: conexao?.connection ?? null,
+      inbox_id: inboxId,
+      // O baileys-api troca o QR sozinho enquanto ninguém escaneia, e o Chatwoot atualiza o
+      // `qr_data_url`. Pedir outro daqui recriaria o socket e mataria o pareamento em andamento.
+      auto_renova_qr: true,
+      chatwoot: { ok: true, inbox_id: inboxId },
+    });
+  }
+
+  // Daqui para baixo é Evolution — o outro transporte Baileys, provisionado por instância.
+  if (chip.conector !== "baileys") {
+    return NextResponse.json(
+      { erro: "Este chip não usa um canal Baileys. O canal oficial da Meta está suspenso desde 17/08/2026." },
       { status: 400 },
     );
   }
@@ -106,9 +151,45 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
   const admin = supabaseAdmin();
   const { data: chip } = await admin
-    .from("chips").select("id, nome, status, instancia_evolution, chatwoot_inbox_id")
+    .from("chips").select("id, nome, status, conector, instancia_evolution, chatwoot_inbox_id")
     .eq("id", chipId).maybeSingle();
   if (!chip) return NextResponse.json({ erro: "Chip não encontrado." }, { status: 404 });
+
+  const atualDb = String(chip.status ?? "cadastrado");
+  // Estados em que o chip está EM OPERAÇÃO. Importam duas vezes: para não rebaixar um chip ativo a
+  // "conectado" a cada 3 segundos de polling (ele sairia do `campanha-lote`, que só olha 'ativo' e
+  // 'aquecendo'), e para saber quando uma queda é notícia.
+  const emOperacao = ["conectado", "ativo", "aquecendo", "pausado"].includes(atualDb);
+
+  // ── baileys_chatwoot: o estado do pareamento mora no inbox nativo ─────────────────────
+  if (chip.conector === "baileys_chatwoot") {
+    const inboxId = chip.chatwoot_inbox_id as number | null;
+    if (!inboxId) {
+      return NextResponse.json({ ok: true, estado: "sem_instancia", status: atualDb, inbox_id: null });
+    }
+
+    const c = await conexaoBaileys(inboxId);
+    // Consulta falhou: não mexer em status nenhum. Chatwoot fora do ar não é chip caído (§36).
+    if (!c) return NextResponse.json({ ok: true, estado: null, status: atualDb, inbox_id: inboxId });
+
+    let status = atualDb;
+    if (c.connection === "open") {
+      if (!emOperacao) status = "conectado";
+    } else if (c.connection === "close" && emOperacao) {
+      status = "desconectado";
+    }
+    if (status !== atualDb) await admin.from("chips").update({ status }).eq("id", chipId);
+
+    return NextResponse.json({
+      ok: true,
+      estado: c.connection === "open" ? "open" : c.connection,
+      status,
+      qr: c.qr,
+      erro_conexao: c.erro,
+      inbox_id: inboxId,
+    });
+  }
+
   if (!chip.instancia_evolution) {
     return NextResponse.json({ ok: true, estado: "sem_instancia", status: "cadastrado", inbox_id: chip.chatwoot_inbox_id ?? null });
   }
@@ -116,11 +197,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const r = await estadoInstancia(chip.instancia_evolution as string);
   if (!r.ok) return NextResponse.json({ erro: r.mensagem, motivo: r.motivo }, { status: 502 });
 
-  const atual = String(chip.status ?? "cadastrado");
-  // Estados em que o chip está EM OPERAÇÃO. Importam duas vezes aqui: para não rebaixar um chip
-  // ativo a "conectado" a cada 3 segundos de polling (ele sairia do `campanha-lote`, que só olha
-  // 'ativo' e 'aquecendo'), e para saber quando uma queda é notícia.
-  const operando = ["conectado", "ativo", "aquecendo", "pausado"].includes(atual);
+  const atual = atualDb;
+  const operando = emOperacao;
 
   let status = atual;
   if (r.codigo === 401) {

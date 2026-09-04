@@ -7,7 +7,9 @@ import { configurarWebhookDoChip } from "@/lib/meta-webhook";
 import { normalizarTelefone } from "@/lib/import/normalizar";
 import { nomeInstanciaEvolution } from "@/lib/conector";
 
-// Cria chip + credenciais + (best-effort) inbox no Chatwoot. Dois caminhos:
+// Cria chip + credenciais + (best-effort) inbox no Chatwoot. Caminhos:
+//  - chip de bot em transporte Baileys: `baileys` (Evolution) ou `baileys_chatwoot` (baileys-api,
+//    o canal nativo do Chatwoot) — só cadastro, a conexão por QR é a Fatia 2;
 //  - chip de bot: API oficial da Meta (cola phone_number_id + WABA + token permanente);
 //  - escalador humano "só registrado": papel=equipe SEM credenciais (só nome + número), sem
 //    Chatwoot — o bot avisa esse número na escalação.
@@ -41,14 +43,17 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, chip_id: chip.id, escalador: true, chatwoot: null });
   }
 
-  // ── Chip de bot no Baileys (Evolution API) — o caminho padrão ─────────────────────────
-  // O chip nasce 'cadastrado': quem o conecta de fato é o QR da Evolution, na Fatia 2.
-  // A sessão do WhatsApp NUNCA vem para o nosso banco — ela vive no Postgres da Evolution.
-  const conectorPedido = String(body.conector ?? "baileys").trim().toLowerCase();
+  // ── Chip de bot em um dos dois transportes Baileys — o caminho padrão ─────────────────
+  // O chip nasce 'cadastrado': quem o conecta de fato é o QR, na Fatia 2. A sessão do WhatsApp
+  // NUNCA vem para o nosso banco — ela vive no Postgres do provedor (Evolution ou baileys-api).
+  // A omissão cai no canal nativo do Chatwoot desde 04/09/2026 — o mesmo padrão que o formulário
+  // marca. Os dois têm que concordar: se a tela dissesse "nativo" e a API entendesse "Evolution",
+  // um cliente que esquecesse o campo criaria o chip no transporte errado sem nenhum erro na tela.
+  const conectorPedido = String(body.conector ?? "baileys_chatwoot").trim().toLowerCase();
 
   // Guarda contra cliente desatualizado. A tela antiga mandava as credenciais da Meta sem dizer o
-  // conector; caía no padrão (baileys) e morria pedindo um número que aquele formulário nem tinha.
-  // O erro mentia sobre a causa — e ninguém conseguia cadastrar chip nenhum, de canal nenhum.
+  // conector; caía no padrão (um transporte Baileys) e morria pedindo um número que aquele
+  // formulário nem tinha. O erro mentia sobre a causa — e ninguém cadastrava chip de canal nenhum.
   if (!body.conector && (body.meta_phone_number_id || body.meta_waba_id || body.meta_token)) {
     return NextResponse.json(
       { erro: 'Para cadastrar um número na Meta, mande conector: "meta_cloud" — o canal oficial está suspenso desde 17/08/2026 e ninguém cai nele por omissão.' },
@@ -56,7 +61,10 @@ export async function POST(req: Request) {
     );
   }
 
-  if (conectorPedido === "baileys") {
+  // Os dois transportes Baileys nascem do mesmo cadastro: mesmo ritmo, mesmo opt-in, mesmo texto.
+  // O que muda é só o endereço do número no provedor — `instancia_evolution` na Evolution, o
+  // próprio `numero_e164` no baileys-api — e isso é resolvido no fim do bloco.
+  if (conectorPedido === "baileys" || conectorPedido === "baileys_chatwoot") {
     const n = normalizarTelefone(numero_e164, "movel");
     if (!n) {
       return NextResponse.json(
@@ -66,7 +74,7 @@ export async function POST(req: Request) {
     }
 
     const novoBaileys: Record<string, unknown> = {
-      nome, status: "cadastrado", cobrador_id: dono, papel: "bot", conector: "baileys",
+      nome, status: "cadastrado", cobrador_id: dono, papel: "bot", conector: conectorPedido,
       numero_e164: n.e164, tipo: "virtual_api",
     };
     if (maturidade === "aquecido" || maturidade === "novo") novoBaileys.maturidade = maturidade;
@@ -81,16 +89,20 @@ export async function POST(req: Request) {
       .from("chips").insert(novoBaileys).select("id").single();
     if (errB) return NextResponse.json({ erro: errB.message }, { status: 400 });
 
-    // O nome da instância depende do id, então só dá para calcular depois do insert.
-    const instancia = nomeInstanciaEvolution(nome, chipB.id);
-    const { error: errU } = await admin
-      .from("chips").update({ instancia_evolution: instancia }).eq("id", chipB.id);
-    if (errU) return NextResponse.json({ erro: errU.message }, { status: 400 });
+    // Só a Evolution é endereçada por instância, e o nome dela depende do id — por isso só dá para
+    // calcular depois do insert. No baileys-api o endereço é o próprio número, que já está gravado.
+    let instancia: string | null = null;
+    if (conectorPedido === "baileys") {
+      instancia = nomeInstanciaEvolution(nome, chipB.id);
+      const { error: errU } = await admin
+        .from("chips").update({ instancia_evolution: instancia }).eq("id", chipB.id);
+      if (errU) return NextResponse.json({ erro: errU.message }, { status: 400 });
+    }
 
     return NextResponse.json({
       ok: true,
       chip_id: chipB.id,
-      conector: "baileys",
+      conector: conectorPedido,
       instancia_evolution: instancia,
       numero: n.e164,
       // Conectar de verdade (QR + inbox no Chatwoot) é a Fatia 2.
@@ -103,7 +115,7 @@ export async function POST(req: Request) {
   // exige `conector: "meta_cloud"` explícito no corpo: ninguém cai aqui por engano.
   if (conectorPedido !== "meta_cloud") {
     return NextResponse.json(
-      { erro: `Conector desconhecido: ${conectorPedido}. Use "baileys" ou "meta_cloud".` },
+      { erro: `Conector desconhecido: ${conectorPedido}. Use "baileys", "baileys_chatwoot" ou "meta_cloud".` },
       { status: 400 },
     );
   }
