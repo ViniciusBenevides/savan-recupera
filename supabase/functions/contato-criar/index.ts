@@ -1,6 +1,8 @@
 // SAVAN Recupera — contato-criar (valida WhatsApp, busca/cria contato + conversa no Chatwoot)
 // SEGURANÇA (auditoria 2026-06-26): A1 — só o service_role (n8n / disparar-teste) pode chamar.
 import { createClient, SupabaseClient } from "jsr:@supabase/supabase-js@2";
+import { conectorDoChip } from "../_shared/conector.ts";
+import { variantesE164Br } from "../_shared/baileys-api-client.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -53,7 +55,7 @@ Deno.serve(async (req) => {
   if (!inbox_id) return json({ ok: false, erro: "inbox_id_ausente" }, 400);
 
   const { data: chipRow } = await sb.from("chips")
-    .select("cobrador_id")
+    .select("cobrador_id, conector")
     .eq("chatwoot_inbox_id", inbox_id)
     .maybeSingle();
   if (!chipRow) return json({ ok: false, erro: "inbox_nao_vinculada_a_chip" }, 400);
@@ -81,11 +83,26 @@ Deno.serve(async (req) => {
   // diz se foi mesmo número inexistente. Invalidez passa a ser conclusão de um envio real, nunca
   // de uma sondagem — e essa função classificadora falha FECHADA, que é a lição do §36, onde um
   // `HTTP 200` com corpo `null` virou "não existe" e descartou 10 itens da fila.
-  const jidE164 = telefone_e164;
+  // ── O contato nasce no MESMO número para o qual a mensagem vai sair ──────────────────────
+  //
+  // No `baileys_chatwoot` o envio não vai para o número como está cadastrado: a `enviar-mensagem`
+  // resolve a ambiguidade do 9º dígito com `variantesE164Br` e manda para a forma canônica (sem o
+  // 9 nos celulares BR de 9 dígitos) — a única que entrega neste transporte (33/50 contra 0/14,
+  // medido em 09/09/2026). Criar o contato no número cadastrado e enviar para outro fazia o
+  // Chatwoot abrir um SEGUNDO contato, sem nome, quando o baileys-api espelhava a mensagem: duas
+  // fichas por pessoa, e o ponteiro da conversa local pulando de uma para outra a cada webhook.
+  //
+  // Só o transporte novo precisa disso. A Evolution concilia o 9º dígito sozinha
+  // (`mergeBrazilContacts`) e a Meta Cloud usa o número como registrado — nos dois, canônico é o
+  // próprio número, e nada muda.
+  const jidE164 = conectorDoChip(chipRow ?? {}) === "baileys_chatwoot"
+    ? variantesE164Br(telefone_e164)[0]
+    : telefone_e164;
 
-  // busca contato
+  // busca contato. Procura SÓ a forma canônica: achar o contato da forma não-canônica e reusá-lo
+  // recriaria a divisão, porque o envio continuaria indo para a canônica.
   let contato: any = null;
-  for (const q of [jidE164, jidE164.replace("+", ""), telefone_e164]) {
+  for (const q of [jidE164, jidE164.replace("+", "")]) {
     const r = await fetch(`${url}/api/v1/accounts/${acc}/contacts/search?q=${encodeURIComponent(q)}`, { headers: H });
     const d = await lerJson(r);
     if (!r.ok) return json({ ok: false, erro: "chatwoot_busca_contato_falhou", status_provedor: r.status }, 502);

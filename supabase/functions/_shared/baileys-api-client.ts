@@ -67,10 +67,18 @@ export function variantesE164Br(e164: string): string[] {
 
 /**
  * Espera até `tentativas * intervaloMs` por um ack NOVO (posterior ao momento em que esta função
- * foi chamada) em `/connections/{numeroChip}/health`. `lastOutgoingAckAgoMs` é agregado da
- * CONEXÃO, não da mensagem — funciona como prova per-mensagem só porque este projeto manda uma
- * mensagem de cada vez, bem espaçadas (§8 do guia Baileys: 2/hora por número). Não usar isto sob
- * envio concorrente no mesmo chip.
+ * foi chamada) em `/connections/{numeroChip}/health`.
+ *
+ * ⚠️ NÃO use isto para decidir se UMA mensagem específica chegou. `lastOutgoingAckAgoMs` é agregado
+ * da CONEXÃO, não da mensagem, e a suposição de que "uma mensagem por vez" o torna per-mensagem é
+ * falsa assim que o mesmo pedido manda dois envios seguidos: o ack atrasado do primeiro chega
+ * dentro da janela de espera do segundo e é creditado a ele. Foi assim que o `enviar-mensagem`
+ * concluiu que a variante errada do 9º dígito era a boa e sobrescreveu seis telefones válidos com
+ * números que nunca entregaram (09/09/2026). Prova por mensagem é o recibo: `mensagens.status_entrega`,
+ * gravado pelo `chatwoot-sync` a partir do `message_updated`.
+ *
+ * Serve para o que o nome diz: perguntar se a CONEXÃO deu sinal de vida recentemente — é o uso do
+ * `chips-monitor` e do `sem_ack_confirmado`.
  */
 export async function aguardarAckBaileysApi(
   cfg: ConfigBaileysApi,

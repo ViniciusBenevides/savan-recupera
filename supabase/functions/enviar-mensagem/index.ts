@@ -18,7 +18,6 @@ import { createClient, SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { chipPodeAbordar, conectorDoChip } from "../_shared/conector.ts";
 import { configEvolution, enviarTexto } from "../_shared/evolution-client.ts";
 import {
-  aguardarAckBaileysApi,
   configBaileysApi,
   enviarTextoBaileysApi,
   variantesE164Br,
@@ -96,52 +95,42 @@ Deno.serve(async (req) => {
     const cfg = configBaileysApi(seg);
     if (!cfg) return json({ ok: false, erro: "baileys_api_nao_configurada" }, 503);
 
-    // Ambiguidade do 9º dígito (ver _shared/baileys-api-client.ts): a Evolution conciliava sozinha
-    // via mergeBrazilContacts; este provedor não tem equivalente. Tenta o número como está
-    // cadastrado; se o WhatsApp aceitar mas nunca confirmar (mesmo padrão do §8 — aceito e
-    // descartado em silêncio), tenta a variante alternativa (com/sem o 9) antes de desistir.
-    const variantes = variantesE164Br(numeroE164);
-    let resultado: Awaited<ReturnType<typeof enviarTextoBaileysApi>> | null = null;
-    let numeroUsado: string | null = null;
-    let confirmado = false;
+    // ── Ambiguidade do 9º dígito: UMA tentativa, nunca duas ─────────────────────────────────
+    //
+    // Até 09/09/2026 isto era um laço: mandava para a variante sem o 9, esperava um ack, e se ele
+    // não viesse mandava DE NOVO para a variante com o 9. As duas saíam de verdade — dois envios,
+    // dois contatos no Chatwoot, duas conversas — e o painel empilhava as duas na mesma linha do
+    // devedor, o que o operador leu como "mensagem duplicada". Oito pessoas receberam a mesma
+    // abordagem duas vezes com 27s de intervalo. Mandar a abordagem duas vezes para a mesma pessoa
+    // é o padrão de robô do §31, exatamente o que queima o número.
+    //
+    // O 2º envio nunca serviu para nada: medido no Chatwoot em 09/09/2026, a variante SEM o 9
+    // entregou 33 de 50 (66%) e a variante COM o 9 entregou 0 de 14. O laço gastava metade do ritmo
+    // do chip num formato que nunca chegou em ninguém.
+    //
+    // E o critério de parada era inválido por construção: `lastOutgoingAckAgoMs` é agregado da
+    // CONEXÃO, não da mensagem. O ack atrasado do 1º envio era creditado ao 2º, o código concluía
+    // que a variante alternativa era a boa e a autocorreção gravava em `telefones_devedor` o número
+    // que não entrega — seis cadastros bons foram trocados por números mortos assim. Por isso não
+    // há mais autocorreção aqui: quem sabe qual número entregou é o RECIBO por mensagem
+    // (`mensagens.status_entrega`, via `chatwoot-sync`), não um contador da conexão.
+    //
+    // `variantesE164Br` continua decidindo QUAL formato tentar — só o reenvio saiu.
+    const numeroAlvo = variantesE164Br(numeroE164)[0];
+    const r = await enviarTextoBaileysApi(
+      cfg, chip.numero_e164 as string, numeroParaJid(numeroAlvo), texto,
+    );
 
-    for (let i = 0; i < variantes.length; i++) {
-      const alvo = variantes[i];
-      const jidDestino = numeroParaJid(alvo);
-      const r = await enviarTextoBaileysApi(cfg, chip.numero_e164 as string, jidDestino, texto);
-
-      if (!r.ok) {
-        // A 1ª tentativa decide o motivo/derruba o chip. Se o envio nem sai pra variante 1, não sai
-        // pra variante 2 também (o problema é do NOSSO lado, não do formato do destino).
-        if (i === 0) {
-          if (r.resultado === "chip_caido") {
-            await sb.from("chips").update({ status: "desconectado" }).eq("id", chipId);
-          }
-          return json({ ok: false, resultado: r.resultado, status_provedor: r.status }, 502);
-        }
-        break; // variante alternativa falhou ao enviar — fica com o resultado da 1ª tentativa
+    if (!r.ok) {
+      if (r.resultado === "chip_caido") {
+        await sb.from("chips").update({ status: "desconectado" }).eq("id", chipId);
       }
-
-      resultado = r;
-      numeroUsado = alvo;
-      if (variantes.length === 1) { confirmado = true; break; } // nada ambíguo a checar
-      confirmado = await aguardarAckBaileysApi(cfg, chip.numero_e164 as string);
-      if (confirmado) break;
-    }
-
-    if (!resultado) return json({ ok: false, erro: "baileys_chatwoot_sem_envio" }, 502);
-
-    // Autocorreção: só grava a variante alternativa como o telefone bom quando ELA foi a que
-    // recebeu o ack. Sem confirmação, não sobrescreve um dado que pode estar certo — a única coisa
-    // pior que o 9º dígito errado é trocar um número bom por um chute.
-    if (confirmado && numeroUsado && numeroUsado !== numeroE164) {
-      await sb.from("telefones_devedor").update({ telefone_e164: numeroUsado }).eq("telefone_e164", numeroE164);
+      return json({ ok: false, resultado: r.resultado, status_provedor: r.status }, 502);
     }
 
     await sb.from("chips").update({ ultimo_envio_em: new Date().toISOString() }).eq("id", chipId);
     return json({
-      ok: true, message_id: resultado.messageId, delay_ms: resultado.delayMs,
-      numero_usado: numeroUsado, entrega_confirmada: confirmado,
+      ok: true, message_id: r.messageId, delay_ms: r.delayMs, numero_usado: numeroAlvo,
     });
   }
 

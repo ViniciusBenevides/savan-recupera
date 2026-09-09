@@ -126,11 +126,22 @@ Deno.serve(async (req) => {
         }
         if (texto) {
           const { data: existe } = await sb.from("mensagens")
-            .select("id").eq("conversa_id", conversaLocalId).eq("direcao", "saida").eq("conteudo", texto).limit(1).maybeSingle();
+            .select("id").eq("conversa_id", conversaLocalId).eq("direcao", "saida").eq("conteudo", texto)
+            // A mais recente: quando o mesmo texto já saiu antes para esta pessoa (follow-up com o
+            // texto do disparo), carimbar a linha velha faria o painel mostrar a mensagem de hoje
+            // com a data de semanas atrás.
+            .order("criado_em", { ascending: false }).limit(1).maybeSingle();
           if (existe) {
-            await sb.from("mensagens").update({
-              origem: "bot", chatwoot_message_id: b.chatwoot_message_id ?? null, simulacao: sim,
-            }).eq("id", existe.id);
+            // O `chatwoot_message_id` só entra quando temos um de verdade. Escrever
+            // `b.chatwoot_message_id ?? null` APAGAVA o id que o `chatwoot-sync` já tinha gravado:
+            // no caminho Baileys o W01 manda `chatwoot_message_id: null` (a `enviar-mensagem` não
+            // devolve `id`, quem devolve é o Chatwoot no caminho Meta), então toda abordagem
+            // desligava a própria linha do recibo de entrega. Sem id, nenhum `message_updated`
+            // encontra a mensagem de novo e ela fica congelada no último status que pegou —
+            // 29 linhas ficaram assim entre 02/09 e 09/09/2026, todas presas em "enviado".
+            const patch: Record<string, unknown> = { origem: "bot", simulacao: sim };
+            if (b.chatwoot_message_id) patch.chatwoot_message_id = b.chatwoot_message_id;
+            await sb.from("mensagens").update(patch).eq("id", existe.id);
           } else {
             await sb.from("mensagens").upsert({
               conversa_id: conversaLocalId, direcao: "saida", origem: "bot", conteudo: texto,
