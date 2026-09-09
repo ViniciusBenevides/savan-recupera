@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import { Card, Badge, Button } from "@/components/ui/primitives";
 import { brl, dataHoraBR } from "@/lib/utils";
+import { rotuloEntrega } from "@/lib/entrega";
 import {
   Search, MessageSquareText, ExternalLink, FileText, ArrowLeft, RefreshCw,
   Bot, Headset, User, Cog, Loader2, FlaskConical, Smartphone, X, CornerDownRight,
@@ -37,7 +38,9 @@ type Conversa = {
   preview_de: string | null;
   preview_privado: boolean;
   /** A última mensagem que o robô/operador mandou foi RECUSADA pelo provedor. */
-  ultima_saida_falhou: boolean;
+  /** Recibo cru da última saída + quando ela saiu. A leitura é do cliente — ver `@/lib/entrega`. */
+  ultima_saida_status: number | null;
+  ultima_saida_em: string | null;
 };
 
 type Chip = { id: number; nome: string; numero: string | null };
@@ -57,18 +60,24 @@ type Msg = {
   chip_id: number | null;
   /** Recibo do provedor: 0 falhou · 1 enviado · 2 entregue · 3 lido · 4 reproduzido · null sem recibo. */
   status_entrega: number | null;
+  /** Para qual telefone do devedor ESTA mensagem saiu — a trilha de tentativas. */
+  telefone_id: number | null;
+};
+
+/** Um número já tentado, com o melhor desfecho que ele teve. */
+type Tentativa = {
+  telefone_id: number;
+  numero: string;
+  status: number | null;
+  quando: string;
 };
 
 // Como cada recibo aparece no rodapé do balão. "Enviado" é deliberadamente discreto e "não
 // entregue" é deliberadamente vermelho: a lição do §31 é que aceite do provedor nunca foi entrega,
 // e foi por não mostrar essa diferença que 390 abordagens morreram invisíveis.
-const ENTREGA: Record<number, { texto: string; classe: string; titulo: string }> = {
-  0: { texto: "não entregue", classe: "text-rose", titulo: "O provedor recusou. Esta mensagem não chegou ao destinatário." },
-  1: { texto: "enviado", classe: "text-mist", titulo: "Aceita pelo provedor, sem confirmação de entrega ainda." },
-  2: { texto: "entregue", classe: "text-mist", titulo: "Entregue no aparelho." },
-  3: { texto: "lido", classe: "text-emerald-soft", titulo: "Lido pelo destinatário." },
-  4: { texto: "ouvido", classe: "text-emerald-soft", titulo: "Áudio reproduzido pelo destinatário." },
-};
+// O rótulo de entrega mora em `@/lib/entrega`: a leitura do recibo depende da IDADE da mensagem
+// (um "enviado" de 3 segundos é diferente de um de 3 horas) e a mesma regra vale na lista de
+// conversas, no `dialogos.tsx`.
 
 // Estado da conversa. `ring`/`dot` desenham o estado no próprio avatar da linha — a lista
 // fica legível na diagonal, sem uma fileira de badges competindo com o nome e a prévia.
@@ -183,6 +192,10 @@ export function Inbox({ lista, chips, chipsTodos, chipPadrao, cwUrl, podeAtender
   const [sel, setSel] = useState<number | null>(null);
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [carregando, setCarregando] = useState(false);
+  /** id → E.164 dos telefones do devedor da conversa aberta. */
+  const [numeros, setNumeros] = useState<Map<number, string>>(new Map());
+  /** Telefone do item que está na fila agora — a PRÓXIMA tentativa, que ainda não saiu. */
+  const [naFila, setNaFila] = useState<number | null>(null);
   const [noThreadMobile, setNoThreadMobile] = useState(false);
   // Marcar como lida vai ao banco, mas recarregar a página inteira a cada conversa aberta seria
   // pesado; este conjunto tira o marcador na hora e o servidor confirma no próximo refresh.
@@ -232,6 +245,35 @@ export function Inbox({ lista, chips, chipsTodos, chipPadrao, cwUrl, podeAtender
 
   const atual = useMemo(() => lista.find((c) => c.id === sel) ?? null, [lista, sel]);
 
+  /**
+   * Trilha de tentativas: um item por NÚMERO já usado, na ordem em que entraram, com o melhor
+   * desfecho que cada um teve (um "entregue" vale mais que dez "não confirmado" no mesmo número).
+   */
+  const tentativas = useMemo<Tentativa[]>(() => {
+    const porTel = new Map<number, Tentativa>();
+    for (const m of msgs) {
+      if (m.direcao !== "saida" || m.origem !== "bot" || m.privado === true || m.telefone_id == null) continue;
+      const ja = porTel.get(m.telefone_id);
+      if (!ja) {
+        porTel.set(m.telefone_id, {
+          telefone_id: m.telefone_id,
+          numero: numeros.get(m.telefone_id) ?? "número fora do cadastro",
+          status: m.status_entrega,
+          quando: m.criado_em,
+        });
+      } else {
+        if ((m.status_entrega ?? -1) > (ja.status ?? -1)) ja.status = m.status_entrega;
+        ja.quando = m.criado_em;
+      }
+    }
+    return [...porTel.values()];
+  }, [msgs, numeros]);
+
+  /** A próxima tentativa já está na fila, e é um número que ainda não foi usado? */
+  const proximo = naFila != null && !tentativas.some((t) => t.telefone_id === naFila)
+    ? (numeros.get(naFila) ?? null)
+    : null;
+
   // Mantém uma conversa aberta: se a seleção sumiu do recorte atual (trocou de número,
   // desligou os testes, mudou o filtro), cai na primeira da lista.
   useEffect(() => {
@@ -246,12 +288,29 @@ export function Inbox({ lista, chips, chipsTodos, chipPadrao, cwUrl, podeAtender
     }
     const { data } = await sb
       .from("mensagens")
-      .select("id, direcao, origem, conteudo, tipo_conteudo, transcricao, anexos, criado_em, privado, autor_nome, chip_id, status_entrega")
+      .select("id, direcao, origem, conteudo, tipo_conteudo, transcricao, anexos, criado_em, privado, autor_nome, chip_id, status_entrega, telefone_id")
       .eq("conversa_id", convId)
       .order("criado_em", { ascending: true })
       .limit(800);
     setMsgs((data as Msg[]) ?? []);
     setCarregando(false);
+  }
+
+  /**
+   * Trilha de números da pessoa: como se lê os telefones dela e qual está na fila agora.
+   *
+   * A conversa é do DEVEDOR (ADR-0001) e o failover por não-entrega troca o número sem trocar a
+   * conversa — sem isto, o operador via a mesma tela antes e depois da troca e não tinha como saber
+   * que a abordagem tinha ido para outro número e não chegado.
+   */
+  async function carregarTrilha(devedorId: number) {
+    const [{ data: tels }, { data: fila }] = await Promise.all([
+      sb.from("telefones_devedor").select("id, telefone_e164").eq("devedor_id", devedorId),
+      sb.from("fila_envios").select("telefone_id").eq("devedor_id", devedorId)
+        .in("status", ["aguardando", "processando"]).limit(1),
+    ]);
+    setNumeros(new Map(((tels ?? []) as any[]).map((t) => [t.id as number, t.telefone_e164 as string])));
+    setNaFila((fila?.[0] as any)?.telefone_id ?? null);
   }
 
   // Abrir a conversa é lê-la — some da fila "esperam você", como em qualquer caixa de entrada.
@@ -288,6 +347,8 @@ export function Inbox({ lista, chips, chipsTodos, chipPadrao, cwUrl, podeAtender
   useEffect(() => {
     if (sel == null) return;
     carregar(sel);
+    const dev = lista.find((c) => c.id === sel)?.devedor_id;
+    if (dev) carregarTrilha(dev); else { setNumeros(new Map()); setNaFila(null); }
     const poll = setInterval(() => carregar(sel, true), 7000);
     const ch = sb
       .channel(`msgs-${sel}`)
@@ -512,17 +573,23 @@ export function Inbox({ lista, chips, chipsTodos, chipPadrao, cwUrl, podeAtender
                       {c.saldo > 0 && (
                         <span className="font-mono text-mist/70 tabnums">{brl(c.saldo)}</span>
                       )}
-                      {/* A última mensagem que saiu foi recusada pelo provedor. Sem este selo, uma
-                          conversa que nunca recebeu nada é indistinguível de uma abordada e ignorada
-                          — e o "Aguardando" da linha vira mentira. */}
-                      {c.ultima_saida_falhou && (
-                        <span
-                          className="inline-flex items-center gap-1 font-medium text-rose"
-                          title="A última mensagem enviada não chegou ao destinatário."
-                        >
-                          <AlertTriangle className="h-3 w-3" /> não entregue
-                        </span>
-                      )}
+                      {/* A última mensagem que saiu não chegou — recusada pelo provedor, ou aceita e
+                          nunca confirmada. Sem este selo, uma conversa que nunca recebeu nada é
+                          indistinguível de uma abordada e ignorada, e o "Aguardando" da linha vira
+                          mentira. */}
+                      {(() => {
+                        if (!c.ultima_saida_em) return null;
+                        const rec = rotuloEntrega(c.ultima_saida_status, c.ultima_saida_em);
+                        if (!rec?.alerta) return null;
+                        return (
+                          <span
+                            className={`inline-flex items-center gap-1 font-medium ${rec.classe}`}
+                            title={rec.titulo}
+                          >
+                            <AlertTriangle className="h-3 w-3" /> {rec.texto}
+                          </span>
+                        );
+                      })()}
                       {c.simulacao && (
                         <span className="ml-auto rounded-full border border-amber/30 bg-amber/10 px-1.5 py-px font-medium text-amber">
                           teste
@@ -653,6 +720,42 @@ export function Inbox({ lista, chips, chipsTodos, chipPadrao, cwUrl, podeAtender
                     )}
                   </div>
                 )}
+
+                {/* Trilha de números. A conversa é do DEVEDOR (ADR-0001) e o failover por
+                    não-entrega troca o telefone sem trocar a conversa — sem esta faixa, a tela fica
+                    idêntica antes e depois da troca e o operador não tem como saber que a abordagem
+                    foi para outro número e não chegou. Só aparece quando há o que contar: mais de um
+                    número usado, ou um próximo já esperando na fila. */}
+                {(tentativas.length > 1 || proximo) && (
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-line/60 bg-ink-900/40 px-3 py-1.5 text-[11px]">
+                    <span className="text-mist">Números tentados</span>
+                    {tentativas.map((t, i) => {
+                      const rec = rotuloEntrega(t.status, t.quando);
+                      return (
+                        <span key={t.telefone_id} className="inline-flex items-center gap-1">
+                          <span className="text-mist/60 tabnums">{i + 1}.</span>
+                          <span className="font-mono text-chalk tabnums">{t.numero}</span>
+                          {rec && (
+                            <span className={rec.classe} title={rec.titulo}>
+                              {rec.alerta && <AlertTriangle className="mr-0.5 inline h-3 w-3" />}
+                              {rec.texto}
+                            </span>
+                          )}
+                        </span>
+                      );
+                    })}
+                    {proximo && (
+                      <span className="inline-flex items-center gap-1">
+                        <CornerDownRight className="h-3 w-3 text-mist/60" />
+                        <span className="text-mist">agora tentando</span>
+                        <span className="font-mono text-chalk tabnums">{proximo}</span>
+                        <span className="text-mist/70" title="Já está na fila; sai no próximo ciclo de disparo, respeitando o ritmo do número.">
+                          na fila
+                        </span>
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Mensagens */}
@@ -778,18 +881,19 @@ export function Inbox({ lista, chips, chipsTodos, chipPadrao, cwUrl, podeAtender
                                   <span className="font-mono tabnums" title={dataHoraBR(m.criado_em)}>
                                     {HORA.format(new Date(m.criado_em))}
                                   </span>
-                                  {!doContato && m.status_entrega != null && ENTREGA[m.status_entrega] && (
-                                    <>
-                                      <span className="opacity-50">·</span>
-                                      <span
-                                        className={ENTREGA[m.status_entrega].classe}
-                                        title={ENTREGA[m.status_entrega].titulo}
-                                      >
-                                        {m.status_entrega === 0 && <AlertTriangle className="mr-0.5 inline h-3 w-3" />}
-                                        {ENTREGA[m.status_entrega].texto}
-                                      </span>
-                                    </>
-                                  )}
+                                  {!doContato && (() => {
+                                    const rec = rotuloEntrega(m.status_entrega, m.criado_em);
+                                    if (!rec) return null;
+                                    return (
+                                      <>
+                                        <span className="opacity-50">·</span>
+                                        <span className={rec.classe} title={rec.titulo}>
+                                          {rec.alerta && <AlertTriangle className="mr-0.5 inline h-3 w-3" />}
+                                          {rec.texto}
+                                        </span>
+                                      </>
+                                    );
+                                  })()}
                                 </div>
                               )}
                             </div>

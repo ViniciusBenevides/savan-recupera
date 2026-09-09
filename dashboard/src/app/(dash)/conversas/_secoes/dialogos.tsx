@@ -75,16 +75,20 @@ export async function Dialogos({ podeAtender = false }: { podeAtender?: boolean 
   // Prévia = primeira mensagem encontrada por conversa (a query veio desc, então
   // a 1ª que aparece de cada conversa é a mais recente).
   const prev = new Map<number, { texto: string; origem: string; privado: boolean }>();
-  // Última mensagem de SAÍDA que o provedor recusou (status_entrega = 0). A query vem desc, então
-  // a 1ª saída de cada conversa é a mais recente — é ela que diz se a conversa está morta ou só
-  // sem resposta. Confundir as duas foi o que escondeu 390 abordagens que nunca chegaram (§38).
-  const falhou = new Map<number, boolean>();
+  // Recibo da última mensagem de SAÍDA. A query vem desc, então a 1ª saída de cada conversa é a
+  // mais recente — é ela que diz se a conversa está morta ou só sem resposta. Confundir as duas foi
+  // o que escondeu 390 abordagens que nunca chegaram (§38).
+  //
+  // Vai o recibo CRU + o horário, não um booleano já decidido: ler um `status_entrega = 1` depende
+  // da idade da mensagem (ver `@/lib/entrega`), e quem tem o relógio certo para isso é o navegador
+  // do operador, não o instante em que o servidor montou a lista.
+  const ultimaSaida = new Map<number, { status: number | null; em: string }>();
   for (const m of (msgs ?? []) as any[]) {
     if (!prev.has(m.conversa_id)) {
       prev.set(m.conversa_id, { texto: m.conteudo ?? "", origem: m.origem, privado: m.privado === true });
     }
-    if (m.direcao === "saida" && m.privado !== true && !falhou.has(m.conversa_id)) {
-      falhou.set(m.conversa_id, m.status_entrega === 0);
+    if (m.direcao === "saida" && m.privado !== true && !ultimaSaida.has(m.conversa_id)) {
+      ultimaSaida.set(m.conversa_id, { status: m.status_entrega ?? null, em: m.criado_em });
     }
   }
 
@@ -116,7 +120,8 @@ export async function Dialogos({ podeAtender = false }: { podeAtender?: boolean 
       preview: p?.texto ?? null,
       preview_de: p?.origem ?? null,
       preview_privado: p?.privado ?? false,
-      ultima_saida_falhou: falhou.get(c.id) === true,
+      ultima_saida_status: ultimaSaida.get(c.id)?.status ?? null,
+      ultima_saida_em: ultimaSaida.get(c.id)?.em ?? null,
     };
   });
 

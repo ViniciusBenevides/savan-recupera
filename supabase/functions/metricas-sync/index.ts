@@ -79,5 +79,34 @@ Deno.serve(async (req) => {
     if (dias >= limiar) { await sb.from("chips").update({ status: "ativo" }).eq("id", c.id); promovidos++; }
   }
 
-  return json({ ok: true, reabertos: reabertos ?? 0, enviados, respostas, pix_gerados: pixGerados, chips_promovidos: promovidos });
+  // 4) failover por NÃO-ENTREGA: devolve à fila, com o próximo celular, quem foi abordado e nunca
+  // teve entrega confirmada em número nenhum. Mora aqui, junto do resto da faxina periódica, em vez
+  // de virar um 6º workflow: os workflows do projeto são finos de propósito (só timing e I/O) e
+  // este já é o que "reabre itens presos" — mesma família.
+  //
+  // Toda a decisão está em `fn_failover_entrega` (migration 20260909150000), inclusive os portões
+  // de segurança. Os dois parâmetros são a política combinada com o dono da operação: espera de
+  // 24h antes de considerar que não chegou (entrega exige o aparelho do outro lado ligado) e no
+  // máximo 3 números por pessoa (as dívidas são de ~2015 e a maioria dos telefones extras hoje é de
+  // estranho — esgotar todos multiplicaria por 6,7 a exposição que baniu a conta oficial, §38).
+  //
+  // Não envia nada: só cria item de fila. Quem decide se a pessoa pode ser abordada AGORA continua
+  // sendo o `fn_selecionar_lote` (carteira ativa, ritmo, aquecimento, janela, opt-out).
+  const { data: failover, error: erroFailover } = await sb.rpc("fn_failover_entrega", {
+    p_horas: 24,
+    p_max_numeros: 3,
+  });
+  // Falha aqui não pode derrubar as métricas do dia, que é a razão principal desta função existir.
+  if (erroFailover) {
+    console.error("metricas-sync: failover por não-entrega falhou:", erroFailover.message);
+  }
+  const refiladas = Array.isArray(failover) ? failover.length : 0;
+  if (refiladas > 0) {
+    console.log(`metricas-sync: ${refiladas} devedor(es) devolvido(s) à fila com o próximo número`);
+  }
+
+  return json({
+    ok: true, reabertos: reabertos ?? 0, enviados, respostas, pix_gerados: pixGerados,
+    chips_promovidos: promovidos, refiladas_por_nao_entrega: refiladas,
+  });
 });
