@@ -583,5 +583,28 @@ Deno.serve(async (req) => {
     }
   }
 
+  // ── A espera do W01 e POR CHIP, mas o laco do n8n e por ITEM ────────────────────────────────
+  // O `delay_proximo` vira o no "Aguardar intervalo", que fica ENTRE dois itens quaisquer do lote.
+  // Quando a chamada devolve itens de chips DIFERENTES (os dois livres no mesmo minuto), o item do
+  // 2o chip fica refem da cadencia do 1o: uma execucao so, em fila, um Wait no meio.
+  //
+  // Em 10/09/2026 isso custou os dois sintomas de uma vez (execucao n8n 195672, das 08:00):
+  //   • o lote trouxe o item do chip 1 e o do chip 2; o do chip 1 saiu 08:00:44 e o Wait segurou o
+  //     do chip 2 por 4467s (74min) — o chip 2 so comecaria as 09:15, e nao as 08:00 configuradas;
+  //   • enquanto isso o item do chip 2 ficava `processando` desde 08:00:20, entao o
+  //     `fn_resetar_presos` (15 min) devolveu ele para a fila, outra execucao o disparou as
+  //     09:00:42 — e as 09:15:34 a execucao velha acordou e mandou o MESMO texto de novo, abrindo
+  //     uma segunda conversa no Chatwoot. A devedora 614 recebeu a abordagem duas vezes.
+  //     Abordagem repetida para a mesma pessoa e o padrao de robo do §31, que e o que queima chip.
+  //
+  // A espera so faz sentido entre mensagens do MESMO chip — e o WhatsApp julga cada linha isolada
+  // (Q6). Entre chips ela vale zero. Zerar o delay do ultimo item de cada chip nao afrouxa nada: a
+  // cadencia entre execucoes continua presa em `chips.proximo_disparo_em`, que ja foi reservado
+  // acima com a soma inteira dos delays.
+  for (let i = 0; i < itens.length; i++) {
+    const proximo = itens[i + 1];
+    if (!proximo || proximo.chip_id !== itens[i].chip_id) itens[i].delay_proximo = 0;
+  }
+
   return json({ ok: true, total: itens.length, itens, pulados });
 });
