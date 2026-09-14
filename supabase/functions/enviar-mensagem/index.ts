@@ -23,6 +23,17 @@ import {
   variantesE164Br,
 } from "../_shared/baileys-api-client.ts";
 import { numeroParaJid } from "../_shared/evolution.ts";
+import { enviarAudioBaileysApi } from "../_shared/baileys-api-client.ts";
+import { gerarAudio } from "../_shared/elevenlabs.ts";
+
+/** Bytes -> base64, que é o formato do campo `audio` do `send-message`. */
+function base64(bytes: Uint8Array): string {
+  let bin = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  }
+  return btoa(bin);
+}
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -63,11 +74,26 @@ Deno.serve(async (req) => {
   const body = await req.json().catch(() => ({}));
   const chipId = Number(body.chip_id);
   const numeroE164 = String(body.numero_e164 ?? "").trim();
-  const texto = String(body.texto ?? "");
+
+  // Split de mensagens (§ `_shared/split-mensagens.ts`): o `bot-turno` devolve `mensagens` já
+  // quebrada em balões. Mandar os balões numa chamada só, e não uma chamada por balão, é o que
+  // garante o ritmo — cada balão ganha a presença "digitando" e o `tempoDigitacao` do transporte,
+  // que é exatamente o sinal comportamental pelo qual o WhatsApp separa humano de robô (ADR-0002).
+  // Enviar os três de uma vez, sem pausa, seria PIOR que não ter quebrado nada.
+  const baloes: string[] = Array.isArray(body.textos)
+    ? body.textos.map((t: unknown) => String(t ?? "")).filter((t: string) => t.trim())
+    : [String(body.texto ?? "")].filter((t) => t.trim());
 
   if (!Number.isInteger(chipId) || chipId <= 0) return json({ ok: false, erro: "chip_id_invalido" }, 400);
   if (!numeroE164) return json({ ok: false, erro: "numero_obrigatorio" }, 400);
-  if (!texto.trim()) return json({ ok: false, erro: "texto_obrigatorio" }, 400);
+  if (!baloes.length) return json({ ok: false, erro: "texto_obrigatorio" }, 400);
+
+  // `tipo_resposta: "audio"` sai como NOTA DE VOZ pelo baileys-api (`ptt: true`), com presença
+  // "gravando…". Só nesse conector: a Evolution deste repositório só expõe `enviarTexto`.
+  // Qualquer impedimento (conector errado, sem chave da ElevenLabs, TTS falhou, conteúdo que não
+  // pode virar áudio) cai para texto e devolve o motivo em `audio_indisponivel` — a pessoa nunca
+  // fica sem resposta por causa do formato.
+  const pediuAudio = String(body.tipo_resposta ?? "texto") === "audio";
 
   const sb = admin();
 
@@ -116,40 +142,95 @@ Deno.serve(async (req) => {
     // (`mensagens.status_entrega`, via `chatwoot-sync`), não um contador da conexão.
     //
     // `variantesE164Br` continua decidindo QUAL formato tentar — só o reenvio saiu.
+    // A variante é decidida UMA vez: os balões da mesma resposta têm que sair todos para o mesmo
+    // número, senão viram duas conversas no Chatwoot para a mesma pessoa.
     const numeroAlvo = variantesE164Br(numeroE164)[0];
-    const r = await enviarTextoBaileysApi(
-      cfg, chip.numero_e164 as string, numeroParaJid(numeroAlvo), texto,
-    );
+    const jid = numeroParaJid(numeroAlvo);
+    const ids: (string | null)[] = [];
+    let delayTotal = 0;
+    let audioIndisponivel: string | null = null;
 
-    if (!r.ok) {
-      if (r.resultado === "chip_caido") {
-        await sb.from("chips").update({ status: "desconectado" }).eq("id", chipId);
+    for (let i = 0; i < baloes.length; i++) {
+      let r: Awaited<ReturnType<typeof enviarTextoBaileysApi>> | null = null;
+
+      // Áudio é por balão: se um deles não puder virar voz (o copia-e-cola do Pix, por exemplo),
+      // só aquele sai como texto. O resto da resposta continua em áudio.
+      if (pediuAudio) {
+        const tts = await gerarAudio(baloes[i], seg);
+        if (tts.ok) {
+          r = await enviarAudioBaileysApi(cfg, chip.numero_e164 as string, jid, base64(tts.audio), {
+            textoOriginal: baloes[i],
+          });
+        } else {
+          audioIndisponivel ??= tts.motivo;
+          console.warn("enviar-mensagem: balao sai como texto", { chipId, motivo: tts.motivo });
+        }
       }
-      return json({ ok: false, resultado: r.resultado, status_provedor: r.status }, 502);
+
+      r ??= await enviarTextoBaileysApi(cfg, chip.numero_e164 as string, jid, baloes[i]);
+
+      if (!r.ok) {
+        if (r.resultado === "chip_caido") {
+          await sb.from("chips").update({ status: "desconectado" }).eq("id", chipId);
+        }
+        if (i > 0) await sb.from("chips").update({ ultimo_envio_em: new Date().toISOString() }).eq("id", chipId);
+        // Falha no meio do split: quem chamou NÃO pode reenviar tudo. Reenviar mandaria de novo
+        // os balões que já chegaram — abordagem duplicada é o padrão de robô do §31, e foi
+        // exatamente o que aconteceu em 09/09/2026. Devolvemos o que saiu para o retry ser parcial.
+        return json({
+          ok: false, resultado: r.resultado, status_provedor: r.status,
+          enviados: i, message_ids: ids, numero_usado: numeroAlvo, audio_indisponivel: audioIndisponivel,
+        }, 502);
+      }
+
+      ids.push(r.messageId);
+      delayTotal += r.delayMs;
     }
 
     await sb.from("chips").update({ ultimo_envio_em: new Date().toISOString() }).eq("id", chipId);
     return json({
-      ok: true, message_id: r.messageId, delay_ms: r.delayMs, numero_usado: numeroAlvo,
+      ok: true, message_id: ids[0], message_ids: ids, enviados: ids.length,
+      delay_ms: delayTotal, numero_usado: numeroAlvo, audio_indisponivel: audioIndisponivel,
     });
   }
 
   const cfg = configEvolution(seg);
   if (!cfg) return json({ ok: false, erro: "evolution_nao_configurada" }, 503);
 
-  const r = await enviarTexto(cfg, chip.instancia_evolution as string, numeroE164, texto);
+  const ids: (string | null)[] = [];
+  let delayTotal = 0;
+  // A Evolution deste repositório só tem `enviarTexto` — o cliente não expõe áudio. Quem quiser
+  // voz nesse conector precisa portar `enviarAudioBaileysApi` para cá primeiro.
+  const audioIndisponivel = pediuAudio ? "evolution_sem_cliente_de_audio" : null;
+  if (audioIndisponivel) console.warn("enviar-mensagem: audio pedido na Evolution, enviando texto", { chipId });
 
-  if (!r.ok) {
-    // `chip_caido` é o sinal de que o problema é nosso, não do destinatário: derruba o chip para o
-    // monitor/failover agir. Nunca marcamos o telefone aqui — quem decide isso é quem tem o item
-    // da fila em mãos, com o `resultado` que devolvemos.
-    if (r.resultado === "chip_caido") {
-      await sb.from("chips").update({ status: "desconectado" }).eq("id", chipId);
+  for (let i = 0; i < baloes.length; i++) {
+    const r = await enviarTexto(cfg, chip.instancia_evolution as string, numeroE164, baloes[i]);
+
+    if (!r.ok) {
+      // `chip_caido` é o sinal de que o problema é nosso, não do destinatário: derruba o chip para o
+      // monitor/failover agir. Nunca marcamos o telefone aqui — quem decide isso é quem tem o item
+      // da fila em mãos, com o `resultado` que devolvemos.
+      if (r.resultado === "chip_caido") {
+        await sb.from("chips").update({ status: "desconectado" }).eq("id", chipId);
+      }
+      if (i > 0) await sb.from("chips").update({ ultimo_envio_em: new Date().toISOString() }).eq("id", chipId);
+      // Mesma regra do outro transporte: `enviados` diz quantos balões já chegaram, para o retry
+      // não reenviar o que a pessoa já leu.
+      return json({
+        ok: false, resultado: r.resultado, status_provedor: r.status,
+        enviados: i, message_ids: ids, audio_indisponivel: audioIndisponivel,
+      }, 502);
     }
-    return json({ ok: false, resultado: r.resultado, status_provedor: r.status }, 502);
+
+    ids.push(r.messageId);
+    delayTotal += r.delayMs;
   }
 
   await sb.from("chips").update({ ultimo_envio_em: new Date().toISOString() }).eq("id", chipId);
 
-  return json({ ok: true, message_id: r.messageId, delay_ms: r.delayMs });
+  return json({
+    ok: true, message_id: ids[0], message_ids: ids, enviados: ids.length,
+    delay_ms: delayTotal, audio_indisponivel: audioIndisponivel,
+  });
 });

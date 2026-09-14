@@ -267,6 +267,64 @@ export class Chatwoot {
     );
   }
 
+  /** Atributos atuais do contato. Usado para ler a preferência áudio/texto antes de responder. */
+  async getContato(contactId: number): Promise<{ custom_attributes: Record<string, unknown> } | null> {
+    const r = await fetch(
+      `${this.url}/api/v1/accounts/${this.accountId}/contacts/${contactId}`,
+      { headers: this.h() },
+    );
+    if (!r.ok) return null;
+    const d = await r.json();
+    const p = d?.payload ?? d;
+    return { custom_attributes: p?.custom_attributes ?? {} };
+  }
+
+  /**
+   * Merge de atributos: lê os atuais e grava por cima. O PUT do Chatwoot SUBSTITUI o objeto
+   * inteiro — gravar só a chave nova apagaria os IDs do Asaas e o resto.
+   */
+  async mesclarAtributosContato(contactId: number, novos: Record<string, unknown>) {
+    const atual = await this.getContato(contactId);
+    await this.atualizarContato(contactId, { ...(atual?.custom_attributes ?? {}), ...novos });
+  }
+
+  /** Liga/desliga o "digitando..." (ou "gravando áudio...") na conversa. */
+  async toggleTyping(conversationId: number, ligado: boolean) {
+    await fetch(
+      `${this.url}/api/v1/accounts/${this.accountId}/conversations/${conversationId}/toggle_typing_status`,
+      {
+        method: "POST",
+        headers: this.h(),
+        body: JSON.stringify({ typing_status: ligado ? "on" : "off" }),
+      },
+    );
+  }
+
+  /**
+   * Envia áudio como mensagem de voz (multipart). `is_recorded_audio` é o que faz o WhatsApp
+   * mostrar a onda de áudio em vez de um anexo genérico.
+   *
+   * ⚠️ **NÃO use isto para falar com devedor.** Pelo ADR-0002 a saída do canal de cobrança sai
+   * por `enviar-mensagem` (Baileys direto), porque é lá que temos presença e "digitando" — os
+   * sinais pelos quais o WhatsApp separa humano de robô. Mandando pelo Chatwoot, perde-se esse
+   * controle. Este método serve para anexo em conversa interna/escalação, onde isso não pesa.
+   *
+   * O caminho de áudio para o devedor ainda NÃO existe: nem `baileys-api-client` nem
+   * `evolution-client` expõem envio de áudio. Enquanto não existir, `enviar-mensagem` recebe
+   * `tipo_resposta: "audio"` e cai para texto, devolvendo `audio_indisponivel`.
+   */
+  async enviarAudio(conversationId: number, audio: Uint8Array, nomeArquivo = "resposta.mp3") {
+    const fd = new FormData();
+    fd.append("message_type", "outgoing");
+    fd.append("attachments[]", new Blob([audio], { type: "audio/mpeg" }), nomeArquivo);
+    fd.append("is_recorded_audio", JSON.stringify([nomeArquivo]));
+    const r = await fetch(
+      `${this.url}/api/v1/accounts/${this.accountId}/conversations/${conversationId}/messages`,
+      { method: "POST", headers: { "api_access_token": this.token }, body: fd },
+    );
+    return await r.json();
+  }
+
   async criarConversa(inboxId: number, contactId: number, sourceId: string) {
     const r = await fetch(
       `${this.url}/api/v1/accounts/${this.accountId}/conversations`,

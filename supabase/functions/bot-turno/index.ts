@@ -33,6 +33,15 @@ import {
   saudacaoDoPeriodo,
 } from "../_shared/identity.ts";
 import { detalharPisoProposta, garantirExplicacaoPiso } from "../_shared/proposal.ts";
+import { splitRespostas } from "../_shared/split-mensagens.ts";
+import { validarSaida } from "../_shared/guardrail-saida.ts";
+import {
+  ATRIBUTO_PREFERENCIA,
+  decidirTipoResposta,
+  normalizarPreferencia,
+  TOOL_PREFERENCIA,
+} from "../_shared/preferencia-resposta.ts";
+import { cwFromConfig } from "../_shared/lib.ts";
 import {
   corrigirOrientacaoPagamento,
   ehDuvidaDeOrigem,
@@ -409,6 +418,7 @@ function tools() {
     { type: "function", function: { name: "escalar_humano", description: "Transfere para atendente humano (contestação, advogado, hostilidade).", parameters: { type: "object", properties: { motivo: { type: "string" } }, required: ["motivo"] } } },
     { type: "function", function: { name: "nao_perturbe", description: "Registra que a pessoa não quer mais ser contatada e encerra.", parameters: { type: "object", properties: {}, required: [] } } },
     { type: "function", function: { name: "pessoa_errada", description: "Registra que o número não pertence à pessoa procurada e encerra.", parameters: { type: "object", properties: {}, required: [] } } },
+    TOOL_PREFERENCIA,
   ];
 }
 
@@ -1024,6 +1034,8 @@ Deno.serve(async (req) => {
   let escalarResumo: string | null = null;
   let encerrar = false;
   const toolsExecutadas = new Set<string>();
+  // Preferencia declarada NESTE turno pela tool; vale ja na resposta atual.
+  let preferenciaDeclarada: "audio" | "texto" | null = null;
   let pixCopiaCola: string | null = null;
 
   for (let passo = 0; passo < 5; passo++) {
@@ -1166,6 +1178,26 @@ Deno.serve(async (req) => {
       } else if (nome === "pessoa_errada") {
         acao = "encerrar"; encerrar = true;
         await concluirPessoaErrada(sb, conv, carteiraId, simulacao);
+      } else if (nome === ATRIBUTO_PREFERENCIA) {
+        // A pessoa pediu explicitamente audio ou texto. Grava no contato do Chatwoot para
+        // valer nos proximos turnos, e no turno atual tambem.
+        const pref = normalizarPreferencia(args.preferencia);
+        if (!pref) {
+          resultado = { ok: false, motivo: "preferencia_invalida" };
+        } else {
+          preferenciaDeclarada = pref;
+          if (!simulacao && conv.chatwoot_contact_id) {
+            try {
+              await cwFromConfig(cfg).mesclarAtributosContato(
+                Number(conv.chatwoot_contact_id),
+                { [ATRIBUTO_PREFERENCIA]: pref },
+              );
+            } catch (e) {
+              console.error("preferencia_audio_texto: falha ao gravar no Chatwoot", String(e));
+            }
+          }
+          resultado = { ok: true, preferencia: pref };
+        }
       }
       messages.push({ role: "tool", tool_call_id: tc.id, content: JSON.stringify(resultado) });
     }
@@ -1229,6 +1261,59 @@ Deno.serve(async (req) => {
     respostas[i] = corrigirOrientacaoPagamento(respostas[i]);
   }
 
+  // Guardrail de SAIDA: ultima checagem deterministica antes de a pessoa ler. Roda sobre a
+  // resposta INTEIRA, antes do split, e antes do copia-e-cola (que nao e texto do modelo).
+  // Valor ou desconto fora da proposta, CPF exposto e linguagem de coercao nao viram "tenta de
+  // novo" — repetir a chamada so sorteia outra vez. Vira escalacao para humano.
+  const veredito = validarSaida(respostas, {
+    proposta: { valor_final: prop?.valor_final, desconto_pct: prop?.desconto_pct },
+    saldoOriginal: origemDev?.saldo ?? prop?.valor_original ?? null,
+    identidadeConfirmada,
+    cpfDevedor: origemDev?.cpf_cnpj ?? null,
+  });
+  if (!veredito.ok) {
+    // o detalhe pode conter o trecho barrado; nunca inclui CPF (o motivo basta para auditar)
+    console.error("guardrail_saida_barrou", { motivo: veredito.motivo, conversa: conv.id });
+    await sb.from("eventos_campanha").insert({
+      tipo: "guardrail_saida",
+      devedor_id: conv.devedor_id,
+      carteira_id: carteiraId,
+      payload: { motivo: veredito.motivo, detalhe: veredito.detalhe, simulacao },
+    });
+    if (veredito.escalar) {
+      const motivoGuard = `guardrail_saida:${veredito.motivo}`;
+      const escalacao = await concluirEscalacao(sb, {
+        conv, carteira, cfg, seg, carteiraId, simulacao,
+        chatwootConversationId: convId, historico: hist,
+        mensagem: String(b.mensagem ?? ""), motivo: motivoGuard, proposta: prop,
+      });
+      // A pessoa recebe uma resposta neutra e verdadeira: o automatico parou e um humano assume.
+      // Nunca a resposta barrada, e nunca silencio.
+      const avisoHumano =
+        "Vou passar seu atendimento para uma pessoa da equipe dar sequencia por aqui. Obrigado pela paciencia.";
+      await sb.from("mensagens").insert({
+        conversa_id: conv.id, direcao: "saida", origem: "bot", conteudo: avisoHumano, simulacao,
+      });
+      await sb.from("conversas").update({
+        ultima_msg_em: new Date().toISOString(), ultima_msg_de: "bot",
+      }).eq("id", conv.id);
+      await marcarFila(sb, incomingMessageId, "concluida");
+      return json({
+        ok: true, acao: "escalar", escalar: motivoGuard, resumo: escalacao.resumo,
+        equipe: escalacao.equipe, encerrar: true, simulacao,
+        enviado_direto: false, mensagens: [avisoHumano],
+      });
+    }
+    respostas.length = 0;
+  }
+
+  // Split de mensagens: um textao so vira 2-3 baloes, como uma pessoa digitando. Vem por ultimo,
+  // depois das barreiras deterministicas, para que elas continuem raciocinando sobre a resposta
+  // inteira. Roda antes do copia-e-cola justamente para nao encostar nele.
+  const respostasEmBaloes = splitRespostas(respostas);
+  respostas.length = 0;
+  respostas.push(...respostasEmBaloes);
+
   // O copia-e-cola vai sozinho na ultima mensagem para permitir copiar com um toque,
   // sem saudacao, rotulo, aspas, Markdown ou qualquer outro texto ao redor.
   if (pixCopiaCola) respostas.push(pixCopiaCola);
@@ -1239,8 +1324,34 @@ Deno.serve(async (req) => {
   if (respostas.length) await sb.from("conversas").update({ ultima_msg_em: new Date().toISOString(), ultima_msg_de: "bot" }).eq("id", conv.id);
   await sb.from("devedores").update({ status_cobranca: "em_negociacao" }).eq("id", conv.devedor_id).in("status_cobranca", ["contatado"]);
 
+  // Como enviar: quem declarou preferencia manda; senao espelha o formato que a pessoa usou.
+  // Sem ELEVEN_LABS_API_KEY, cai para texto em vez de falhar no meio do envio. O copia-e-cola
+  // do Pix nunca vira audio — a barreira fica em `_shared/ssml.ts`.
+  let atributosContato: Record<string, unknown> | null = null;
+  if (!preferenciaDeclarada && conv.chatwoot_contact_id) {
+    try {
+      atributosContato = (await cwFromConfig(cfg).getContato(Number(conv.chatwoot_contact_id)))?.custom_attributes ?? null;
+    } catch (_e) { /* preferencia e um conforto, nao pode derrubar a resposta */ }
+  }
+  const tipoResposta = preferenciaDeclarada ?? decidirTipoResposta({
+    atributosContato,
+    entradaFoiAudio: !!b.entrada_audio,
+    audioDisponivel: !!Deno.env.get("ELEVEN_LABS_API_KEY"),
+  });
+
+  // Endereço de saída para quem for enviar. Hoje o W02 manda pelo Chatwoot e só precisa do id da
+  // conversa; devolvemos chip e telefone para que ele possa passar a usar o `enviar-mensagem`, que
+  // é quem tem presença ("digitando"/"gravando"), atraso proporcional, a variante do 9º dígito e
+  // o caminho de áudio. Sem estes dois campos aquela função não tem como ser chamada.
+  let numeroE164: string | null = null;
+  if (conv.telefone_id) {
+    const { data: tel } = await sb.from("telefones_devedor")
+      .select("telefone_e164").eq("id", conv.telefone_id).maybeSingle();
+    numeroE164 = tel?.telefone_e164 ?? null;
+  }
+
   await marcarFila(sb, incomingMessageId, "concluida");
-  return json({ ok: true, acao, escalar: escalarMotivo, resumo: escalarResumo, equipe: acao === "escalar" ? equipe : undefined, encerrar, simulacao, enviado_direto: false, mensagens: respostas });
+  return json({ ok: true, acao, escalar: escalarMotivo, resumo: escalarResumo, equipe: acao === "escalar" ? equipe : undefined, encerrar, simulacao, enviado_direto: false, tipo_resposta: tipoResposta, chip_id: conv.chip_id ?? null, numero_e164: numeroE164, mensagens: respostas });
   } finally {
     // Se a IA ou qualquer integracao falhar, a conversa nao fica presa. O registro da
     // fila permanece reprocessavel e o lock abandonado tambem expira no banco.

@@ -57,9 +57,12 @@ site-mccred
 ref_sites_bancarios
 instagram_mc_cred
 Guias Operacionais
-!Guias Operacionais/
-Guias Operacionais/*
-!Guias Operacionais/Credenciais — Política para Agentes.md
+
+
 
 # QR de pareamento: quem escaneia vincula um aparelho. Nunca versionar.
 qr-*.png
+Material Secretária v3 (1)
+
+# Backups de workflow do n8n: contêm credenciais em claro nos nós HTTP.
+backups/

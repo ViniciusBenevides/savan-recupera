@@ -196,6 +196,80 @@ export async function enviarTextoBaileysApi(
   return { ok: false, resultado: classificarErroEnvioBaileysApi(r.status), status: r.status, detalhe };
 }
 
+/**
+ * Envia áudio como **nota de voz** (a bolinha com a onda, não um anexo de arquivo).
+ *
+ * O `send-message` do baileys-api aceita `messageContent` em seis formatos (swagger: `text`,
+ * `image`, `video`, `document`, `audio`, `react`); a variante de áudio é
+ * `{ audio, ptt, mimetype, quotedMessage }`, com `audio` em base64. É o mesmo caminho que o
+ * Chatwoot usa quando alguém grava pelo botão de microfone no atendimento — só que aqui saímos
+ * direto no provedor, que é o que o ADR-0002 exige: presença e atraso por mensagem são a defesa
+ * comportamental do canal não-oficial, e mandar pelo Chatwoot abre mão dela.
+ *
+ * `ptt: true` é o que faz virar nota de voz. Sem ele o WhatsApp mostra um anexo de áudio.
+ *
+ * A presença aqui é `recording` ("gravando áudio…"), não `composing` — o enum do provedor tem as
+ * duas, e usar a errada denuncia o robô tanto quanto não usar nenhuma.
+ *
+ * ⚠️ **Não testado contra provedor no ar.** O formato veio do swagger do baileys-api e do
+ * `whatsapp_baileys_service.rb` do fork do Chatwoot. O ponto incerto é o container: mandamos OGG/Opus
+ * (`audio/ogg; codecs=opus`), que é o container nativo de nota de voz do WhatsApp. Testado em
+ * 10/09/2026: HTTP 200 e `delivered`. Testar com número de teste antes de encostar em devedor.
+ */
+export async function enviarAudioBaileysApi(
+  cfg: ConfigBaileysApi,
+  numeroChip: string,
+  jidDestino: string,
+  audioBase64: string,
+  opts: { textoOriginal?: string; mimetype?: string; aleatorio?: () => number } = {},
+): Promise<RespostaEnvioBaileysApi> {
+  // O tempo de "gravando" é proporcional ao texto que gerou o áudio — falar a ~150 palavras por
+  // minuto dá quase o mesmo número que digitar, então a fórmula de digitação serve de estimativa.
+  const delayMs = tempoDigitacao(opts.textoOriginal ?? "", opts.aleatorio ?? Math.random);
+  const instancia = encodeURIComponent(numeroChip);
+
+  try {
+    await fetch(`${cfg.url}/connections/${instancia}/presence`, {
+      method: "PATCH",
+      headers: { "x-api-key": cfg.apiKey, "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "recording", toJid: jidDestino }),
+    });
+  } catch {
+    // best-effort — presença não pode barrar o envio
+  }
+
+  await new Promise((resolve) => setTimeout(resolve, delayMs));
+
+  let r: Response;
+  try {
+    r = await fetch(`${cfg.url}/connections/${instancia}/send-message`, {
+      method: "POST",
+      headers: { "x-api-key": cfg.apiKey, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        jid: jidDestino,
+        messageContent: {
+          audio: audioBase64,
+          ptt: true,
+          mimetype: opts.mimetype ?? "audio/ogg; codecs=opus",
+        },
+        messageId: crypto.randomUUID(),
+      }),
+    });
+  } catch (e) {
+    return { ok: false, resultado: "falha", status: 0, detalhe: String(e) };
+  }
+
+  if (r.ok) {
+    const corpo = await lerJson(r) as { data?: { key?: { id?: unknown } } } | null;
+    const id = corpo?.data?.key?.id;
+    return { ok: true, messageId: typeof id === "string" ? id : null, delayMs };
+  }
+
+  const corpo = await lerJson(r);
+  const detalhe = typeof corpo === "string" ? corpo : JSON.stringify(corpo ?? "").slice(0, 300);
+  return { ok: false, resultado: classificarErroEnvioBaileysApi(r.status), status: r.status, detalhe };
+}
+
 // ── Estado da conexão ───────────────────────────────────────────────────────────────────
 
 export type SaudeConexaoBaileysApi = {

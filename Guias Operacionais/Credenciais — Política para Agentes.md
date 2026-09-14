@@ -37,6 +37,7 @@ conector MCP e não copie segredos para arquivos auxiliares.
 | `CHATWOOT_*` | Chatwoot | Não há skill específica instalada | [Chatwoot](<Chatwoot — Guia Operacional.md>) |
 | `CNPJBIZ_*` | CNPJ Biz | Não há skill específica instalada | **Não existe guia local atualmente** |
 | `COOLIFY_*` | Coolify | Não há skill específica instalada | **Não existe guia local atualmente** |
+| `ELEVEN_LABS_API_KEY` | ElevenLabs (text-to-speech) | Não há skill específica instalada | [ElevenLabs](<ElevenLabs — Guia Operacional.md>) |
 | `EVOLUTION_*` | Evolution API / Baileys (WhatsApp) | Não há skill específica instalada | [Baileys](<Baileys — Guia Operacional.md>) |
 | `HOSTINGER_*` | Hostinger | Não há skill específica instalada | [Hostinger](<Hostinger — Guia Operacional.md>) |
 | `META_*` | Meta / WhatsApp Cloud API | Não há skill específica instalada | [Meta](<Meta — Guia Operacional.md>) |
@@ -44,6 +45,7 @@ conector MCP e não copie segredos para arquivos auxiliares.
 | `OPENAI_*` | OpenAI | `openai-docs` no Codex, quando disponível; não há cópia local equivalente para Claude | **Não existe guia local atualmente** |
 | `SALVY_*` | Salvy | Não há skill específica instalada | [Salvy](<Salvy — Guia Operacional.md>) |
 | `SUPABASE_*` | Supabase / Postgres | Ver carregamento obrigatório abaixo | **Não existe guia local atualmente** |
+| `TWILIO_*` | Twilio (voz / WhatsApp Business Calling) — **ainda não existe no `.env`** | Não há skill específica instalada | [Twilio](<Twilio — Guia Operacional.md>) |
 | `VERCEL_*` | Vercel | [`vercel-cli-with-tokens` (Codex)](<../.agents/skills/vercel-cli-with-tokens/SKILL.md>) e [`vercel-cli-with-tokens` (Claude)](<../.claude/skills/vercel-cli-with-tokens/SKILL.md>) | [Vercel](<Vercel — Guia Operacional.md>) |
 
 Os guias de Autentique, Neon e Resend também devem ser carregados se variáveis desses serviços forem
@@ -93,3 +95,22 @@ Evolution, Redis no baileys-api —, equivalente a uma chave SSH privada.
   'baileys_chatwoot'`), ler **também** o [guia do baileys-api](<baileys-api (Chatwoot) — Guia Operacional.md>):
   a autenticação, o endereço de cada número e o caminho de pareamento são outros, e quem abre a conexão
   é o Chatwoot, não o painel.
+
+## Regra adicional para Twilio
+
+Não há credencial `TWILIO_*` no `.env` hoje e não há código Twilio no repositório. Antes de criar qualquer
+uma, ler integralmente o [guia da Twilio](<Twilio — Guia Operacional.md>).
+
+- Use **API Key** (`SK...` + secret) para chamar a API. O `TWILIO_AUTH_TOKEN` é a chave-mestra da conta e
+  deve ficar restrito à validação de assinatura de webhook (`X-Twilio-Signature`).
+- **Comprar número gera cobrança mensal recorrente** e exige um Regulatory Bundle aprovado com CNPJ,
+  endereço no Brasil e documentos societários. Exige autorização específica.
+- **Liberar um número é irreversível** — o mesmo número não volta. Nunca executar `DELETE` em
+  `IncomingPhoneNumbers` sem autorização explícita.
+- **Iniciar uma chamada atinge uma pessoa real e não tem desfazer** — confirmar antes, sempre. Vale
+  também para teste: em conta paga não existe sandbox de voz.
+- **Discagem ativa (outbound) para devedores depende de decisão jurídica documentada.** Ver §10 do guia
+  e o §38 de `contexto-projeto.md`: o padrão de abordagem fria já custou o banimento permanente do canal
+  oficial da Meta, e no canal de voz o interlocutor é a Anatel/Procon.
+- WhatsApp Business Calling exige uma WABA oficial aprovada. A da MC CRED está banida. Não criar ativos
+  novos para contornar o banimento — a regra de Meta/WhatsApp acima continua valendo aqui.
