@@ -28,6 +28,19 @@ async function garantirInbox(
   return id;
 }
 
+/**
+ * Fecha o aviso de failover do chip que acabou de reconectar.
+ *
+ * O `chips-monitor` já faz essa limpeza, mas só na rodada seguinte (até 15 min). Quem está com o
+ * QR na mão vê o chip voltar e, sem isto, continua vendo o banner "caiu" com o botão de reatribuir
+ * as conversas — que tiraria o trabalho de um chip vivo. `aplicado_por` nulo = fechado pelo sistema.
+ */
+async function fecharFailoverPendente(admin: Admin, chipId: number): Promise<void> {
+  await admin.from("failover_eventos")
+    .update({ status: "ignorado", aplicado_em: new Date().toISOString() })
+    .eq("chip_caido_id", chipId).eq("status", "pendente");
+}
+
 // POST — provisiona a conexão do chip no provedor dele e devolve o QR para escanear.
 // Idempotente: apertar de novo (o QR expira em segundos) devolve um QR novo da mesma conexão.
 // Os dois transportes Baileys entram aqui, por caminhos que não se parecem: a Evolution é
@@ -179,6 +192,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       status = "desconectado";
     }
     if (status !== atualDb) await admin.from("chips").update({ status }).eq("id", chipId);
+    if (status !== atualDb && status === "conectado") await fecharFailoverPendente(admin, chipId);
 
     return NextResponse.json({
       ok: true,
@@ -217,6 +231,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   }
 
   if (status !== atual) await admin.from("chips").update({ status }).eq("id", chipId);
+  if (status !== atual && status === "conectado") await fecharFailoverPendente(admin, chipId);
 
   // Autocura do vínculo com o Chatwoot: o inbox nasce durante o `chatwoot/set` e pode não existir
   // ainda quando o POST respondeu. Sem esse id o chip conecta e mesmo assim não fala com ninguém.

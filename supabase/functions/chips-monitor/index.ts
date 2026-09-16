@@ -288,6 +288,23 @@ Deno.serve(async (req) => {
     await sb.from("chips").update({ saude, status: novoStatus, ...(travarAte ? { abordagem_travada_ate: travarAte } : {}) }).eq("id", chip.id);
     resultados.push({ chip: chip.id, quality: saude?.quality_rating, status: novoStatus });
   }
+
+  // Aviso de failover de chip que já voltou (16/09/2026): o evento nasce na queda, mas nada o
+  // fechava na volta — o Chip 2 reconectou sozinho, voltou a `aquecendo` e o banner seguiu gritando
+  // "caiu", oferecendo reatribuir 11 conversas de um chip vivo. Roda DEPOIS dos três blocos para
+  // não fechar o aviso de quem acabou de cair nesta mesma rodada. `pausado` fica de fora: pausa é
+  // decisão do operador, não prova de que o chip voltou. `aplicado_por` nulo = fechado pelo monitor.
+  const { data: vivos } = await sb.from("chips").select("id").in("status", ["conectado", "ativo", "aquecendo"]);
+  const idsVivos = (vivos ?? []).map((c) => c.id);
+  let failoverFechados = 0;
+  if (idsVivos.length > 0) {
+    const { data: fechados } = await sb.from("failover_eventos")
+      .update({ status: "ignorado", aplicado_em: new Date().toISOString() })
+      .eq("status", "pendente").in("chip_caido_id", idsVivos)
+      .select("id");
+    failoverFechados = fechados?.length ?? 0;
+  }
+
   // Cache de templates (§32): a campanha so dispara com modelo APROVADO, e quem decide isso e a
   // Meta — o status muda de PENDING para APPROVED/REJECTED sozinho, horas depois de submeter.
   // Sem esta sincronizacao periodica o painel (e o campanha-lote) ficariam olhando um retrato
@@ -311,5 +328,5 @@ Deno.serve(async (req) => {
     } catch (_e) { /* nao derruba o monitor de chips */ }
   }
 
-  return json({ ok: true, chips: resultados, baileys, templates: templatesSincronizados });
+  return json({ ok: true, chips: resultados, baileys, templates: templatesSincronizados, failover_fechados: failoverFechados });
 });
