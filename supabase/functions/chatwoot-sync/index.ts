@@ -1,5 +1,5 @@
 // SAVAN Recupera - espelha conversas e mensagens do Chatwoot no Supabase.
-// Chamado pelo n8n para message_created/conversation_created e manualmente para backfill.
+// Chamado pelo n8n para message_created/conversation_created/message_updated e manualmente para backfill.
 import { createClient, SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import {
   deveGravarEntrega, entregaConfirmada, statusEntregaDoChatwoot,
@@ -82,15 +82,31 @@ function tipoMensagem(v: unknown): "entrada" | "saida" | null {
 /**
  * Grava o recibo de entrega de uma mensagem já espelhada. A decisão (mapear o status e resolver
  * conflito entre recibos fora de ordem) mora em `_shared/entrega.ts`, com testes; aqui é só o I/O.
+ *
+ * `buscarStatus` é para quando o evento chegou SEM status (o `message_updated` — ver o roteamento
+ * no `Deno.serve`). Só é chamado depois de confirmar que a mensagem é uma saída nossa: o webhook é
+ * da conta inteira do Chatwoot, e pagar um GET por evento de inbox alheia seria desperdício.
  */
-async function gravarEntrega(sb: SupabaseClient, messageId: number, bruto: unknown) {
-  const status = statusEntregaDoChatwoot(bruto);
-  if (status === null) return { status: "ignorado" as const, status_entrega: null };
+async function gravarEntrega(
+  sb: SupabaseClient,
+  messageId: number,
+  bruto: unknown,
+  buscarStatus?: () => Promise<unknown>,
+) {
+  let status = statusEntregaDoChatwoot(bruto);
+  if (status === null && !buscarStatus) return { status: "ignorado" as const, status_entrega: null };
 
   const { data: atual, error: erroAtual } = await sb.from("mensagens")
-    .select("id, status_entrega").eq("chatwoot_message_id", messageId).maybeSingle();
+    .select("id, status_entrega, direcao").eq("chatwoot_message_id", messageId).maybeSingle();
   if (erroAtual) throw erroAtual;
   if (!atual) return { status: "sem_mensagem" as const, status_entrega: null };
+
+  if (status === null) {
+    // Só saída tem recibo: o `message_updated` de uma mensagem que CHEGOU é o "lido" do atendente.
+    if (atual.direcao !== "saida") return { status: "ignorado" as const, status_entrega: null };
+    status = statusEntregaDoChatwoot(await buscarStatus!());
+    if (status === null) return { status: "ignorado" as const, status_entrega: null };
+  }
 
   const anterior = typeof atual.status_entrega === "number" ? atual.status_entrega : null;
   if (!deveGravarEntrega(anterior, status)) {
@@ -105,6 +121,18 @@ async function gravarEntrega(sb: SupabaseClient, messageId: number, bruto: unkno
   const { error } = await sb.from("mensagens").update(patch).eq("id", atual.id);
   if (error) throw error;
   return { status: "gravado" as const, status_entrega: status };
+}
+
+/** A conversa do Chatwoot onde está uma mensagem já espelhada, para quando o evento não a traz. */
+async function conversaChatwootDaMensagem(sb: SupabaseClient, messageId: number): Promise<number | null> {
+  const { data: m, error } = await sb.from("mensagens")
+    .select("conversa_id").eq("chatwoot_message_id", messageId).maybeSingle();
+  if (error) throw error;
+  if (!m?.conversa_id) return null;
+  const { data: c, error: erroConv } = await sb.from("conversas")
+    .select("chatwoot_conversation_id").eq("id", m.conversa_id).maybeSingle();
+  if (erroConv) throw erroConv;
+  return numero(c?.chatwoot_conversation_id);
 }
 
 async function conversaDetalhe(base: string, token: string, accountId: number, convId: number) {
@@ -500,13 +528,27 @@ Deno.serve(async (req) => {
 
     const evento = String(body?.evento ?? body?.event ?? "");
 
-    // `message_updated` é o único evento que traz o recibo do provedor. Ele não cria nem altera
+    // `message_updated` é o evento do recibo que chega DEPOIS do envio. Ele não cria nem altera
     // conversa: só carimba a mensagem que já existe. Fica antes de tudo porque não precisa (e não
     // deve) pagar o GET do detalhe da conversa.
+    //
+    // O webhook NÃO traz o status. O `Message#webhook_data` do Chatwoot (upstream e o fork da
+    // fazer-ai) não inclui esse campo, então `body.status` chegava sempre nulo e todo recibo era
+    // descartado como "ignorado". O único recibo que entrava era o que já existia quando o
+    // `message_created` relia a mensagem na API, 2 a 3 segundos depois do envio. Tudo o que
+    // chegava depois (aparelho desligado na hora, leitura) se perdia. Foi assim que a
+    // `fn_failover_entrega` refilou, com o próximo número, 25 pessoas que tinham recebido a
+    // abordagem (16/09/2026). O status vem então da API, que é onde ele está.
     if (evento === "message_updated") {
       const messageId = numero(body?.chatwoot_message_id ?? body?.id);
       if (!messageId) return json({ ok: false, erro: "message_id_ausente" }, 400);
-      const r = await gravarEntrega(sb, messageId, body?.status ?? body?.message?.status);
+      const convDoEvento = numero(body?.chatwoot_conversation_id ?? body?.conversation?.id);
+      const r = await gravarEntrega(sb, messageId, body?.status ?? body?.message?.status, async () => {
+        const convId = convDoEvento ?? await conversaChatwootDaMensagem(sb, messageId);
+        if (!convId) return null;
+        const m = (await mensagensDaConversa(cw, convId)).find((x) => numero(x?.id) === messageId);
+        return m?.status ?? null;
+      });
       return json({ ok: true, entrega: r.status, status_entrega: r.status_entrega });
     }
 

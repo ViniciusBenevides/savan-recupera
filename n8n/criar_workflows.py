@@ -299,9 +299,10 @@ def w02():
         "const evento = String(b.event || '');\n"
         "if (!['message_created', 'conversation_created', 'message_updated'].includes(evento)) return [];\n"
         "const conv = Number((b.conversation && b.conversation.id) || b.conversation_id || (evento === 'conversation_created' ? b.id : 0));\n"
-        # `message_updated` traz o recibo do provedor (sent/delivered/read/failed) e é endereçado
-        # pelo id da MENSAGEM: o chatwoot-sync só precisa disso. Exigir conversa aqui descartaria
-        # justamente o evento que revela entrega falhada — o sinal que faltava no §38.
+        # `message_updated` avisa que o recibo do provedor mudou e é endereçado pelo id da
+        # MENSAGEM. O corpo NÃO traz o status (o `webhook_data` do Chatwoot não inclui o campo),
+        # então o `status` abaixo chega nulo e o chatwoot-sync lê o valor na API. Exigir conversa
+        # aqui descartaria justamente o evento que revela entrega tardia ou falhada.
         "if (!conv && evento !== 'message_updated') return [];\n"
         "const labels = (b.conversation && b.conversation.labels) || b.labels || [];\n"
         "return [{ json: {\n"

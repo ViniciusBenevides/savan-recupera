@@ -1,4 +1,5 @@
 import { supabaseServer } from "@/lib/supabase-server";
+import { JANELA_MESMA_SAIDA_MS, reciboMaisInformativo } from "@/lib/entrega";
 import { Inbox } from "./inbox";
 
 const TAMANHO_PAGINA = 1000;
@@ -82,14 +83,31 @@ export async function Dialogos({ podeAtender = false }: { podeAtender?: boolean 
   // Vai o recibo CRU + o horário, não um booleano já decidido: ler um `status_entrega = 1` depende
   // da idade da mensagem (ver `@/lib/entrega`), e quem tem o relógio certo para isso é o navegador
   // do operador, não o instante em que o servidor montou a lista.
-  const ultimaSaida = new Map<number, { status: number | null; em: string }>();
+  //
+  // A mesma saída pode estar em DUAS linhas (`reciboMaisInformativo` conta por quê), e a gêmea sem
+  // recibo é justamente a mais recente — ler só a primeira apagava o aviso de não-entrega. Então as
+  // duas são lidas como uma mensagem: mesmo texto, nascidas dentro de um minuto uma da outra.
+  const ultimaSaida = new Map<number, { status: number | null; em: string; conteudo: string }>();
   for (const m of (msgs ?? []) as any[]) {
     if (!prev.has(m.conversa_id)) {
       prev.set(m.conversa_id, { texto: m.conteudo ?? "", origem: m.origem, privado: m.privado === true });
     }
-    if (m.direcao === "saida" && m.privado !== true && !ultimaSaida.has(m.conversa_id)) {
-      ultimaSaida.set(m.conversa_id, { status: m.status_entrega ?? null, em: m.criado_em });
+    if (m.direcao !== "saida" || m.privado === true) continue;
+
+    const ja = ultimaSaida.get(m.conversa_id);
+    if (!ja) {
+      ultimaSaida.set(m.conversa_id, {
+        status: m.status_entrega ?? null, em: m.criado_em, conteudo: String(m.conteudo ?? ""),
+      });
+      continue;
     }
+    // A query vem desc, então daqui para baixo é sempre mais antigo que o que já está na mão.
+    const distancia = new Date(ja.em).getTime() - new Date(m.criado_em).getTime();
+    if (String(m.conteudo ?? "") !== ja.conteudo || !(distancia <= JANELA_MESMA_SAIDA_MS)) continue;
+    ja.status = reciboMaisInformativo(ja.status, m.status_entrega ?? null);
+    // O instante que vale é o da linha do Chatwoot, sempre a mais antiga do par: é a hora em que a
+    // mensagem saiu de verdade, e é ela que faz a carência de 60s ser julgada certo.
+    ja.em = m.criado_em;
   }
 
   const lista = lista0.map((c) => {

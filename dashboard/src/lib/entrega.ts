@@ -12,10 +12,15 @@
  * "enviado" enquanto no celular dele não existia conversa nenhuma. A tela precisa separar
  * "aceitaram de nós" de "chegou nela".
  *
- * A CARÊNCIA. Medido em produção (09/09/2026), toda confirmação de entrega chegou entre 2 e 3
- * segundos do envio — 12 de 12, sem exceção. Então um `1` que persiste não está "a caminho": ou o
- * número não recebe, ou o aparelho da pessoa está desligado. 60s é folga de 20x sobre o observado,
- * o suficiente para nunca acusar uma mensagem que ainda está no ar.
+ * A CARÊNCIA. Com o aparelho da pessoa ligado, a entrega é confirmada em poucos segundos; 60s é
+ * folga para não acusar uma mensagem que ainda está no ar. Passado isso, um `1` quer dizer "ainda
+ * não chegou", não "não vai chegar".
+ *
+ * Em 09/09/2026 esta regra foi escrita sobre uma medição errada: "toda confirmação chega em 2 a 3
+ * segundos, 12 de 12". Só que o banco só registrava os recibos desse intervalo. O `message_updated`
+ * do Chatwoot vem sem status e era descartado (ver `chatwoot-sync`), então entrega tardia nunca
+ * aparecia. Em 16/09 o Chatwoot tinha como entregues 50 mensagens que o banco dava como `1`,
+ * inclusive abordagens que o operador via chegar no celular do chip.
  *
  * O texto diz "não confirmado", e não "não chegou", de propósito: entrega exige o aparelho do outro
  * lado ONLINE. Celular desligado também para em `1` e pode entregar horas depois — o `chatwoot-sync`
@@ -46,9 +51,9 @@ export const ENTREGA: Record<ChaveEntrega, RotuloEntrega> = {
     texto: "não confirmado",
     classe: "text-amber",
     titulo:
-      "O servidor do WhatsApp aceitou, mas nenhuma confirmação de entrega chegou. " +
-      "Em produção a confirmação vem em 2 a 3 segundos, então isto normalmente significa que a " +
-      "mensagem não chegou — ou o número não recebe, ou o aparelho está desligado.",
+      "O servidor do WhatsApp aceitou, mas o aparelho da pessoa ainda não confirmou o recebimento. " +
+      "Pode ser aparelho desligado (entrega quando voltar) ou um número que não recebe. " +
+      "Sem confirmação em 24h, o robô tenta o próximo número.",
     alerta: true,
   },
   entregue: { texto: "entregue", classe: "text-mist", titulo: "Entregue no aparelho.", alerta: false },
@@ -92,6 +97,43 @@ export function rotuloEntrega(
 ): RotuloEntrega | null {
   const chave = chaveEntrega(status, criadoEm, agoraMs);
   return chave ? ENTREGA[chave] : null;
+}
+
+/**
+ * Duas linhas de `mensagens` são a MESMA saída quando têm o mesmo texto e nasceram dentro desta
+ * janela. Ver `reciboMaisInformativo`: é a largura da gêmea, não da carência.
+ */
+export const JANELA_MESMA_SAIDA_MS = 60_000;
+
+/**
+ * O recibo de uma saída que está gravada em DUAS linhas — qual dos dois vale.
+ *
+ * POR QUE PRECISA EXISTIR. Uma abordagem é escrita por dois caminhos independentes: o
+ * `campanha-registrar` (para a mensagem aparecer no painel mesmo se o webhook se perder) e o
+ * `chatwoot-sync` (que traz o `chatwoot_message_id` e, com ele, o recibo). Os dois começam no mesmo
+ * instante — a mensagem sair — e cada um faz "procura, senão insere". Quando a busca de um roda
+ * antes do insert do outro, sobram duas linhas da mesma mensagem, e a do `campanha-registrar` vem
+ * SEM recibo. Como ela costuma ser a mais recente das duas, a lista lia justamente ela e o selo
+ * âmbar de "não confirmado" desaparecia: em 16/09/2026 a abordagem à DENIFIA aparecia limpa no
+ * painel enquanto a linha gêmea dizia `1` — aceita pelo WhatsApp e nunca entregue.
+ *
+ * A precedência é a mesma de `deveGravarEntrega` (`supabase/functions/_shared/entrega.ts`, a fonte
+ * da regra): ausência de recibo perde de qualquer recibo; falha vence "enviado"; só entrega
+ * CONFIRMADA vence falha.
+ */
+export function reciboMaisInformativo(
+  a: number | null | undefined,
+  b: number | null | undefined,
+): number | null {
+  const x = a ?? null;
+  const y = b ?? null;
+  if (x === null) return y;
+  if (y === null) return x;
+  if (x === 0 || y === 0) {
+    const melhor = Math.max(x, y);
+    return melhor >= 2 ? melhor : 0;
+  }
+  return Math.max(x, y);
 }
 
 /** A última saída da conversa merece aviso na lista? Cobre recusa E falta de confirmação. */
