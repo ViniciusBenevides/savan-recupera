@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "@/lib/supabase-server";
+import { type BloqueioWhatsapp, lerBloqueioWhatsapp } from "@/lib/bloqueio-whatsapp";
 
 export type ResultadoChatwoot =
   | { ok: true; inbox_id: number; ja_existia?: boolean }
@@ -190,6 +191,12 @@ export type ConexaoBaileys = {
   connection: string | null;
   qr: string | null;
   erro: string | null;
+  /**
+   * Bloqueio de alcance do WhatsApp, pela cópia que o Chatwoot guarda em
+   * `provider_connection.reachout_time_lock`. `null` = o inbox não tem o campo (nunca houve
+   * bloqueio registrado) — não é o mesmo que "liberado". Ver `lib/bloqueio-whatsapp.ts`.
+   */
+  bloqueio: BloqueioWhatsapp | null;
 };
 
 async function corpoErro(r: Response): Promise<string> {
@@ -321,6 +328,7 @@ export async function conexaoBaileys(inboxId: number): Promise<ConexaoBaileys | 
       connection: typeof pc.connection === "string" ? pc.connection : null,
       qr: typeof pc.qr_data_url === "string" && pc.qr_data_url ? pc.qr_data_url : null,
       erro: typeof pc.error === "string" && pc.error ? pc.error : null,
+      bloqueio: lerBloqueioWhatsapp(pc.reachout_time_lock),
     };
   } catch { return null; }
 }

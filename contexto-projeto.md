@@ -2108,3 +2108,53 @@ continue na mesma linha em vez de virar uma segunda conversa.
 Aceite do provedor nunca foi entrega (§31), e uma coluna que o failover reescreve nunca foi
 histórico. As duas vezes o dado certo existia e não era coletado; as duas vezes o painel preencheu o
 vazio com otimismo. **Estado derivado de coluna mutável é uma mentira com atraso.**
+
+---
+
+## 43. Bloqueio de alcance do WhatsApp: o Chip 2 caía depois de cada abordagem (16–17/09/2026)
+
+O dono relatou: "com o chip 2 é sempre assim, eu conecto ele, manda uma msg, e depois de pouco tempo
+o chip cai". O Chip 2 (id 15, final 4557, WhatsApp comum) é o mesmo número restringido em 29/06 (§31).
+
+### O diagnóstico
+
+Toda queda veio de 1 a 10 minutos depois de uma abordagem: 10/09 14:44→14:45, 15/09 09:29→09:30,
+16/09 09:38→09:45 e 12:20→12:30. Em 15 abordagens, **0 respostas** (o Chip 1, WhatsApp Business, tinha
+93 envios e 17 respostas no mesmo período). Em 16/09 nada chegou: a das 09:38 ficou em "enviado" e as
+de 11:06 e 12:20 falharam — cada uma logo depois de o operador reconectar o chip.
+
+A prova estava no inbox 12 do Chatwoot, que ninguém lia:
+
+```
+provider_connection.reachout_time_lock = { is_active: true,
+  enforcement_type: "RESTRICT_ALL_COMPANIONS", time_enforcement_ends: 2026-09-16T18:38:42Z }
+```
+
+É o **reach-out time-lock**: o WhatsApp proíbe o número de iniciar conversa nova (a mensagem volta
+com erro 463). O tipo, pelo nome, vale para todos os aparelhos vinculados — e o baileys-api é um
+deles. O fim (15:38 BRT) cai exatamente 6h depois da abordagem das 09:38. O Chip 1 estava com
+`is_active: false`.
+
+Duas conclusões que não são código: **reconectar não tira o bloqueio**, e cada abordagem feita com
+ele de pé é mais um alcance contado contra o número. Chip começando a abordar no mesmo dia em que
+foi cadastrado (09/09 12:57) e sem nenhuma resposta é o perfil do §31 de novo.
+
+### O que foi feito
+
+A decisão do dono: **avisar no sistema e não deixar ativar até o bloqueio sair.** Não contradiz o
+ADR-0004 (aquecimento continua sendo conselho): aqui quem trava é o WhatsApp, não uma regra nossa.
+
+| Peça | Entrega |
+| --- | --- |
+| Migration `20260917120000` | `chips.whatsapp_bloqueio_ate` + gatilho `trg_chips_barrar_ativacao_bloqueada`: recusa **levar** um chip para `ativo`/`aquecendo` enquanto a data estiver no futuro, venha a escrita de onde vier. Provado com tabela e função temporárias (11 casos) |
+| `_shared/bloqueio-whatsapp.ts` + testes | a regra: quem decide é `isActive`, **nunca o tipo** (o Baileys troca tipo desconhecido por `DEFAULT`, que no enum quer dizer "sem restrição"); fim no passado = encerrado; ativo sem fim = trava de 1h renovada a cada leitura (falha fechada). Espelho em `dashboard/src/lib/bloqueio-whatsapp.ts` |
+| `baileys-api-client.ts` | `consultarBloqueioBaileysApi` → `GET /connections/{n}/reachout-timelock`, consulta MEX **só de leitura** (a doc do baileys-api garante que não piora o bloqueio). Só responde com o chip conectado |
+| `chips-monitor` | lê o bloqueio a cada rodada: ao vivo pelo baileys-api; com o chip caído, pela cópia do Chatwoot (única memória, já que o chip caía antes da rodada de 15 min). Chip bloqueado em `ativo`/`aquecendo` vai para `pausado` (continua respondendo quem já conversa). **Sem retomada automática** quando o bloqueio sai. Eventos `bloqueio_whatsapp` / `bloqueio_whatsapp_fim` na transição |
+| `/api/chips/[id]/acao` | Ativar e Retomar recusam com 409 e a data do fim; o card passou a mostrar o erro (antes engolia qualquer falha) |
+| `/api/chips/[id]/conectar` (GET) | grava o bloqueio na volta do QR, sem esperar o monitor, e a tela de conexão avisa em vez de dizer "ative o chip" |
+| Painel | card do chip com aviso vermelho e botão "Bloqueado até dd/mm hh:mm"; aviso "o bloqueio terminou, o chip segue pausado"; banner global em todas as telas |
+| `campanha-followup` e `disparar-teste` | não saem por chip bloqueado — reenvio para quem nunca respondeu também é iniciar conversa. O reenvio não perde a vez |
+
+Fica de fora: o canal Evolution (`conector = 'baileys'`) não tem leitura de bloqueio — não há chip
+nele hoje. E o `campanha-lote` não consulta o bloqueio antes de cada envio: a janela entre o bloqueio
+nascer e o monitor ver é de até 15 min, menor que o ritmo de ~1 abordagem/hora por chip.

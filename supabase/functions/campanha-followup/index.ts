@@ -184,12 +184,22 @@ Deno.serve(async (req) => {
     (ativas ?? []).map((c) => [c.id, { credor: c.credor, cobrador_id: c.cobrador_id, blocos: followupsDoFluxo(c.roteiro) }]));
 
   const { data: convs } = await sb.from("conversas")
-    .select("id, devedor_id, carteira_id, chatwoot_conversation_id, followups_enviados, fluxo_versao_id")
+    .select("id, devedor_id, carteira_id, chatwoot_conversation_id, followups_enviados, fluxo_versao_id, chip_id, chatwoot_inbox_id")
     .eq("estado", "aguardando_resposta").in("carteira_id", idsAtivas)
     .lte("proximo_followup_em", new Date().toISOString())
     .order("proximo_followup_em").limit(30);
 
-  let enviados = 0, encerrados = 0, gated = 0, semTemplate = 0, falhas = 0;
+  // Bloqueio de alcance do WhatsApp (16/09/2026): o reenvio vai para quem NUNCA respondeu, e para o
+  // WhatsApp isso é iniciar conversa — exatamente o que o bloqueio proíbe. Mandar assim mesmo falha
+  // com 463 e conta mais uma tentativa contra o número. A conversa é reconhecida pelo chip dela e
+  // pelo inbox onde a conversa do Chatwoot mora (é por ele que a mensagem sai).
+  const agoraIso = new Date().toISOString();
+  const { data: chipsBloqueados } = await sb.from("chips")
+    .select("id, chatwoot_inbox_id").gt("whatsapp_bloqueio_ate", agoraIso);
+  const chipBloqueado = new Set((chipsBloqueados ?? []).map((c) => Number(c.id)));
+  const inboxBloqueado = new Set((chipsBloqueados ?? []).map((c) => Number(c.chatwoot_inbox_id)).filter((n) => n > 0));
+
+  let enviados = 0, encerrados = 0, gated = 0, semTemplate = 0, falhas = 0, bloqueioWhatsapp = 0;
   const fluxoCache = new Map<number, BlocoFollowup[]>();
   for (const c of convs ?? []) {
     const cart = cartMap.get(c.carteira_id) ?? { credor: null, cobrador_id: null, blocos: [] };
@@ -197,6 +207,12 @@ Deno.serve(async (req) => {
     // gate por cobrador: se a campanha dele estiver desligada ou fora da janela, não reengaja agora
     if (!(cfg.campanha_ativa === true || cfg.campanha_ativa === "true") || !dentroJanela(cfg.janela_envio)) { gated++; continue; }
     const simulacao = cfg.modo_simulacao === true || cfg.modo_simulacao === "true";
+    // Não consome a vez: o reenvio sai quando o bloqueio terminar (ou por outro chip, se a conversa
+    // for reatribuída).
+    if ((c.chip_id && chipBloqueado.has(Number(c.chip_id))) ||
+        (c.chatwoot_inbox_id && inboxBloqueado.has(Number(c.chatwoot_inbox_id)))) {
+      bloqueioWhatsapp++; continue;
+    }
 
     // Com fluxo, quem manda no número de reenvios é o desenho da carteira (3 blocos = 3 reenvios);
     // sem fluxo, continua o teto global.
@@ -256,5 +272,6 @@ Deno.serve(async (req) => {
     enviados++;
   }
   // sem_template = reenvio adiado por falta de modelo aprovado (nao consome a vez)
-  return json({ ok: true, enviados, encerrados, gated, sem_template: semTemplate, falhas });
+  // bloqueio_whatsapp = reenvio adiado porque o chip da conversa esta bloqueado pelo WhatsApp (idem)
+  return json({ ok: true, enviados, encerrados, gated, sem_template: semTemplate, falhas, bloqueio_whatsapp: bloqueioWhatsapp });
 });

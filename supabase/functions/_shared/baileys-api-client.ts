@@ -10,6 +10,7 @@
 // Documentação da API: https://github.com/fazer-ai/baileys-api (README + swagger.json).
 
 import { tempoDigitacao } from "./evolution.ts";
+import { type BloqueioWhatsapp, lerBloqueioWhatsapp } from "./bloqueio-whatsapp.ts";
 
 export type ConfigBaileysApi = { url: string; apiKey: string };
 
@@ -338,4 +339,48 @@ export async function saudeConexaoBaileysApi(
     ultimoEnvioCompletoAgoMs: typeof d.lastSendCompletedAgoMs === "number" ? d.lastSendCompletedAgoMs : null,
     bruto: corpo,
   };
+}
+
+// ── Bloqueio de alcance (reach-out time-lock) ───────────────────────────────────────────
+
+export type ConsultaBloqueioBaileysApi = {
+  ok: boolean;                 // a consulta em si funcionou
+  connected: boolean | null;   // 404 = número não conectado (dado, não falha)
+  bloqueio: BloqueioWhatsapp | null;
+};
+
+/**
+ * `GET /connections/{phoneNumber}/reachout-timelock` — o estado que o WhatsApp dá, na hora, sobre
+ * o bloqueio de iniciar conversa nova (o motivo do erro 463). Ver `bloqueio-whatsapp.ts`.
+ *
+ * Pode ser chamado num número restrito sem piorar nada: a própria doc do baileys-api diz que é
+ * uma consulta MEX só de leitura, sem mensagem nenhuma. Efeito colateral útil: o provedor repassa
+ * o resultado ao Chatwoot, então a cópia em `provider_connection.reachout_time_lock` fica em dia.
+ *
+ * Só responde com o número CONECTADO — caído, o estado conhecido é o da cópia do Chatwoot.
+ */
+export async function consultarBloqueioBaileysApi(
+  cfg: ConfigBaileysApi,
+  numeroChip: string,
+): Promise<ConsultaBloqueioBaileysApi> {
+  let r: Response;
+  try {
+    r = await fetch(`${cfg.url}/connections/${encodeURIComponent(numeroChip)}/reachout-timelock`, {
+      headers: { "x-api-key": cfg.apiKey },
+    });
+  } catch {
+    return { ok: false, connected: null, bloqueio: null };
+  }
+  if (r.status === 404) {
+    await r.body?.cancel();
+    return { ok: true, connected: false, bloqueio: null };
+  }
+  if (!r.ok) {
+    await r.body?.cancel();
+    return { ok: false, connected: null, bloqueio: null };
+  }
+  const corpo = await lerJson(r) as { data?: unknown } | null;
+  const bloqueio = lerBloqueioWhatsapp(corpo?.data);
+  // Resposta 200 sem estado legível: a consulta não disse nada — não inventar "sem bloqueio".
+  return { ok: bloqueio !== null, connected: true, bloqueio };
 }

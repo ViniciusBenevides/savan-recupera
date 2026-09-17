@@ -6,6 +6,7 @@ import {
   abrirConexaoBaileys, buscarInboxPorNome, conexaoBaileys, criarInboxBaileys, nomeDoInbox,
 } from "@/lib/chatwoot";
 import { nomeInstanciaEvolution } from "@/lib/conector";
+import { sincronizarBloqueioChip } from "@/lib/bloqueio-whatsapp-chip";
 
 type Admin = ReturnType<typeof supabaseAdmin>;
 
@@ -164,7 +165,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
   const admin = supabaseAdmin();
   const { data: chip } = await admin
-    .from("chips").select("id, nome, status, conector, instancia_evolution, chatwoot_inbox_id")
+    .from("chips").select("id, nome, status, saude, conector, instancia_evolution, chatwoot_inbox_id, whatsapp_bloqueio_ate")
     .eq("id", chipId).maybeSingle();
   if (!chip) return NextResponse.json({ erro: "Chip não encontrado." }, { status: 404 });
 
@@ -194,6 +195,11 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     if (status !== atualDb) await admin.from("chips").update({ status }).eq("id", chipId);
     if (status !== atualDb && status === "conectado") await fecharFailoverPendente(admin, chipId);
 
+    // Bloqueio de alcance do WhatsApp (16/09/2026). É na volta do QR que o operador precisa saber:
+    // o número conectou, mas se o WhatsApp está proibindo conversa nova, ativar agora só gasta o
+    // chip. Grava já na coluna, sem esperar o `chips-monitor` (até 15 min).
+    const bloqueio = await sincronizarBloqueioChip(admin, { ...chip, status }, c.bloqueio);
+
     return NextResponse.json({
       ok: true,
       estado: c.connection === "open" ? "open" : c.connection,
@@ -201,6 +207,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       qr: c.qr,
       erro_conexao: c.erro,
       inbox_id: inboxId,
+      bloqueio: bloqueio.travado ? { ate: bloqueio.ate, tipo: bloqueio.tipo } : null,
     });
   }
 

@@ -136,10 +136,16 @@ Deno.serve(async (req) => {
   }
   if (!numeroTeste) return json({ ok: false, erro: "numero_teste_ausente", detalhe: "Defina um número de teste na tela de Chips antes de disparar." }, 400);
 
-  const { data: chip } = await sb.from("chips").select("id, nome, chatwoot_inbox_id, status").eq("id", b.chip_id).maybeSingle();
+  const { data: chip } = await sb.from("chips").select("id, nome, chatwoot_inbox_id, status, whatsapp_bloqueio_ate").eq("id", b.chip_id).maybeSingle();
   if (!chip) return json({ ok: false, erro: "chip_nao_encontrado" }, 404);
   if (!chip.chatwoot_inbox_id) return json({ ok: false, erro: "chip_sem_inbox", detalhe: "Este chip ainda não está vinculado ao Chatwoot." }, 400);
   if (!["conectado", "aquecendo", "ativo"].includes(chip.status)) return json({ ok: false, erro: "chip_offline", detalhe: "Este numero nao esta conectado na Meta. Confira as credenciais em Ajustes > Chips." }, 400);
+  // Bloqueio de alcance do WhatsApp (16/09/2026): o teste também é uma conversa que o chip inicia,
+  // e com o bloqueio de pé ele só falha (463) e conta contra o número. Nada a aprender com ele.
+  if (chip.whatsapp_bloqueio_ate && new Date(chip.whatsapp_bloqueio_ate).getTime() > Date.now()) {
+    const ate = new Date(chip.whatsapp_bloqueio_ate).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" });
+    return json({ ok: false, erro: "chip_bloqueado_whatsapp", detalhe: `O WhatsApp bloqueou este número de iniciar conversas novas até ${ate}. O teste fica liberado depois disso.` }, 409);
+  }
 
   // Carteira do teste: a que o painel pedir (para testar o fluxo DELA) ou a carteira interna de
   // teste. A interna nasce com o fluxo-modelo — assim o teste mostra o mesmo texto que uma carteira

@@ -2,6 +2,7 @@ import { assertEquals } from "jsr:@std/assert@1";
 import {
   aguardarAckBaileysApi,
   classificarErroEnvioBaileysApi,
+  consultarBloqueioBaileysApi,
   saudeConexaoBaileysApi,
   variantesE164Br,
 } from "./baileys-api-client.ts";
@@ -156,4 +157,69 @@ Deno.test("aguardarAckBaileysApi: ack antigo (de antes desta espera) NAO conta c
   } finally {
     globalThis.fetch = original;
   }
+});
+
+// Bloqueio de alcance (16/09/2026): o endpoint devolve o estado do WhatsApp em camelCase, com a data
+// ja serializada. 404 e "nao conectado" — dado, nao falha — e nao pode virar "sem bloqueio".
+async function comFetch<T>(resposta: () => Response, fn: (urls: string[]) => Promise<T>): Promise<T> {
+  const original = globalThis.fetch;
+  const urls: string[] = [];
+  globalThis.fetch = ((u: string | URL | Request) => {
+    urls.push(String(u));
+    return Promise.resolve(resposta());
+  }) as typeof fetch;
+  try {
+    return await fn(urls);
+  } finally {
+    globalThis.fetch = original;
+  }
+}
+
+Deno.test("consultarBloqueioBaileysApi le o bloqueio ativo e chama o endpoint certo", async () => {
+  const fim = new Date(Date.now() + 3 * 3600_000).toISOString();
+  await comFetch(
+    () => new Response(JSON.stringify({ data: { isActive: true, enforcementType: "RESTRICT_ALL_COMPANIONS", timeEnforcementEnds: fim } }), { status: 200 }),
+    async (urls) => {
+      const r = await consultarBloqueioBaileysApi({ url: "https://x", apiKey: "k" }, "+5562900000001");
+      assertEquals(urls, ["https://x/connections/%2B5562900000001/reachout-timelock"]);
+      assertEquals(r.ok, true);
+      assertEquals(r.connected, true);
+      assertEquals(r.bloqueio?.ativo, true);
+      assertEquals(r.bloqueio?.ate, fim);
+      assertEquals(r.bloqueio?.tipo, "RESTRICT_ALL_COMPANIONS");
+    },
+  );
+});
+
+Deno.test("consultarBloqueioBaileysApi: liberado e ativo false", async () => {
+  await comFetch(
+    () => new Response(JSON.stringify({ data: { isActive: false, enforcementType: "DEFAULT" } }), { status: 200 }),
+    async () => {
+      const r = await consultarBloqueioBaileysApi({ url: "https://x", apiKey: "k" }, "+5562900000002");
+      assertEquals(r.ok, true);
+      assertEquals(r.bloqueio?.ativo, false);
+    },
+  );
+});
+
+Deno.test("consultarBloqueioBaileysApi: 404 e chip nao conectado, sem opiniao sobre bloqueio", async () => {
+  await comFetch(
+    () => new Response("Phone number not connected", { status: 404 }),
+    async () => {
+      const r = await consultarBloqueioBaileysApi({ url: "https://x", apiKey: "k" }, "+5562900000001");
+      assertEquals(r, { ok: true, connected: false, bloqueio: null });
+    },
+  );
+});
+
+Deno.test("consultarBloqueioBaileysApi: 500 ou corpo ilegivel e consulta que falhou", async () => {
+  await comFetch(() => new Response("boom", { status: 500 }), async () => {
+    const r = await consultarBloqueioBaileysApi({ url: "https://x", apiKey: "k" }, "+5562900000001");
+    assertEquals(r, { ok: false, connected: null, bloqueio: null });
+  });
+  await comFetch(() => new Response(JSON.stringify({ data: null }), { status: 200 }), async () => {
+    const r = await consultarBloqueioBaileysApi({ url: "https://x", apiKey: "k" }, "+5562900000001");
+    assertEquals(r.ok, false);
+    assertEquals(r.bloqueio, null);
+  });
 });

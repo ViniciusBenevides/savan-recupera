@@ -1,7 +1,8 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Card, Button, Badge } from "@/components/ui/primitives";
-import { Loader2, CheckCircle2, AlertTriangle, RotateCw, QrCode, Smartphone, X } from "lucide-react";
+import { Loader2, CheckCircle2, AlertTriangle, RotateCw, QrCode, ShieldAlert, Smartphone, X } from "lucide-react";
+import { mensagemBloqueio } from "@/lib/bloqueio-whatsapp";
 
 // O QR da Evolution roda sozinho a cada poucas dezenas de segundos. Pedimos um novo um pouco antes
 // disso: um QR morto na tela é indistinguível de um QR vivo, e a pessoa fica apontando o celular
@@ -36,6 +37,8 @@ export function ConectarChip({ chipId, nome, onConectado, onFechar }: {
   const [avisoChatwoot, setAvisoChatwoot] = useState<string | null>(null);
   const [inboxId, setInboxId] = useState<number | null>(null);
   const [autoRenovaQr, setAutoRenovaQr] = useState(false);
+  // Bloqueio de alcance do WhatsApp que o servidor viu na volta do QR (canal nativo do Chatwoot).
+  const [bloqueio, setBloqueio] = useState<{ ate: string | null; tipo: string | null } | null>(null);
   const [, redesenhar] = useState(0);
 
   const vivo = useRef(true);
@@ -74,6 +77,7 @@ export function ConectarChip({ chipId, nome, onConectado, onFechar }: {
       // No canal nativo o QR chega por aqui: o baileys-api empurra cada código novo para o
       // Chatwoot e é o polling que os vê. Sem esta linha a tela abriria sem QR nenhum.
       if (d.qr) { setQr(d.qr); idadeQr.current = 0; }
+      setBloqueio(d.bloqueio ?? null);
       if (d.status === "conectado" || d.estado === "open") { setFase("conectado"); aoConectar.current?.(); }
       else if (d.status === "banido") setFase("banido");
     } catch {
@@ -108,8 +112,20 @@ export function ConectarChip({ chipId, nome, onConectado, onFechar }: {
         </span>
         <div>
           <h3 className="font-display text-lg font-700 text-chalk">{nome} conectado!</h3>
-          <p className="mt-1 text-sm text-mist">O número entrou. Ative o chip para ele começar a trabalhar.</p>
+          <p className="mt-1 text-sm text-mist">
+            {bloqueio
+              ? "O número entrou, mas ainda não pode trabalhar."
+              : "O número entrou. Ative o chip para ele começar a trabalhar."}
+          </p>
         </div>
+        {/* Reconectar não tira o bloqueio: é o WhatsApp que decide quando ele acaba. Ativar antes
+            disso só faria o robô tentar de novo — e foi isso que derrubou o Chip 2 em 16/09/2026. */}
+        {bloqueio && (
+          <div className="flex gap-2 rounded-lg border border-rose/30 bg-rose/10 px-3 py-2 text-left text-xs text-rose">
+            <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <span>{mensagemBloqueio(bloqueio.ate)}</span>
+          </div>
+        )}
         {inboxId ? (
           <Badge tone="green"><CheckCircle2 className="h-3 w-3" /> Chatwoot vinculado (inbox {inboxId})</Badge>
         ) : (

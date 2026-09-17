@@ -7,11 +7,31 @@
 import { createClient, SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { carregarSegredos } from "../_shared/lib.ts";
 import { configEvolution, instanciasEvolution } from "../_shared/evolution-client.ts";
-import { configBaileysApi, saudeConexaoBaileysApi } from "../_shared/baileys-api-client.ts";
+import { configBaileysApi, consultarBloqueioBaileysApi, saudeConexaoBaileysApi } from "../_shared/baileys-api-client.ts";
+import { type BloqueioWhatsapp, bloqueioVigente, lerBloqueioWhatsapp, statusComBloqueio } from "../_shared/bloqueio-whatsapp.ts";
 
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, content-type", "Access-Control-Allow-Methods": "POST, OPTIONS" };
 const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { ...cors, "Content-Type": "application/json" } });
 function admin(): SupabaseClient { return createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } }); }
+
+type ConfigChatwoot = { url: string; conta: string | number; token: string };
+
+// Cópia do bloqueio de alcance que o Chatwoot guarda no inbox nativo. É a única memória do
+// bloqueio quando o chip já caiu: o baileys-api só responde com o número conectado, e em 16/09/2026
+// o Chip 2 caía entre 1 e 10 minutos depois do bloqueio — antes de o monitor (15 min) passar.
+// `null` = não deu para ler (Chatwoot fora, inbox sem o campo); não é "sem bloqueio".
+async function bloqueioNoChatwoot(cw: ConfigChatwoot, inboxId: number): Promise<BloqueioWhatsapp | null> {
+  try {
+    const r = await fetch(`${cw.url}/api/v1/accounts/${cw.conta}/inboxes/${inboxId}`, {
+      headers: { api_access_token: cw.token },
+    });
+    if (!r.ok) { await r.body?.cancel(); return null; }
+    const corpo = await r.json().catch(() => null);
+    return lerBloqueioWhatsapp((corpo?.payload ?? corpo)?.provider_connection?.reachout_time_lock);
+  } catch {
+    return null;
+  }
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
@@ -139,9 +159,13 @@ Deno.serve(async (req) => {
   // recuperação desse provedor passa pela tela do Chatwoot, não pelo QR do nosso painel.
   const cfgBai = configBaileysApi(segredos);
   const { data: chipsBaileysChatwoot } = await sb.from("chips")
-    .select("id, nome, status, saude, numero_e164")
+    .select("id, nome, status, saude, numero_e164, chatwoot_inbox_id, whatsapp_bloqueio_ate")
     .eq("conector", "baileys_chatwoot")
     .not("numero_e164", "is", null);
+  const { data: cfgCwRow } = await sb.from("configuracoes").select("valor").eq("chave", "chatwoot").is("cobrador_id", null).maybeSingle();
+  const cfgCw: ConfigChatwoot | null = cfgCwRow?.valor?.url && segredos.CHATWOOT_TOKEN
+    ? { url: String(cfgCwRow.valor.url).replace(/\/+$/, ""), conta: cfgCwRow.valor.account_id ?? 1, token: segredos.CHATWOOT_TOKEN }
+    : null;
 
   if (cfgBai) {
     for (const chip of chipsBaileysChatwoot ?? []) {
@@ -183,6 +207,32 @@ Deno.serve(async (req) => {
         novoStatus = "desconectado";
       }
 
+      // Bloqueio de alcance do WhatsApp (16/09/2026, ver `_shared/bloqueio-whatsapp.ts`). Conectado,
+      // a fonte é o próprio WhatsApp, pela consulta só de leitura do baileys-api; caído, é a cópia
+      // que o Chatwoot guardou. Se nenhuma responder, vale o que já estava gravado — "não sei" não
+      // pode liberar um chip bloqueado.
+      let bloqueio: BloqueioWhatsapp | null = null;
+      let fonteBloqueio: "whatsapp" | "chatwoot" | null = null;
+      if (saudeConsulta.connected) {
+        const ao_vivo = await consultarBloqueioBaileysApi(cfgBai, String(chip.numero_e164));
+        if (ao_vivo.ok && ao_vivo.bloqueio) { bloqueio = ao_vivo.bloqueio; fonteBloqueio = "whatsapp"; }
+      }
+      if (!bloqueio && cfgCw && chip.chatwoot_inbox_id) {
+        bloqueio = await bloqueioNoChatwoot(cfgCw, Number(chip.chatwoot_inbox_id));
+        if (bloqueio) fonteBloqueio = "chatwoot";
+      }
+      const bloqueioAte: string | null = bloqueio ? bloqueio.ate : (chip.whatsapp_bloqueio_ate ?? null);
+      const travado = bloqueioVigente(bloqueioAte);
+      const travadoAntes = saudeAnterior.bloqueio_whatsapp?.ativo === true;
+
+      // Com bloqueio de pé, `ativo`/`aquecendo` viram `pausado` — inclusive a volta automática de
+      // uma queda. O chip segue respondendo quem já conversa; só não aborda ninguém novo. Não há
+      // retomada automática quando o bloqueio sai: voltar a abordar é decisão do operador.
+      const statusSemBloqueio = novoStatus;
+      novoStatus = statusComBloqueio(novoStatus, travado);
+      const pausadoAgoraPeloBloqueio = novoStatus !== statusSemBloqueio;
+      if (pausadoAgoraPeloBloqueio && statusSemBloqueio !== atual) statusAntes = null;
+
       const saude = {
         conector: "baileys_chatwoot",
         connected: saudeConsulta.connected,
@@ -192,18 +242,51 @@ Deno.serve(async (req) => {
         ultimo_envio_completo_ago_ms: saudeConsulta.ultimoEnvioCompletoAgoMs,
         sem_ack_confirmado: semAckConfirmado,
         status_antes: statusAntes,
+        bloqueio_whatsapp: {
+          ativo: travado,
+          ate: travado ? bloqueioAte : null,
+          tipo: bloqueio ? bloqueio.tipo : (saudeAnterior.bloqueio_whatsapp?.tipo ?? null),
+          sem_fim_informado: bloqueio ? bloqueio.semFimInformado : (saudeAnterior.bloqueio_whatsapp?.sem_fim_informado ?? false),
+          fonte: fonteBloqueio ?? saudeAnterior.bloqueio_whatsapp?.fonte ?? null,
+          // Quando o último bloqueio acabou — a tela usa para dizer "terminou, retome quando quiser".
+          terminou_em: travado ? null : (travadoAntes ? new Date().toISOString() : (saudeAnterior.bloqueio_whatsapp?.terminou_em ?? null)),
+        },
+        // O chip está pausado por causa do bloqueio (e não por decisão do operador). Some quando ele
+        // sai de `pausado` por qualquer caminho.
+        pausado_pelo_bloqueio: novoStatus === "pausado" &&
+          (pausadoAgoraPeloBloqueio || (atual === "pausado" && saudeAnterior.pausado_pelo_bloqueio === true)),
         atualizado_em: new Date().toISOString(),
       };
 
-      await sb.from("chips").update({ saude, status: novoStatus }).eq("id", chip.id);
+      await sb.from("chips").update({
+        saude, status: novoStatus, whatsapp_bloqueio_ate: travado ? bloqueioAte : null,
+      }).eq("id", chip.id);
 
       if (novoStatus !== atual) {
         await sb.from("eventos_campanha").insert({
           tipo: "chip_status", chip_id: chip.id,
           payload: {
             status: novoStatus, nome: chip.nome,
-            motivo: novoStatus === "desconectado" ? "queda" : "reconectado",
+            motivo: novoStatus === "desconectado" ? "queda"
+              : pausadoAgoraPeloBloqueio ? "pausado_bloqueio_whatsapp" : "reconectado",
           },
+        });
+      }
+
+      // Evento só na transição do bloqueio, como o resto do arquivo.
+      if (travado && !travadoAntes) {
+        await sb.from("eventos_campanha").insert({
+          tipo: "chip_status", chip_id: chip.id,
+          payload: {
+            status: novoStatus, nome: chip.nome, motivo: "bloqueio_whatsapp",
+            bloqueio_ate: bloqueioAte, bloqueio_tipo: saude.bloqueio_whatsapp.tipo, fonte: fonteBloqueio,
+            detalhe: "o WhatsApp bloqueou o número de iniciar conversas novas; o chip não pode ser ativado até o fim do bloqueio",
+          },
+        });
+      } else if (!travado && travadoAntes) {
+        await sb.from("eventos_campanha").insert({
+          tipo: "chip_status", chip_id: chip.id,
+          payload: { status: novoStatus, nome: chip.nome, motivo: "bloqueio_whatsapp_fim", fonte: fonteBloqueio },
         });
       }
 

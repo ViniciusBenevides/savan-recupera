@@ -5,8 +5,9 @@ import { Card, Badge, Button, Input, Label } from "@/components/ui/primitives";
 import { MaturidadeField, type MaturidadeValor } from "@/components/MaturidadeField";
 import { num } from "@/lib/utils";
 import { ehConectorBaileys } from "@/lib/conector";
+import { bloqueioVigente, descreverTipoBloqueio, formatarFimBloqueio, mensagemBloqueio } from "@/lib/bloqueio-whatsapp";
 import { ConectarChip } from "./conectar-chip";
-import { Play, Pause, Smartphone, MoreVertical, Pencil, Trash2, X, Eye, EyeOff, Loader2, Cloud, Activity, RotateCw, Gauge, PauseCircle, Webhook, QrCode } from "lucide-react";
+import { Play, Pause, Smartphone, MoreVertical, Pencil, Trash2, X, Eye, EyeOff, Loader2, Cloud, Activity, RotateCw, Gauge, PauseCircle, Webhook, QrCode, ShieldAlert } from "lucide-react";
 
 // Semáforo da qualidade do número na Meta (saber se está perto de banir).
 const QUALIDADE: Record<string, { tone: any; label: string }> = {
@@ -142,11 +143,18 @@ export function ChipCard({ chip, metrica, donoNome, ritmoHora }: {
   const escaladorEdit = ePapel === "equipe" && !chip.chatwoot_inbox_id;
 
   function acao(a: string) {
+    setErro("");
     start(async () => {
-      await fetch(`/api/chips/${chip.id}/acao`, {
+      const r = await fetch(`/api/chips/${chip.id}/acao`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ acao: a }),
       });
+      // A recusa mais importante daqui é a do bloqueio do WhatsApp (409) — antes o card engolia
+      // qualquer erro e o operador ficava sem saber por que o chip não ativou.
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}));
+        setErro(d.erro ?? "Falha ao mudar o status do chip.");
+      }
       router.refresh();
     });
   }
@@ -215,9 +223,16 @@ export function ChipCard({ chip, metrica, donoNome, ritmoHora }: {
   // No Baileys, "ativar" um chip que nunca escaneou o QR o coloca na seleção do `campanha-lote` sem
   // sessão nenhuma — todo envio falharia e o chip apanharia por um problema que é de cadastro.
   // Só o número já conectado pode ser ativado. Na Meta o cadastro já é a conexão, então nada muda.
-  const podeAtivar = usaTransporteBaileys
+  const podeAtivarPeloStatus = usaTransporteBaileys
     ? chip.status === "conectado"
     : ["cadastrado", "conectado", "desconectado"].includes(chip.status);
+  // Bloqueio de alcance do WhatsApp (16/09/2026): enquanto ele vale, nem Ativar nem Retomar — o
+  // botão aparece travado, com a data, para o operador não precisar adivinhar. A API e o banco
+  // recusam do mesmo jeito; isto aqui é só para não oferecer o que vai ser recusado.
+  const bloqueado = bloqueioVigente(chip.whatsapp_bloqueio_ate);
+  const podeAtivar = podeAtivarPeloStatus && !bloqueado;
+  const podeRetomar = chip.status === "pausado" && !bloqueado;
+  const mostrarBotaoBloqueado = bloqueado && (podeAtivarPeloStatus || chip.status === "pausado");
   const podePausar = ["ativo", "aquecendo"].includes(chip.status);
   // 'banido' fica de fora: no Baileys um 401 é definitivo e reconectar não resolve (§8 do guia).
   const podeConectar = usaTransporteBaileys && !escalador && ["cadastrado", "desconectado"].includes(chip.status);
@@ -466,6 +481,34 @@ export function ChipCard({ chip, metrica, donoNome, ritmoHora }: {
         </div>
       )}
 
+      {/* Bloqueio de alcance do WhatsApp. Gravado pelo `chips-monitor` e pela tela de conexão a partir
+          do que o WhatsApp informa (reach-out time-lock). Precisa ser vermelho e explícito: em
+          16/09/2026 o Chip 2 foi reconectado três vezes com ele de pé, e cada volta gerou outra
+          abordagem que só piorou a situação do número. */}
+      {!escalador && bloqueado && (
+        <div className="flex items-start gap-2 rounded-lg border border-rose/30 bg-rose/10 px-3 py-2 text-xs text-rose">
+          <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <div className="space-y-1">
+            <p><b>Bloqueado pelo WhatsApp.</b> {mensagemBloqueio(chip.whatsapp_bloqueio_ate)}</p>
+            <p className="text-mist">
+              Reconectar não tira o bloqueio, e cada tentativa de abordagem durante ele conta contra o número.
+              {descreverTipoBloqueio(chip.saude?.bloqueio_whatsapp?.tipo) ? ` O bloqueio ${descreverTipoBloqueio(chip.saude?.bloqueio_whatsapp?.tipo)}.` : ""}
+              {chip.saude?.bloqueio_whatsapp?.sem_fim_informado ? " O WhatsApp não informou o horário de fim; o sistema confere de novo a cada 15 minutos." : ""}
+            </p>
+          </div>
+        </div>
+      )}
+      {!escalador && !bloqueado && chip.status === "pausado" && chip.saude?.pausado_pelo_bloqueio && (
+        <div className="flex items-start gap-2 rounded-lg border border-line bg-ink-850 px-3 py-2 text-xs text-mist">
+          <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <span>
+            O bloqueio do WhatsApp terminou
+            {chip.saude?.bloqueio_whatsapp?.terminou_em ? ` em ${formatarFimBloqueio(chip.saude.bloqueio_whatsapp.terminou_em)}` : ""}.
+            O chip continua pausado até você retomar.
+          </span>
+        </div>
+      )}
+
       {!escalador && !usaTransporteBaileys && (() => {
         const q = QUALIDADE[saude?.quality_rating ?? "UNKNOWN"] ?? QUALIDADE.UNKNOWN;
         const tier = saude?.messaging_limit_tier ?? "TIER_250";
@@ -569,9 +612,15 @@ export function ChipCard({ chip, metrica, donoNome, ritmoHora }: {
               <Pause className="h-4 w-4" /> Pausar
             </Button>
           )}
-          {chip.status === "pausado" && (
+          {podeRetomar && (
             <Button size="sm" className="flex-1" onClick={() => acao("retomar")} disabled={pending}>
               <Play className="h-4 w-4" /> Retomar
+            </Button>
+          )}
+          {mostrarBotaoBloqueado && (
+            <Button size="sm" variant="outline" className="flex-1 border-rose/40 text-rose" disabled
+                    title={mensagemBloqueio(chip.whatsapp_bloqueio_ate)}>
+              <ShieldAlert className="h-4 w-4" /> Bloqueado até {formatarFimBloqueio(chip.whatsapp_bloqueio_ate)}
             </Button>
           )}
           </div>
