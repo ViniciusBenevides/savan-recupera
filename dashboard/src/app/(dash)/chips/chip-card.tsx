@@ -1,13 +1,14 @@
 "use client";
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Card, Badge, Button, Input, Label } from "@/components/ui/primitives";
 import { MaturidadeField, type MaturidadeValor } from "@/components/MaturidadeField";
 import { num } from "@/lib/utils";
 import { ehConectorBaileys } from "@/lib/conector";
 import { bloqueioVigente, descreverTipoBloqueio, formatarFimBloqueio, mensagemBloqueio } from "@/lib/bloqueio-whatsapp";
+import { DIAS_REPOUSO_PADRAO, emRepouso, mensagemRepouso, progressoRepouso, tempoRestante } from "@/lib/repouso";
 import { ConectarChip } from "./conectar-chip";
-import { Play, Pause, Smartphone, MoreVertical, Pencil, Trash2, X, Eye, EyeOff, Loader2, Cloud, Activity, RotateCw, Gauge, PauseCircle, Webhook, QrCode, ShieldAlert } from "lucide-react";
+import { Play, Pause, Smartphone, MoreVertical, Pencil, Trash2, X, Eye, EyeOff, Loader2, Cloud, Activity, RotateCw, Gauge, PauseCircle, Webhook, QrCode, ShieldAlert, Hourglass } from "lucide-react";
 
 // Semáforo da qualidade do número na Meta (saber se está perto de banir).
 const QUALIDADE: Record<string, { tone: any; label: string }> = {
@@ -134,6 +135,15 @@ export function ChipCard({ chip, metrica, donoNome, ritmoHora }: {
     setAtualizandoSaude(false);
   }
 
+  // Relógio do contador de repouso: redesenha a cada minuto só enquanto houver repouso.
+  const [, tique] = useState(0);
+  const temRepouso = emRepouso(chip.repouso_ate);
+  useEffect(() => {
+    if (!temRepouso) return;
+    const t = setInterval(() => tique((n) => n + 1), 60_000);
+    return () => clearInterval(t);
+  }, [temRepouso]);
+
   const st = STATUS[chip.status] ?? STATUS.cadastrado;
   const dia = diaAquecimento(chip.data_ativacao);
   const enviados = metrica?.novos_contatos ?? 0;
@@ -142,12 +152,12 @@ export function ChipCard({ chip, metrica, donoNome, ritmoHora }: {
   const escalador = (chip.papel ?? "bot") === "equipe" && !!chip.numero_e164 && !chip.chatwoot_inbox_id;
   const escaladorEdit = ePapel === "equipe" && !chip.chatwoot_inbox_id;
 
-  function acao(a: string) {
-    setErro("");
+  function acao(a: string, extra: Record<string, unknown> = {}) {
+    setErro(""); setMenu(false);
     start(async () => {
       const r = await fetch(`/api/chips/${chip.id}/acao`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ acao: a }),
+        body: JSON.stringify({ acao: a, ...extra }),
       });
       // A recusa mais importante daqui é a do bloqueio do WhatsApp (409) — antes o card engolia
       // qualquer erro e o operador ficava sem saber por que o chip não ativou.
@@ -230,9 +240,12 @@ export function ChipCard({ chip, metrica, donoNome, ritmoHora }: {
   // botão aparece travado, com a data, para o operador não precisar adivinhar. A API e o banco
   // recusam do mesmo jeito; isto aqui é só para não oferecer o que vai ser recusado.
   const bloqueado = bloqueioVigente(chip.whatsapp_bloqueio_ate);
-  const podeAtivar = podeAtivarPeloStatus && !bloqueado;
-  const podeRetomar = chip.status === "pausado" && !bloqueado;
+  // Repouso escolhido pelo operador (§43): mesma trava, com contador. Encerrar é pelo menu.
+  const repousando = emRepouso(chip.repouso_ate);
+  const podeAtivar = podeAtivarPeloStatus && !bloqueado && !repousando;
+  const podeRetomar = chip.status === "pausado" && !bloqueado && !repousando;
   const mostrarBotaoBloqueado = bloqueado && (podeAtivarPeloStatus || chip.status === "pausado");
+  const mostrarBotaoRepouso = !bloqueado && repousando && (podeAtivarPeloStatus || chip.status === "pausado");
   const podePausar = ["ativo", "aquecendo"].includes(chip.status);
   // 'banido' fica de fora: no Baileys um 401 é definitivo e reconectar não resolve (§8 do guia).
   const podeConectar = usaTransporteBaileys && !escalador && ["cadastrado", "desconectado"].includes(chip.status);
@@ -406,11 +419,22 @@ export function ChipCard({ chip, metrica, donoNome, ritmoHora }: {
             {menu && (
               <>
                 <div className="fixed inset-0 z-10" onClick={() => setMenu(false)} />
-                <div className="absolute right-0 top-8 z-20 w-36 overflow-hidden rounded-xl border border-line bg-ink-900 py-1 shadow-xl">
+                <div className="absolute right-0 top-8 z-20 w-48 overflow-hidden rounded-xl border border-line bg-ink-900 py-1 shadow-xl">
                   <button onClick={abrirEdicao}
                           className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-chalk hover:bg-ink-800">
                     <Pencil className="h-3.5 w-3.5" /> Editar
                   </button>
+                  {!escalador && (repousando ? (
+                    <button onClick={() => acao("encerrar_repouso")} disabled={pending}
+                            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-chalk hover:bg-ink-800">
+                      <Hourglass className="h-3.5 w-3.5" /> Encerrar repouso
+                    </button>
+                  ) : (
+                    <button onClick={() => acao("repousar", { dias: DIAS_REPOUSO_PADRAO })} disabled={pending}
+                            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-chalk hover:bg-ink-800">
+                      <Hourglass className="h-3.5 w-3.5" /> Repouso de {DIAS_REPOUSO_PADRAO} dias
+                    </button>
+                  ))}
                   <button onClick={() => { setMenu(false); setConfirmando(true); }}
                           className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-rose hover:bg-rose/10">
                     <Trash2 className="h-3.5 w-3.5" /> Excluir
@@ -506,6 +530,27 @@ export function ChipCard({ chip, metrica, donoNome, ritmoHora }: {
             {chip.saude?.bloqueio_whatsapp?.terminou_em ? ` em ${formatarFimBloqueio(chip.saude.bloqueio_whatsapp.terminou_em)}` : ""}.
             O chip continua pausado até você retomar.
           </span>
+        </div>
+      )}
+
+      {/* Repouso escolhido pelo operador (§43): contador até o fim. O chip continua respondendo
+          quem já conversa; só não aborda ninguém, nem por reenvio nem por teste. */}
+      {!escalador && repousando && (
+        <div className="space-y-2 rounded-xl border border-blue/30 bg-blue/10 px-3 py-3">
+          <div className="flex items-center justify-between gap-2 text-xs">
+            <span className="inline-flex items-center gap-1.5 text-blue">
+              <Hourglass className="h-3.5 w-3.5" /> Em repouso
+            </span>
+            <span className="font-mono font-600 text-chalk tabnums">faltam {tempoRestante(chip.repouso_ate)}</span>
+          </div>
+          <div className="h-1.5 overflow-hidden rounded-full bg-ink-800">
+            <div className="h-full rounded-full bg-blue transition-[width] duration-1000"
+                 style={{ width: `${Math.round(progressoRepouso(chip.repouso_desde, chip.repouso_ate) * 100)}%` }} />
+          </div>
+          <p className="text-[11px] text-mist">
+            Sem abordagem até <b className="text-chalk">{formatarFimBloqueio(chip.repouso_ate)}</b>. Conversas em
+            andamento continuam sendo respondidas.{chip.repouso_motivo ? ` ${chip.repouso_motivo}` : ""}
+          </p>
         </div>
       )}
 
@@ -615,6 +660,12 @@ export function ChipCard({ chip, metrica, donoNome, ritmoHora }: {
           {podeRetomar && (
             <Button size="sm" className="flex-1" onClick={() => acao("retomar")} disabled={pending}>
               <Play className="h-4 w-4" /> Retomar
+            </Button>
+          )}
+          {mostrarBotaoRepouso && (
+            <Button size="sm" variant="outline" className="flex-1 border-blue/40 text-blue" disabled
+                    title={mensagemRepouso(chip.repouso_ate)}>
+              <Hourglass className="h-4 w-4" /> Em repouso até {formatarFimBloqueio(chip.repouso_ate)}
             </Button>
           )}
           {mostrarBotaoBloqueado && (

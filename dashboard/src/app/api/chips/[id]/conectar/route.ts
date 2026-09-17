@@ -165,7 +165,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
   const admin = supabaseAdmin();
   const { data: chip } = await admin
-    .from("chips").select("id, nome, status, saude, conector, instancia_evolution, chatwoot_inbox_id, whatsapp_bloqueio_ate")
+    .from("chips").select("id, nome, status, saude, conector, instancia_evolution, chatwoot_inbox_id, whatsapp_bloqueio_ate, repouso_ate")
     .eq("id", chipId).maybeSingle();
   if (!chip) return NextResponse.json({ erro: "Chip não encontrado." }, { status: 404 });
 
@@ -208,6 +208,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       erro_conexao: c.erro,
       inbox_id: inboxId,
       bloqueio: bloqueio.travado ? { ate: bloqueio.ate, tipo: bloqueio.tipo } : null,
+      repouso_ate: chip.repouso_ate ?? null,
     });
   }
 
@@ -246,5 +247,5 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     admin, chipId, chip.nome as string, chip.chatwoot_inbox_id as number | null,
   );
 
-  return NextResponse.json({ ok: true, estado: r.estado, status, inbox_id: inboxId });
+  return NextResponse.json({ ok: true, estado: r.estado, status, inbox_id: inboxId, repouso_ate: chip.repouso_ate ?? null });
 }

@@ -194,8 +194,10 @@ Deno.serve(async (req) => {
   // com 463 e conta mais uma tentativa contra o número. A conversa é reconhecida pelo chip dela e
   // pelo inbox onde a conversa do Chatwoot mora (é por ele que a mensagem sai).
   const agoraIso = new Date().toISOString();
+  // O repouso escolhido pelo operador (§43) segura do mesmo jeito: é justamente "nenhum alcance".
   const { data: chipsBloqueados } = await sb.from("chips")
-    .select("id, chatwoot_inbox_id").gt("whatsapp_bloqueio_ate", agoraIso);
+    .select("id, chatwoot_inbox_id")
+    .or(`whatsapp_bloqueio_ate.gt.${agoraIso},repouso_ate.gt.${agoraIso}`);
   const chipBloqueado = new Set((chipsBloqueados ?? []).map((c) => Number(c.id)));
   const inboxBloqueado = new Set((chipsBloqueados ?? []).map((c) => Number(c.chatwoot_inbox_id)).filter((n) => n > 0));
 
@@ -272,6 +274,6 @@ Deno.serve(async (req) => {
     enviados++;
   }
   // sem_template = reenvio adiado por falta de modelo aprovado (nao consome a vez)
-  // bloqueio_whatsapp = reenvio adiado porque o chip da conversa esta bloqueado pelo WhatsApp (idem)
+  // bloqueio_whatsapp = reenvio adiado porque o chip da conversa esta bloqueado pelo WhatsApp ou em repouso (idem)
   return json({ ok: true, enviados, encerrados, gated, sem_template: semTemplate, falhas, bloqueio_whatsapp: bloqueioWhatsapp });
 });

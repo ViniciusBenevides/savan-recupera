@@ -64,7 +64,7 @@ Deno.serve(async (req) => {
   const segredos = await carregarSegredos(sb);
   const cfgEvo = configEvolution(segredos);
   const { data: chipsBaileys } = await sb.from("chips")
-    .select("id, nome, status, saude, instancia_evolution")
+    .select("id, nome, status, saude, instancia_evolution, repouso_ate")
     .eq("conector", "baileys")
     .not("instancia_evolution", "is", null);
 
@@ -97,7 +97,8 @@ Deno.serve(async (req) => {
           // Voltou. Só devolve ao ar quem o operador tinha armado antes de cair — nunca arma
           // sozinho um chip que o operador nunca colocou para abordar (aquecimento é decisão dele).
           if (atual === "desconectado" && ["ativo", "aquecendo"].includes(String(statusAntes))) {
-            novoStatus = String(statusAntes);
+            // Em repouso escolhido pelo operador (§43), volta pausado — o banco recusaria o resto.
+            novoStatus = statusComBloqueio(String(statusAntes), bloqueioVigente(chip.repouso_ate));
             statusAntes = null;
           }
         } else if (revogada || inst.estado === "close") {
@@ -159,7 +160,7 @@ Deno.serve(async (req) => {
   // recuperação desse provedor passa pela tela do Chatwoot, não pelo QR do nosso painel.
   const cfgBai = configBaileysApi(segredos);
   const { data: chipsBaileysChatwoot } = await sb.from("chips")
-    .select("id, nome, status, saude, numero_e164, chatwoot_inbox_id, whatsapp_bloqueio_ate")
+    .select("id, nome, status, saude, numero_e164, chatwoot_inbox_id, whatsapp_bloqueio_ate, repouso_ate")
     .eq("conector", "baileys_chatwoot")
     .not("numero_e164", "is", null);
   const { data: cfgCwRow } = await sb.from("configuracoes").select("valor").eq("chave", "chatwoot").is("cobrador_id", null).maybeSingle();
@@ -228,10 +229,13 @@ Deno.serve(async (req) => {
       // Com bloqueio de pé, `ativo`/`aquecendo` viram `pausado` — inclusive a volta automática de
       // uma queda. O chip segue respondendo quem já conversa; só não aborda ninguém novo. Não há
       // retomada automática quando o bloqueio sai: voltar a abordar é decisão do operador.
+      // O repouso escolhido pelo operador (`repouso_ate`) segura do mesmo jeito.
+      const emRepouso = bloqueioVigente(chip.repouso_ate);
       const statusSemBloqueio = novoStatus;
-      novoStatus = statusComBloqueio(novoStatus, travado);
-      const pausadoAgoraPeloBloqueio = novoStatus !== statusSemBloqueio;
-      if (pausadoAgoraPeloBloqueio && statusSemBloqueio !== atual) statusAntes = null;
+      novoStatus = statusComBloqueio(novoStatus, travado || emRepouso);
+      const pausadoAgora = novoStatus !== statusSemBloqueio;
+      const pausadoAgoraPeloBloqueio = pausadoAgora && travado;
+      if (pausadoAgora && statusSemBloqueio !== atual) statusAntes = null;
 
       const saude = {
         conector: "baileys_chatwoot",
@@ -268,7 +272,8 @@ Deno.serve(async (req) => {
           payload: {
             status: novoStatus, nome: chip.nome,
             motivo: novoStatus === "desconectado" ? "queda"
-              : pausadoAgoraPeloBloqueio ? "pausado_bloqueio_whatsapp" : "reconectado",
+              : pausadoAgoraPeloBloqueio ? "pausado_bloqueio_whatsapp"
+              : pausadoAgora ? "pausado_repouso" : "reconectado",
           },
         });
       }

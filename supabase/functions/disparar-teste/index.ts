@@ -136,7 +136,7 @@ Deno.serve(async (req) => {
   }
   if (!numeroTeste) return json({ ok: false, erro: "numero_teste_ausente", detalhe: "Defina um número de teste na tela de Chips antes de disparar." }, 400);
 
-  const { data: chip } = await sb.from("chips").select("id, nome, chatwoot_inbox_id, status, whatsapp_bloqueio_ate").eq("id", b.chip_id).maybeSingle();
+  const { data: chip } = await sb.from("chips").select("id, nome, chatwoot_inbox_id, status, whatsapp_bloqueio_ate, repouso_ate").eq("id", b.chip_id).maybeSingle();
   if (!chip) return json({ ok: false, erro: "chip_nao_encontrado" }, 404);
   if (!chip.chatwoot_inbox_id) return json({ ok: false, erro: "chip_sem_inbox", detalhe: "Este chip ainda não está vinculado ao Chatwoot." }, 400);
   if (!["conectado", "aquecendo", "ativo"].includes(chip.status)) return json({ ok: false, erro: "chip_offline", detalhe: "Este numero nao esta conectado na Meta. Confira as credenciais em Ajustes > Chips." }, 400);
@@ -145,6 +145,11 @@ Deno.serve(async (req) => {
   if (chip.whatsapp_bloqueio_ate && new Date(chip.whatsapp_bloqueio_ate).getTime() > Date.now()) {
     const ate = new Date(chip.whatsapp_bloqueio_ate).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" });
     return json({ ok: false, erro: "chip_bloqueado_whatsapp", detalhe: `O WhatsApp bloqueou este número de iniciar conversas novas até ${ate}. O teste fica liberado depois disso.` }, 409);
+  }
+  // Repouso escolhido pelo operador (§43): o chip não inicia conversa nenhuma, nem de teste.
+  if (chip.repouso_ate && new Date(chip.repouso_ate).getTime() > Date.now()) {
+    const ate = new Date(chip.repouso_ate).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" });
+    return json({ ok: false, erro: "chip_em_repouso", detalhe: `Este chip está em repouso até ${ate}. Encerre o repouso no painel para testar antes disso.` }, 409);
   }
 
   // Carteira do teste: a que o painel pedir (para testar o fluxo DELA) ou a carteira interna de

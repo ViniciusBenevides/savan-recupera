@@ -2158,3 +2158,20 @@ ADR-0004 (aquecimento continua sendo conselho): aqui quem trava é o WhatsApp, n
 Fica de fora: o canal Evolution (`conector = 'baileys'`) não tem leitura de bloqueio — não há chip
 nele hoje. E o `campanha-lote` não consulta o bloqueio antes de cada envio: a janela entre o bloqueio
 nascer e o monitor ver é de até 15 min, menor que o ritmo de ~1 abordagem/hora por chip.
+
+### Repouso do chip (17/09/2026, mesma sessão)
+
+Com o bloqueio já encerrado, o dono decidiu deixar o Chip 2 **14 dias sem abordar**, com contador no
+painel. O bloqueio do WhatsApp não serve para isso (o monitor o apaga quando o WhatsApp libera), então
+o repouso é uma trava própria, escolhida pelo operador:
+
+- Migration `20260917150000`: `chips.repouso_desde`, `repouso_ate`, `repouso_motivo`; o mesmo gatilho
+  passa a recusar ativar com `repouso_ate` no futuro (`chip_em_repouso`).
+- Painel: menu do chip → "Repouso de 14 dias" / "Encerrar repouso"; card com contador e barra;
+  Ativar/Retomar viram "Em repouso até dd/mm". Rota `/api/chips/[id]/acao` com `repousar` e
+  `encerrar_repouso`.
+- `chips-monitor` (os dois canais Baileys) não devolve ao ar um chip em repouso; `campanha-followup` e
+  `disparar-teste` também não saem por ele.
+
+Chip 2 em repouso de 17/09 12:36 a **01/10 12:36**. Ao aplicar, ele estava `aquecendo` (foi ativado
+depois de o bloqueio acabar) e foi para `pausado` — nenhuma abordagem tinha saído.
