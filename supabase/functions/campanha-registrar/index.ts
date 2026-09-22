@@ -5,6 +5,7 @@
 // SEGURANÇA (auditoria 2026-06-26): A1 — só o service_role (n8n) pode chamar; anon key recusada (401).
 import { createClient, SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { carregarSegredos } from "../_shared/lib.ts";
+import { retomadaAposSemWhatsapp } from "../_shared/retomada-sem-whatsapp.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -239,6 +240,42 @@ Deno.serve(async (req) => {
       await sb.from("fila_envios").insert({ devedor_id: b.devedor_id, telefone_id: proximo.id, carteira_id: carteiraId, prioridade: b.prioridade ?? 0, status: "aguardando", simulacao: sim });
     } else {
       await sb.from("devedores").update({ status_cobranca: "sem_whatsapp" }).eq("id", b.devedor_id);
+    }
+
+    // ── Número sem WhatsApp devolve a vaga do chip ────────────────────────────────────────────
+    // O `campanha-lote` já reservou a próxima hora do chip antes de o `contato-criar` descobrir
+    // que o número não existe. Nada saiu para ninguém, então a reserva inteira era desperdício: em
+    // 22/09 dois números mortos seguidos deixaram o chip 1 três horas calado. Regras (5–10 min,
+    // teto por hora, só encurta) em `_shared/retomada-sem-whatsapp.ts`.
+    //
+    // Só o "não existe" do `on_whatsapp` entra: é o único `sem_whatsapp` em que é CERTO que nada foi
+    // enviado. O W01 não manda `chip_id` neste caminho, então o chip vem da linha da fila.
+    // Best-effort: se falhar, o registro acima não pode cair junto — o chip só espera a hora cheia.
+    if ((b.erro ?? "on_whatsapp_false") === "on_whatsapp_false" && b.fila_id) {
+      try {
+        const { data: linhaFila } = await sb.from("fila_envios").select("chip_id").eq("id", b.fila_id).maybeSingle();
+        const chipId = linhaFila?.chip_id ?? null;
+        if (chipId) {
+          const agoraMs = Date.now();
+          const [{ data: chipAtual }, { count: semWhatsappNaHora }] = await Promise.all([
+            sb.from("chips").select("proximo_disparo_em").eq("id", chipId).maybeSingle(),
+            sb.from("fila_envios").select("id", { count: "exact", head: true })
+              .eq("chip_id", chipId).eq("status", "sem_whatsapp").eq("erro", "on_whatsapp_false")
+              .gte("processando_desde", new Date(agoraMs - 3600_000).toISOString()),
+          ]);
+          const novo = retomadaAposSemWhatsapp({
+            proximoDisparoEm: chipAtual?.proximo_disparo_em ?? null,
+            agoraMs,
+            semWhatsappNaHora: semWhatsappNaHora ?? NaN,
+          });
+          // `.gt` torna o "só encurta" atômico: se outra execução já mexeu na reserva, não piora.
+          if (novo) {
+            await sb.from("chips").update({ proximo_disparo_em: novo }).eq("id", chipId).gt("proximo_disparo_em", novo);
+          }
+        }
+      } catch (e) {
+        console.error("campanha-registrar: falha ao devolver a vaga do chip:", e instanceof Error ? e.message : String(e));
+      }
     }
   } else {
     // ── Falha nossa NAO mata a pessoa na fila ────────────────────────────────────────────────

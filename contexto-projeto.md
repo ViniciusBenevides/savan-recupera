@@ -2206,3 +2206,26 @@ Prova em produção: `contato-criar` com um número inexistente (faixa fictícia
 
 Telefones já abordados antes de hoje não são reperguntados de uma vez — ganham a resposta quando
 voltarem a passar pelo `contato-criar`.
+
+## 45. Número sem WhatsApp não gasta mais a hora do chip (22/09/2026)
+
+Sintoma relatado pelo dono: a última mensagem do chip 1 era de 3h atrás. O chip estava saudável
+(conectado, sem bloqueio, sem repouso) e o disparador rodando no ritmo de 1/h — só que as tentativas
+das 14:42 e das 15:53 caíram em números sem WhatsApp. Depois do §44 isso é detectado antes do envio,
+e nada sai; mas o `campanha-lote` já tinha reservado a próxima hora do chip
+(`chips.proximo_disparo_em`) antes de o `contato-criar` perguntar. Resultado: 13:37 → 16:56 sem
+nenhuma mensagem. Na carteira de hoje, 3 das 5 primeiras tentativas depois do §44 foram assim.
+
+Correção (dono autorizou, 22/09): no `campanha-registrar`, ramo `sem_whatsapp` com
+`erro = on_whatsapp_false` (o único em que é certo que nada foi enviado), a reserva do chip é
+encurtada para 5–10 min sorteados. Regras em `_shared/retomada-sem-whatsapp.ts`:
+
+- continua uma consulta por devedor, na hora da primeira mensagem — a espera sorteada impede a
+  retomada de virar varredura;
+- no máximo 3 retomadas por chip numa hora (contadas em `fila_envios`); da 4ª em diante o chip volta
+  ao ritmo normal, porque sondagem de USync em sequência é sinal de robô (guia do Baileys, §8);
+- só encurta, nunca estica (`.gt` no update): chip de ritmo rápido não muda;
+- melhor esforço — se falhar, o registro do `sem_whatsapp` e o failover seguem, e o chip só espera
+  a hora cheia como antes.
+
+O W01 não mudou. Testes: 7 novos em `retomada-sem-whatsapp.test.ts` (164 no total).
