@@ -3,6 +3,7 @@
 import { createClient, SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { conectorDoChip } from "../_shared/conector.ts";
 import { variantesE164Br } from "../_shared/baileys-api-client.ts";
+import { resolverNumeroWhatsapp } from "../_shared/numero-whatsapp.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -55,7 +56,7 @@ Deno.serve(async (req) => {
   if (!inbox_id) return json({ ok: false, erro: "inbox_id_ausente" }, 400);
 
   const { data: chipRow } = await sb.from("chips")
-    .select("cobrador_id, conector")
+    .select("cobrador_id, conector, numero_e164")
     .eq("chatwoot_inbox_id", inbox_id)
     .maybeSingle();
   if (!chipRow) return json({ ok: false, erro: "inbox_nao_vinculada_a_chip" }, 400);
@@ -71,33 +72,35 @@ Deno.serve(async (req) => {
     if (val === true || val === "true") return json({ ok: true, exists: true, conversation_id: null, contact_id: null, simulado: true });
   }
 
-  // A SONDAGEM `on_whatsapp` FOI REMOVIDA (Fatia 2, decisão do Q17). Dois motivos:
+  // ── Qual forma do número o WhatsApp conhece: UMA pergunta por telefone (18/09/2026) ────────
   //
-  // 1. RISCO. Sondar milhares de números desconhecidos é padrão de robô — o §31 lista isso como
-  //    causa de restrição dos chips, e a documentação do Baileys avisa que consultas USync
-  //    agressivas são limitadas (`onWhatsApp` roda sobre USync).
-  // 2. BENEFÍCIO PEQUENO. No histórico real, 32 de 2.555 telefones (1,25%) eram `sem_whatsapp`.
-  //    A 2 mensagens/hora, isso é meio dia de fila desperdiçada ao longo de um ano inteiro.
+  // A sondagem em massa continua fora (Q17): varrer milhares de números desconhecidos é padrão de
+  // robô (§31) e o USync por trás do `onWhatsApp` é limitado. O que entra aqui é outra coisa —
+  // UMA consulta por telefone, só agora, na primeira abordagem, no ritmo do disparador (o mesmo
+  // que o app faz quando alguém digita um número novo), com a resposta gravada em
+  // `telefones_devedor.whatsapp_e164` para nunca mais perguntar.
   //
-  // O que substitui: o envio acontece e, se falhar, `classificarErroEnvio` (_shared/evolution.ts)
-  // diz se foi mesmo número inexistente. Invalidez passa a ser conclusão de um envio real, nunca
-  // de uma sondagem — e essa função classificadora falha FECHADA, que é a lição do §36, onde um
-  // `HTTP 200` com corpo `null` virou "não existe" e descartou 10 itens da fila.
-  // ── O contato nasce no MESMO número para o qual a mensagem vai sair ──────────────────────
+  // O que isso resolve: até aqui o 9º dígito era decidido no chute (`variantesE164Br`, "sem o 9
+  // primeiro"), e o sistema não sabia se o número existia. O WhatsApp devolve o JID canônico da
+  // conta, então o contato do Chatwoot nasce no número que entrega e a resposta do devedor volta
+  // para o MESMO contato — sem a segunda ficha que aparecia quando o chute errava.
   //
-  // No `baileys_chatwoot` o envio não vai para o número como está cadastrado: a `enviar-mensagem`
-  // resolve a ambiguidade do 9º dígito com `variantesE164Br` e manda para a forma canônica (sem o
-  // 9 nos celulares BR de 9 dígitos) — a única que entrega neste transporte (33/50 contra 0/14,
-  // medido em 09/09/2026). Criar o contato no número cadastrado e enviar para outro fazia o
-  // Chatwoot abrir um SEGUNDO contato, sem nome, quando o baileys-api espelhava a mensagem: duas
-  // fichas por pessoa, e o ponteiro da conversa local pulando de uma para outra a cada webhook.
+  // "Não existe" sai daqui como `exists: false`, e o W01 já leva para "Registrar sem WA" (marca o
+  // telefone e passa para o próximo do devedor) — sem criar contato nem conversa-casca. A leitura
+  // falha FECHADA (lição do §36): resposta estranha ou erro é "indeterminado", e aí segue como
+  // antes, com `variantesE164Br`.
   //
-  // Só o transporte novo precisa disso. A Evolution concilia o 9º dígito sozinha
-  // (`mergeBrazilContacts`) e a Meta Cloud usa o número como registrado — nos dois, canônico é o
-  // próprio número, e nada muda.
-  const jidE164 = conectorDoChip(chipRow ?? {}) === "baileys_chatwoot"
-    ? variantesE164Br(telefone_e164)[0]
-    : telefone_e164;
+  // Só o `baileys_chatwoot` precisa disso. A Evolution concilia o 9º dígito sozinha
+  // (`mergeBrazilContacts`) e a Meta Cloud usa o número como registrado.
+  let jidE164 = telefone_e164;
+  if (conectorDoChip(chipRow ?? {}) === "baileys_chatwoot") {
+    const consulta = await resolverNumeroWhatsapp(sb, seg, chipRow ?? {}, { id: body.telefone_id ?? null, e164: telefone_e164 });
+    if (consulta.status === "nao_existe") {
+      return json({ ok: true, exists: false, conversation_id: null, contact_id: null, motivo: "on_whatsapp_false" });
+    }
+    jidE164 = consulta.status === "existe" ? consulta.e164 : variantesE164Br(telefone_e164)[0];
+    if (consulta.status === "indeterminado") console.warn("contato-criar: consulta de número indeterminada", { detalhe: consulta.detalhe });
+  }
 
   // busca contato. Procura SÓ a forma canônica: achar o contato da forma não-canônica e reusá-lo
   // recriaria a divisão, porque o envio continuaria indo para a canônica.

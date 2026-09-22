@@ -66,6 +66,91 @@ export function variantesE164Br(e164: string): string[] {
   return [original];
 }
 
+// ── Qual forma do número o WhatsApp conhece ─────────────────────────────────────────────
+//
+// Resolve a ambiguidade do 9º dígito PERGUNTANDO, em vez de adivinhar pela ordem de
+// `variantesE164Br`. Uma chamada ao `on-whatsapp` com as duas variantes de uma vez: o WhatsApp
+// devolve só o JID canônico da conta (as duas perguntas colapsam numa resposta) e omite o que
+// não existe. Conferido ao vivo em 18/09/2026: `+5562982624557` e `+556282624557` voltaram como
+// uma entrada só, `556282624557@s.whatsapp.net`, `exists: true` — a forma SEM o 9, a mesma que
+// a medição de 09/09 apontou como a única que entrega.
+//
+// Isto NÃO é a sondagem que o Q17 removeu: aquela varria a base; esta é UMA consulta por
+// telefone, só na hora da primeira mensagem, no ritmo da abordagem — o mesmo que o app do
+// WhatsApp faz quando alguém digita um número novo. O resultado fica gravado em
+// `telefones_devedor` e o número nunca mais é perguntado.
+
+export type ConsultaNumeroWhatsapp =
+  | { status: "existe"; e164: string }
+  | { status: "nao_existe" }
+  | { status: "indeterminado"; detalhe: string };
+
+/** As variantes a perguntar, já como JID. Fora do padrão brasileiro, só o próprio número. */
+export function jidsParaConsulta(e164: string): string[] {
+  return [...new Set(variantesE164Br(e164).map((v) => `${String(v).replace(/\D/g, "")}@s.whatsapp.net`))];
+}
+
+/**
+ * Lê a resposta do `on-whatsapp`. Falha FECHADA para "não existe" (lição do §36: um `HTTP 200`
+ * com corpo `null` já virou "número inexistente" e descartou fila boa):
+ *
+ * - "existe" só com uma entrada `exists: true` e JID legível;
+ * - "nao_existe" só com HTTP 200 e uma LISTA de verdade sem nenhuma entrada existente — o
+ *   provedor (Baileys `onWhatsApp`) omite quem não tem WhatsApp;
+ * - qualquer outra coisa (corpo nulo, formato inesperado, erro HTTP) é "indeterminado", e quem
+ *   chama segue como antes, sem gravar nada.
+ */
+export function interpretarOnWhatsapp(
+  httpStatus: number,
+  corpo: unknown,
+  e164Original: string,
+): ConsultaNumeroWhatsapp {
+  if (httpStatus !== 200) return { status: "indeterminado", detalhe: `http_${httpStatus}` };
+  const lista = Array.isArray(corpo)
+    ? corpo
+    : Array.isArray((corpo as { data?: unknown } | null)?.data)
+    ? (corpo as { data: unknown[] }).data
+    : null;
+  if (!lista) return { status: "indeterminado", detalhe: "corpo_sem_lista" };
+
+  const existentes = lista
+    .filter((x) => (x as { exists?: unknown })?.exists === true)
+    .map((x) => String((x as { jid?: unknown }).jid ?? ""))
+    .filter((jid) => jid.endsWith("@s.whatsapp.net"))
+    .map((jid) => jid.split("@")[0].split(":")[0].replace(/\D/g, ""))
+    .filter(Boolean);
+
+  if (existentes.length) {
+    // Duas contas distintas (com e sem o 9 sendo pessoas diferentes) é raro, mas possível: aí
+    // vale o número exatamente como foi cadastrado, se ele for um dos dois.
+    const original = String(e164Original).replace(/\D/g, "");
+    const escolhido = existentes.includes(original) ? original : existentes[0];
+    return { status: "existe", e164: `+${escolhido}` };
+  }
+  if (lista.every((x) => (x as { exists?: unknown })?.exists !== true)) return { status: "nao_existe" };
+  return { status: "indeterminado", detalhe: "existe_sem_jid_legivel" };
+}
+
+/** `POST /connections/{chip}/on-whatsapp` com as variantes do número. Uma chamada, um USync. */
+export async function consultarNumeroBaileysApi(
+  cfg: ConfigBaileysApi,
+  numeroChip: string,
+  e164: string,
+): Promise<ConsultaNumeroWhatsapp> {
+  let r: Response;
+  try {
+    r = await fetch(`${cfg.url}/connections/${encodeURIComponent(numeroChip)}/on-whatsapp`, {
+      method: "POST",
+      headers: { "x-api-key": cfg.apiKey, "Content-Type": "application/json" },
+      body: JSON.stringify({ jids: jidsParaConsulta(e164) }),
+      signal: AbortSignal.timeout(20_000),
+    });
+  } catch (e) {
+    return { status: "indeterminado", detalhe: `rede: ${e instanceof Error ? e.message : String(e)}`.slice(0, 200) };
+  }
+  return interpretarOnWhatsapp(r.status, await lerJson(r), e164);
+}
+
 /**
  * Espera até `tentativas * intervaloMs` por um ack NOVO (posterior ao momento em que esta função
  * foi chamada) em `/connections/{numeroChip}/health`.

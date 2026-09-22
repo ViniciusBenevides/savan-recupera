@@ -3,9 +3,13 @@ import {
   aguardarAckBaileysApi,
   classificarErroEnvioBaileysApi,
   consultarBloqueioBaileysApi,
+  consultarNumeroBaileysApi,
+  interpretarOnWhatsapp,
+  jidsParaConsulta,
   saudeConexaoBaileysApi,
   variantesE164Br,
 } from "./baileys-api-client.ts";
+import { formasGravadas } from "./numero-whatsapp.ts";
 
 // A doc oficial do baileys-api (fazer-ai) é explícita sobre dois pontos que estes testes travam:
 //
@@ -222,4 +226,88 @@ Deno.test("consultarBloqueioBaileysApi: 500 ou corpo ilegivel e consulta que fal
     assertEquals(r.ok, false);
     assertEquals(r.bloqueio, null);
   });
+});
+
+
+// ── on-whatsapp: qual forma do número o WhatsApp conhece ─────────────────────────────────
+// Resposta real de 18/09/2026: as duas variantes perguntadas voltaram como UMA entrada, o JID
+// canônico sem o 9. Quem não existe é omitido da lista.
+
+Deno.test("jidsParaConsulta pergunta as duas variantes numa chamada so", () => {
+  assertEquals(jidsParaConsulta("+5562982624557"), ["556282624557@s.whatsapp.net", "5562982624557@s.whatsapp.net"]);
+  assertEquals(jidsParaConsulta("+556282624557"), ["556282624557@s.whatsapp.net", "5562982624557@s.whatsapp.net"]);
+  assertEquals(jidsParaConsulta("+14155550100"), ["14155550100@s.whatsapp.net"]);
+});
+
+Deno.test("on-whatsapp: resposta real colapsada vira o numero canonico", () => {
+  const r = interpretarOnWhatsapp(200, [{ jid: "556282624557@s.whatsapp.net", exists: true }], "+5562982624557");
+  assertEquals(r, { status: "existe", e164: "+556282624557" });
+});
+
+Deno.test("on-whatsapp: formato com data tambem e aceito", () => {
+  const r = interpretarOnWhatsapp(200, { data: [{ jid: "5511987654321@s.whatsapp.net", exists: true }] }, "+5511987654321");
+  assertEquals(r, { status: "existe", e164: "+5511987654321" });
+});
+
+Deno.test("on-whatsapp: duas contas distintas, vale o numero como cadastrado", () => {
+  const r = interpretarOnWhatsapp(200, [
+    { jid: "556282624557@s.whatsapp.net", exists: true },
+    { jid: "5562982624557@s.whatsapp.net", exists: true },
+  ], "+5562982624557");
+  assertEquals(r, { status: "existe", e164: "+5562982624557" });
+});
+
+Deno.test("on-whatsapp: lista vazia ou so exists false e nao_existe", () => {
+  assertEquals(interpretarOnWhatsapp(200, [], "+5562982624557"), { status: "nao_existe" });
+  assertEquals(interpretarOnWhatsapp(200, [{ jid: "5562982624557@s.whatsapp.net", exists: false }], "+5562982624557"), { status: "nao_existe" });
+});
+
+Deno.test("on-whatsapp: corpo nulo, texto ou erro HTTP NUNCA vira nao_existe (licao do §36)", () => {
+  assertEquals(interpretarOnWhatsapp(200, null, "+5562982624557").status, "indeterminado");
+  assertEquals(interpretarOnWhatsapp(200, "OK", "+5562982624557").status, "indeterminado");
+  assertEquals(interpretarOnWhatsapp(200, { data: null }, "+5562982624557").status, "indeterminado");
+  assertEquals(interpretarOnWhatsapp(404, [], "+5562982624557").status, "indeterminado");
+  assertEquals(interpretarOnWhatsapp(503, [], "+5562982624557").status, "indeterminado");
+});
+
+Deno.test("on-whatsapp: exists true sem JID legivel e indeterminado", () => {
+  assertEquals(interpretarOnWhatsapp(200, [{ exists: true }], "+5562982624557").status, "indeterminado");
+  assertEquals(interpretarOnWhatsapp(200, [{ jid: "123@lid", exists: true }], "+5562982624557").status, "indeterminado");
+});
+
+Deno.test("consultarNumeroBaileysApi chama o endpoint certo com as duas variantes", async () => {
+  const original = globalThis.fetch;
+  let url = "";
+  let corpo: unknown = null;
+  globalThis.fetch = ((u: string, init?: RequestInit) => {
+    url = String(u);
+    corpo = JSON.parse(String(init?.body));
+    return Promise.resolve(new Response(JSON.stringify([{ jid: "556282624557@s.whatsapp.net", exists: true }]), { status: 200 }));
+  }) as typeof fetch;
+  try {
+    const r = await consultarNumeroBaileysApi({ url: "https://api", apiKey: "k" }, "+5562982624555", "+5562982624557");
+    assertEquals(url, "https://api/connections/%2B5562982624555/on-whatsapp");
+    assertEquals(corpo, { jids: ["556282624557@s.whatsapp.net", "5562982624557@s.whatsapp.net"] });
+    assertEquals(r, { status: "existe", e164: "+556282624557" });
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+Deno.test("consultarNumeroBaileysApi: falha de rede e indeterminado, nunca nao_existe", async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = (() => Promise.reject(new Error("ECONNRESET"))) as typeof fetch;
+  try {
+    const r = await consultarNumeroBaileysApi({ url: "https://api", apiKey: "k" }, "+5562982624555", "+5562982624557");
+    assertEquals(r.status, "indeterminado");
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+Deno.test("formasGravadas cobre com/sem + e com/sem o 9", () => {
+  const f = formasGravadas("+5562982624557");
+  for (const esperado of ["+5562982624557", "5562982624557", "+556282624557", "556282624557"]) {
+    assertEquals(f.includes(esperado), true);
+  }
 });

@@ -2175,3 +2175,34 @@ o repouso é uma trava própria, escolhida pelo operador:
 
 Chip 2 em repouso de 17/09 12:36 a **01/10 12:36**. Ao aplicar, ele estava `aquecendo` (foi ativado
 depois de o bloqueio acabar) e foi para `pausado` — nenhuma abordagem tinha saído.
+
+## 44. O 9º dígito passa a ser perguntado ao WhatsApp, uma vez por telefone (18/09/2026)
+
+Sintoma relatado pelo dono: "parece que manda a mesma mensagem para o número com e sem o 9" e "não
+sabe se o telefone existe". Causa: desde a Fatia 2 (Q17) a consulta `on_whatsapp` tinha sido tirada,
+e no `baileys_chatwoot` a forma do número era decidida no chute (`variantesE164Br`, "sem o 9
+primeiro"). Quando o chute errava, a resposta do devedor chegava por outra forma e o Chatwoot abria
+uma segunda ficha para a mesma pessoa; e número sem WhatsApp só era descoberto depois do envio.
+
+Decisão (dono, 18/09): **uma** consulta por telefone, só na hora da primeira mensagem, no ritmo do
+disparador — nunca em lote. Não é a sondagem que o Q17 removeu (aquela varria a base).
+
+Conferido ao vivo antes de mexer: `on-whatsapp` do chip 1 perguntando `+5562982624557` e
+`+556282624557` numa chamada só devolveu **uma** entrada, `556282624557@s.whatsapp.net` —
+o WhatsApp colapsa as variantes no JID canônico (sem o 9, o mesmo que a medição de 09/09 apontou) e
+omite quem não existe.
+
+| Peça | O que mudou |
+| --- | --- |
+| Migration `20260918180000` | `telefones_devedor.whatsapp_e164` — a forma que o WhatsApp conhece. Nula = não perguntado |
+| `_shared/baileys-api-client.ts` | `consultarNumeroBaileysApi` + `interpretarOnWhatsapp`. Falha fechada (§36): "não existe" só com HTTP 200 e lista real sem ninguém; corpo nulo/estranho/erro é "indeterminado" |
+| `_shared/numero-whatsapp.ts` | `resolverNumeroWhatsapp` (reaproveita só a resposta positiva gravada; `whatsapp_valido = false` também vem de opt-out e pessoa errada) e `numeroResolvido` |
+| `contato-criar` | pergunta antes de criar contato. Não existe → `exists: false`, e o W01 já leva para "Registrar sem WA" (marca o telefone e faz failover) — sem conversa-casca. Existe → contato nasce no número canônico. Indeterminado → segue como antes |
+| `enviar-mensagem` | usa `whatsapp_e164` quando gravado; senão, `variantesE164Br` como antes |
+
+Nada mudou no n8n. Testes: 10 novos em `baileys-api-client.test.ts` (157 no total, todos passando).
+Prova em produção: `contato-criar` com um número inexistente (faixa fictícia 62 90000) devolveu
+`exists: false, motivo: on_whatsapp_false`, sem criar contato nem conversa.
+
+Telefones já abordados antes de hoje não são reperguntados de uma vez — ganham a resposta quando
+voltarem a passar pelo `contato-criar`.

@@ -25,6 +25,7 @@ import {
 import { numeroParaJid } from "../_shared/evolution.ts";
 import { enviarAudioBaileysApi } from "../_shared/baileys-api-client.ts";
 import { gerarAudio } from "../_shared/elevenlabs.ts";
+import { numeroResolvido } from "../_shared/numero-whatsapp.ts";
 
 /** Bytes -> base64, que é o formato do campo `audio` do `send-message`. */
 function base64(bytes: Uint8Array): string {
@@ -141,10 +142,12 @@ Deno.serve(async (req) => {
     // há mais autocorreção aqui: quem sabe qual número entregou é o RECIBO por mensagem
     // (`mensagens.status_entrega`, via `chatwoot-sync`), não um contador da conexão.
     //
-    // `variantesE164Br` continua decidindo QUAL formato tentar — só o reenvio saiu.
+    // Desde 18/09/2026 o formato vem da pergunta ao WhatsApp que o `contato-criar` faz na primeira
+    // abordagem (`telefones_devedor.whatsapp_e164`). Sem essa resposta gravada — telefone antigo,
+    // consulta indeterminada —, `variantesE164Br` continua decidindo no chute, como antes.
     // A variante é decidida UMA vez: os balões da mesma resposta têm que sair todos para o mesmo
     // número, senão viram duas conversas no Chatwoot para a mesma pessoa.
-    const numeroAlvo = variantesE164Br(numeroE164)[0];
+    const numeroAlvo = (await numeroResolvido(sb, numeroE164)) ?? variantesE164Br(numeroE164)[0];
     const jid = numeroParaJid(numeroAlvo);
     const ids: (string | null)[] = [];
     let delayTotal = 0;
