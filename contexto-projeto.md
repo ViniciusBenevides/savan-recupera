@@ -2229,3 +2229,49 @@ encurtada para 5–10 min sorteados. Regras em `_shared/retomada-sem-whatsapp.ts
   a hora cheia como antes.
 
 O W01 não mudou. Testes: 7 novos em `retomada-sem-whatsapp.test.ts` (164 no total).
+
+## 46. Primeira mensagem "QUERO PAGAR" e o fluxo em modo passo a passo (24–25/09/2026)
+
+### A primeira mensagem nova (rascunho, não ativada)
+
+O dono pediu que a abordagem siga um modelo de oferta direta: "Olá, {nome}! … MC CRED, responsável
+pelas negociações da SAVAN Calçados … acordo em aberto no valor de {valor} e … quitação por apenas
+{valor_quitacao} … responda apenas “QUERO PAGAR”". Está na **v16** da carteira 11, gravada por
+`scripts/roteiro-v16-quero-pagar.py` como rascunho; a **v15 continua no ar**. A frase do desconto vai
+em `[[...]]`: 1.808 das 1.942 pessoas na fila (24/09) recebem a oferta, as 134 no piso do Pix recebem a
+mensagem sem ela. A etapa `identificar` foi reescrita (a abordagem não pergunta mais quem é) e ganhou o
+caso "QUERO PAGAR → pagamento"; `pagamento` passou a dizer que é voluntário a quem pula `apresentar_tudo`.
+
+**Pendente, e é decisão do dono:** com o `bot-turno` de hoje, "QUERO PAGAR" cai na barreira de
+identidade ("falo com Fulano?") antes do Pix. Foi escrito um atalho que trata "QUERO PAGAR" como
+confirmação de identidade, mas ele **não foi validado nem deployado**: identidade confirmada libera CPF
+e origem da dívida (`consultar_origem`) a quem estiver com o número, e um número reciclado que responda
+"quero pagar" ganharia esse acesso. Também ficou pendente a saída "responda não" no texto (o modelo do
+dono não tem; foi a única proteção anti-denúncia mantida em 02/09) e a promessa de "voltar a ter
+relacionamento comercial com a SAVAN", que precisa ser confirmada com a loja.
+
+### O fluxo em modo passo a passo
+
+O dono: o fluxo "ficou complexo demais", "não ensina nada", "é um monte de bloco" — e o produto vai ser
+vendido para quem nunca viu um `caso` ou um `vai_para`. O desenho da carteira 11 tem 39 etapas e 171
+nós no canvas.
+
+A aba **Fluxo do robô** agora abre em **Passo a passo**; o canvas virou **Desenho completo**, a um
+clique (a escolha fica no navegador). Os dois editam o mesmo `roteiro`, pelo mesmo `PATCH` que cria
+versão nova, e trocar de modo não perde o que não foi salvo. O modo guiado **nunca renomeia o id de uma
+etapa** — o `bot-turno` procura algumas pelo id (`identificar`, `pagamento`).
+
+| Peça | O que faz |
+| --- | --- |
+| `carteiras/[id]/fluxo-simples.tsx` | As cinco partes na ordem em que acontecem: 1ª mensagem, sem resposta, conversa, pagamento, proteções. Etapas em ordem de conversa (largura a partir da entrada), "Como a conversa pode terminar" e "Fora de uso" separados; caminho mais curto até o Pix no topo; cada situação lida como frase ("Se a pessoa … → etapa"); selo de proteção com o porquê |
+| editor de mensagem | botões "Inserir" com nome de gente (Valor com desconto, Nome completo…), "Sortear palavras", "Só com desconto" (envolve a seleção em `[[...]]`), cores por tipo de trecho e revisão enquanto digita (variável inexistente, desconto fora do trecho opcional, escassez, falta da saída "não") |
+| `lib/mensagem-previa.ts` | catálogo de variáveis por tipo de mensagem e o renderizador da prévia — **espelho** do `renderTemplate` do campanha-lote e do `resolverOpcionais` (`_shared/oferta.ts`). Paridade conferida com o texto da v16 |
+| `api/carteiras/[id]/previa-mensagem` | dois devedores reais da carteira, um com e um sem desconto, com a oferta da mesma `fn_proposta` |
+| `carteiras/[id]/roteiro-historico.ts` | desfazer/refazer e "alterações não salvas" saíram do canvas para servir aos dois modos |
+
+Achado no caminho: **o texto do reenvio não é enviado.** O `campanha-followup` manda o modelo aprovado
+da Meta e só usa do fluxo a quantidade de reenvios e o tempo de espera (um bloco sem texto nem conta).
+A tela passou a dizer isso em vez de oferecer um editor que não tem efeito.
+
+Verificação: `tsc` e `next build` limpos; a tela foi aberta localmente com a v16 por uma página
+temporária sem login (apagada) — edição, prévia com e sem desconto e troca de modo conferidas.
