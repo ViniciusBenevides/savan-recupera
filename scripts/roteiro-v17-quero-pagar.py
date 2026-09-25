@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Gera a versão 16 do fluxo da carteira 11 — a primeira mensagem passa a seguir o modelo "QUERO PAGAR".
+"""Gera a versão 17 do fluxo da carteira 11 — a primeira mensagem segue o modelo "QUERO PAGAR".
 
 DECISÃO DO DONO (24/09/2026): a abordagem deixa o texto institucional da v8/v9 (cessão, CPF final,
 protocolo, CNPJ e "confirma que falo com a titular?") e passa a ser uma oferta direta:
@@ -12,6 +12,11 @@ protocolo, CNPJ e "confirma que falo com a titular?") e passa a ser uma oferta d
     comercial com a SAVAN, conforme as políticas da loja.
     Se quiser aproveitar essa condição, responda apenas “QUERO PAGAR” e envio as orientações
     para pagamento.
+    Se não quiser receber mais mensagens, é só responder “não”.
+
+A última linha não estava no modelo e entrou por decisão do dono em 25/09: dizer como parar é a
+proteção contra denúncia que sobreviveu à decisão de 02/09 (ADR-0003). A v16 é a mesma coisa sem ela,
+e ficou como rascunho.
 
 O QUE MUDA, ETAPA POR ETAPA:
   · abordagem — o texto acima, com {{nome}}, {{valor}} e {{valor_quitacao}}. A frase do desconto vai
@@ -19,23 +24,19 @@ O QUE MUDA, ETAPA POR ETAPA:
     em vez de "por apenas " com o valor vazio. Duas trocas de spintax ({Olá|Oi}, {Identificamos|
     Localizamos}) para duas pessoas não receberem o texto idêntico, que é sinal de robô.
   · identificar — a abordagem deixou de perguntar se é a pessoa certa. A instrução dizia o contrário
-    e o modelo ia perguntar de novo. Entra o caso "QUERO PAGAR → pagamento" na frente.
-  · pagamento — quem chega direto do "QUERO PAGAR" pula `apresentar_tudo`, que é onde a prescrição e
-    o "é voluntário" eram ditos (decisão do dono de 03/09/2026: dizer por inteiro assim que a pessoa
-    responde). A mensagem do Pix passa a levar essa frase nesse caso.
+    e o modelo ia perguntar de novo. Entra o caso "QUERO PAGAR → pagamento" na frente, que é o que o
+    painel mostra; quem executa esse caso é o código, abaixo.
 
-PENDENTE NO CÓDIGO (contexto-projeto.md §46): com o `bot-turno` de hoje, a barreira de identidade
-responde "QUERO PAGAR" com "falo com Fulano?", e só depois do "sim" a conversa anda — funciona, com
-duas mensagens a mais. Tratar "QUERO PAGAR" como confirmação de identidade libera CPF e origem da
-dívida a quem estiver com o número, então é decisão do dono, não deste script.
-
-O QUE ESTE SCRIPT NÃO FAZ: ativar. Insere apenas em `fluxo_versoes`, como rascunho — quem lê o texto
-de disparo é `carteiras.roteiro`, e trocar o que está lá muda o que 1.942 pessoas recebem no próximo
-ciclo. A ativação é pelo painel (Fluxo do robô → versões).
+PAR NO CÓDIGO (bot-turno, 25/09): "QUERO PAGAR" gera o Pix direto, com mensagem fixa que diz que o
+pagamento é voluntário, e SEM marcar a identidade como confirmada — CPF e origem da dívida continuam
+atrás do "falo com Fulano?" (_shared/pix-direto.ts). E um "não" seco antes de qualquer pergunta de
+identidade é pedido para parar, não "pessoa errada" (_shared/identity.ts). Ative só com esse bot-turno
+deployado: sem ele o "não" recebe a resposta de número errado.
 
 Uso:
-    python scripts/roteiro-v16-quero-pagar.py --previa     # imprime os textos, não escreve
-    python scripts/roteiro-v16-quero-pagar.py --gravar     # insere a v16 como rascunho
+    python scripts/roteiro-v17-quero-pagar.py --previa     # imprime os textos, não escreve
+    python scripts/roteiro-v17-quero-pagar.py --gravar     # insere como rascunho, sem ativar
+    python scripts/roteiro-v17-quero-pagar.py --ativar     # insere E ativa, numa instrução só
 """
 
 import argparse
@@ -68,7 +69,8 @@ ABORDAGEM = (
     "[[ e conseguimos liberar uma condição especial para quitação por apenas {{valor_quitacao}}]].\n\n"
     "Com a regularização, você encerra essa pendência e poderá voltar a ter relacionamento comercial "
     "com a SAVAN, conforme as políticas da loja.\n\n"
-    "Se quiser aproveitar essa condição, responda apenas “QUERO PAGAR” e envio as orientações para pagamento."
+    "Se quiser aproveitar essa condição, responda apenas “QUERO PAGAR” e envio as orientações para pagamento.\n\n"
+    "Se não quiser receber mais mensagens, é só responder “não”."
 )
 
 IDENTIFICAR_OBJETIVO = "2. Resposta à primeira mensagem"
@@ -76,8 +78,8 @@ IDENTIFICAR_OBJETIVO = "2. Resposta à primeira mensagem"
 IDENTIFICAR_INSTRUCAO = (
     "A primeira mensagem já disse quem somos (MC Cred, que negocia as contas da SAVAN Calçados), o "
     "valor em aberto e, quando havia desconto, o valor para quitar — e pediu que a pessoa responda "
-    "“QUERO PAGAR” se quiser seguir. Ela NÃO perguntou se é a pessoa certa. Aqui você lê a resposta "
-    "e segue o caso certo.\n\n"
+    "“QUERO PAGAR” se quiser seguir, ou “não” se não quiser mais mensagens. Ela NÃO perguntou se é a "
+    "pessoa certa. Aqui você lê a resposta e segue o caso certo.\n\n"
     "Quem respondeu “QUERO PAGAR”, ou disse de outro jeito que quer pagar, vai direto para o "
     "pagamento. Não peça nome, não peça confirmação, não repita a proposta e não pergunte de novo se "
     "quer: a pessoa respondeu exatamente o que a mensagem pediu.\n\n"
@@ -96,14 +98,6 @@ CASO_QUERO_PAGAR = {
     "vai_para": "pagamento",
 }
 
-REFORCO_PAGAMENTO = (
-    "\n\nQUEM VEIO DIRETO DA PRIMEIRA MENSAGEM (respondeu “QUERO PAGAR”) ainda não ouviu que o "
-    "pagamento é voluntário. Nesse caso, a mensagem do Pix leva UMA frase curta dizendo que é uma "
-    "conta antiga, já prescrita, e que pagar é voluntário, sem nenhuma consequência para quem preferir "
-    "não pagar. Sem discurso e sem segurar o Pix: gere no mesmo turno. Quem passou por apresentar "
-    "tudo já ouviu isso — não repita."
-)
-
 
 def transformar(roteiro):
     novo = copy.deepcopy(roteiro)
@@ -116,14 +110,14 @@ def transformar(roteiro):
         raise SystemExit("erro: o roteiro não tem bloco de disparo")
     disparo["textos"] = [ABORDAGEM]
     disparo["objetivo"] = "Primeira mensagem — oferta com “QUERO PAGAR”"
-    mudancas.append("abordagem: texto trocado pelo modelo “QUERO PAGAR” (1 variação, com spintax)")
+    mudancas.append("abordagem: texto trocado pelo modelo “QUERO PAGAR” + saída “não” (1 variação, com spintax)")
     # `textos_recontato` fica como está: só vale para o balde recontato_continuidade, que tem 0
     # pessoas na fila hoje, e o modelo novo é de primeiro contato.
 
     for id_ in ("identificar", "pagamento"):
         if id_ not in por_id:
             raise SystemExit(f"erro: a etapa {id_} não existe no roteiro que está no ar")
-    if any(c.get("vai_para") == "identificar" for c in disparo.get("casos", [])) is False:
+    if not any(c.get("vai_para") == "identificar" for c in disparo.get("casos", [])):
         raise SystemExit("erro: a abordagem não leva mais a `identificar` — revise antes de rodar")
 
     identificar = por_id["identificar"]
@@ -133,11 +127,6 @@ def transformar(roteiro):
     if not any(c.get("vai_para") == "pagamento" for c in casos):
         identificar["casos"] = [dict(CASO_QUERO_PAGAR)] + casos
     mudancas.append("identificar: instrução reescrita (a abordagem não pergunta mais quem é) + caso QUERO PAGAR → pagamento")
-
-    pagamento = por_id["pagamento"]
-    if "QUEM VEIO DIRETO DA PRIMEIRA MENSAGEM" not in str(pagamento.get("instrucao", "")):
-        pagamento["instrucao"] = str(pagamento.get("instrucao", "")) + REFORCO_PAGAMENTO
-        mudancas.append("pagamento: frase de pagamento voluntário para quem pulou apresentar_tudo")
 
     return novo, mudancas
 
@@ -165,11 +154,11 @@ def exemplo(texto, com_oferta):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--gravar", action="store_true", help="insere a v16 como rascunho")
-    ap.add_argument("--previa", action="store_true", help="só imprime o que mudaria")
+    modo = ap.add_mutually_exclusive_group(required=True)
+    modo.add_argument("--previa", action="store_true", help="só imprime o que mudaria")
+    modo.add_argument("--gravar", action="store_true", help="insere como rascunho, sem ativar")
+    modo.add_argument("--ativar", action="store_true", help="insere e ativa numa instrução só")
     args = ap.parse_args()
-    if not args.gravar and not args.previa:
-        ap.error("escolha --previa ou --gravar")
 
     env = v9.carregar_env()
     r = v9.sql(env, f"select roteiro from carteiras where id = {CARTEIRA};")
@@ -191,8 +180,8 @@ def main():
 
     antes = next(e for e in atual["etapas"] if e.get("tipo") == "disparo")["textos"][0]
     bloco("HOJE (como está no ar)", antes)
-    bloco("V16 — COM DESCONTO", exemplo(ABORDAGEM, True))
-    bloco("V16 — NO PISO DO PIX (a frase do desconto some)", exemplo(ABORDAGEM, False))
+    bloco("NOVA — COM DESCONTO", exemplo(ABORDAGEM, True))
+    bloco("NOVA — NO PISO DO PIX (a frase do desconto some)", exemplo(ABORDAGEM, False))
 
     if problemas:
         print("\nPROBLEMAS")
@@ -207,17 +196,49 @@ def main():
         print("\nNão gravei: resolva os problemas acima primeiro.", file=sys.stderr)
         return 1
 
-    prox = v9.sql(env, f"select coalesce(max(versao), 0) + 1 as v from fluxo_versoes where carteira_id = {CARTEIRA};")
-    versao = prox[0]["v"]
-    v9.sql(env, (
-        "insert into fluxo_versoes (carteira_id, versao, nome, roteiro) values ("
-        f"{CARTEIRA}, {versao}, "
-        f"{v9.literal(f'Versão {versao} · primeira mensagem QUERO PAGAR (rascunho, não ativada)')}, "
-        f"{v9.literal(json.dumps(novo, ensure_ascii=False))}::jsonb);"
+    roteiro_sql = f"{v9.literal(json.dumps(novo, ensure_ascii=False))}::jsonb"
+    proxima = f"(select coalesce(max(versao), 0) + 1 from fluxo_versoes where carteira_id = {CARTEIRA})"
+
+    if args.gravar:
+        feito = v9.sql(env, (
+            "insert into fluxo_versoes (carteira_id, versao, nome, roteiro) "
+            f"select {CARTEIRA}, {proxima}, "
+            f"{v9.literal('primeira mensagem QUERO PAGAR (rascunho, não ativada)')}, {roteiro_sql} "
+            "returning versao;"
+        ))
+        print(f"\nv{feito[0]['versao']} inserida como RASCUNHO. Nada foi ativado.")
+        return 0
+
+    # Ativar = os três lugares da skill `fluxo-do-robo` numa instrução só: a versão nova, a cópia que
+    # o campanha-lote lê (`carteiras.roteiro`) e o ponteiro da versão ativa. Uma instrução é atômica;
+    # dois comandos separados poderiam deixar o painel mostrando uma coisa e o disparador mandando
+    # outra. Os campos da Meta vêm da versão que estava ativa, como no "Restaurar" do painel.
+    feito = v9.sql(env, (
+        "with ativa as ("
+        "  select v.id, v.meta_abordagem_template, v.meta_abordagem_template_candidato"
+        "  from carteiras c join fluxo_versoes v on v.id = c.fluxo_versao_ativa_id"
+        f"  where c.id = {CARTEIRA}"
+        "), nova as ("
+        "  insert into fluxo_versoes (carteira_id, versao, nome, roteiro, meta_abordagem_template,"
+        "                             meta_abordagem_template_candidato, origem_versao_id)"
+        f"  select {CARTEIRA}, {proxima}, {v9.literal('primeira mensagem QUERO PAGAR')}, {roteiro_sql},"
+        "         ativa.meta_abordagem_template, ativa.meta_abordagem_template_candidato, ativa.id"
+        "  from ativa"
+        "  returning id, versao, roteiro"
+        ") "
+        "update carteiras c set roteiro = nova.roteiro, fluxo_versao_ativa_id = nova.id "
+        f"from nova where c.id = {CARTEIRA} returning nova.versao, nova.id;"
     ))
-    print(f"\nv{versao} inserida como RASCUNHO. Nada foi ativado — "
-          f"`carteiras.roteiro` e `fluxo_versao_ativa_id` continuam na versão antiga.")
-    print("Antes de ativar: leia o §46 do contexto-projeto.md (o QUERO PAGAR passa pela confirmação de identidade).")
+    if not feito:
+        raise SystemExit("erro: nada foi ativado (a carteira não tinha versão ativa?)")
+    conferido = v9.sql(env, (
+        "select jsonb_array_length(c.roteiro->'etapas') as no_ar, jsonb_array_length(v.roteiro->'etapas') as na_versao "
+        f"from carteiras c join fluxo_versoes v on v.id = c.fluxo_versao_ativa_id where c.id = {CARTEIRA};"
+    ))[0]
+    print(f"\nv{feito[0]['versao']} ATIVA. Etapas no ar: {conferido['no_ar']} · na versão ativa: {conferido['na_versao']}.")
+    if conferido["no_ar"] != conferido["na_versao"]:
+        print("ATENÇÃO: a contagem não bate — confira no painel.", file=sys.stderr)
+        return 1
     return 0
 
 

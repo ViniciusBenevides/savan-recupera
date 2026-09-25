@@ -231,6 +231,28 @@ export function ehRecusaSimplesNegociacao(entrada: unknown): boolean {
   return /^(?:nao|nao obrigado|nao obrigada|nao quero|deixa pra la|sem interesse|agora nao)$/.test(texto);
 }
 
+// "QUERO PAGAR" e a resposta que a primeira mensagem pede (roteiro v16). Quem responde isso a uma
+// mensagem que o chamou pelo nome completo esta assumindo a conta: devolver "falo com Fulano?"
+// seria responder a um pedido de pagamento com um pedido de identidade — o padrao que as conversas
+// reais leram como golpe. Estreito de proposito: qualquer "nao" na rajada derruba o atalho e a
+// pessoa segue pela confirmacao normal ("nao quero pagar" nao pode virar Pix).
+export function ehPedidoParaPagar(entrada: unknown): boolean {
+  const texto = normalizar(entrada);
+  if (!texto || /\bnao\b/.test(texto)) return false;
+  return /\bquero\s+(?:sim\s+)?(?:pagar|quitar)\b/.test(texto);
+}
+
+// Um "nao" seco so nega identidade se alguem perguntou a identidade. A abordagem v16+ nao pergunta
+// quem e: ela oferece a saida ("se nao quiser receber mais mensagens, responda nao"). Antes de
+// qualquer pergunta de identidade, o "nao" responde a esse convite e e pedido para parar. Lido como
+// "pessoa errada", ele desvinculava o numero e agradecia "por avisar" a quem tinha pedido para parar.
+export function ehRecusaAntesDePerguntarIdentidade(
+  rajada: unknown[],
+  perguntasDeIdentidadeFeitas: number,
+): boolean {
+  return perguntasDeIdentidadeFeitas === 0 && rajada.some(ehRecusaSimplesNegociacao);
+}
+
 // Contar as perguntas de identidade JA FEITAS e o que garante o limite de duas tentativas.
 // Duas das seis frases geradas por respostaConfirmacaoIdentidade ("...voce confirma se e X?")
 // nao casavam com nenhum padrao daqui: a contagem ficava em zero, o limite nunca era atingido e

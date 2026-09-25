@@ -9,6 +9,8 @@ import {
   ehObjecaoConfirmacaoIdentidade,
   ehPedidoDocumentoOrigem,
   ehPedidoNaoPerturbe,
+  ehPedidoParaPagar,
+  ehRecusaAntesDePerguntarIdentidade,
   ehPerguntaOrigemContato,
   ehRecusaSimplesNegociacao,
   ehPerguntaDeIdentidade,
@@ -212,4 +214,39 @@ Deno.test("identifica objecoes seguras, documentos e origem do telefone", () => 
   assertEquals(ehRecusaSimplesNegociacao("Não reconheço essa compra"), false);
   assertMatch(respostaContextoSeguroIdentidade("SILVANIA DE SOUSA"), /Silvania de Sousa/);
   assertMatch(respostaLimiteIdentidade(), /encerrei este atendimento automático/);
+});
+
+// A primeira mensagem (v16) pede "QUERO PAGAR". Essa resposta assume a conta e vai direto ao Pix;
+// qualquer negacao derruba o atalho, porque "nao quero pagar" virando Pix seria o pior erro possivel.
+Deno.test("QUERO PAGAR assume a conta, e negacao nunca vira Pix", () => {
+  for (const frase of ["QUERO PAGAR", "Quero pagar!", "quero pagar sim", "Quero sim pagar", "Oi, quero quitar", "QUERO PAGAR 👍"]) {
+    assertEquals(ehPedidoParaPagar(frase), true, frase);
+    assertNotEquals(classificarRespostaIdentidade(frase, "MIQUEIAS SILVA GOMES"), "negou", frase);
+  }
+  for (const frase of [
+    "Não quero pagar",
+    "nao quero pagar nada",
+    "Quero pagar não, isso não é meu",
+    "Não sou eu, mas quero pagar pra ele",
+    "Quanto é?",
+    "Quem é você?",
+    "Sim",
+  ]) assertEquals(ehPedidoParaPagar(frase), false, frase);
+});
+
+// Com a abordagem que nao pergunta quem e, o "nao" seco responde ao convite de parar. Depois de uma
+// pergunta de identidade, ele volta a ser "nao sou essa pessoa" — e a abordagem v15 conta como uma.
+Deno.test("nao seco antes de perguntar identidade e pedido para parar", () => {
+  for (const frase of ["não", "Não", "NÃO", "não quero", "Não obrigado", "agora não", "deixa pra lá"]) {
+    assertEquals(ehRecusaAntesDePerguntarIdentidade([frase], 0), true, frase);
+    assertEquals(ehRecusaAntesDePerguntarIdentidade([frase], 1), false, frase);
+  }
+  for (const frase of ["Não sou eu", "QUERO PAGAR", "Quanto é?", "Não reconheço essa compra"]) {
+    assertEquals(ehRecusaAntesDePerguntarIdentidade([frase], 0), false, frase);
+  }
+  assert(ehPerguntaDeIdentidade("Confirma que falo com a(o) titular? Caso prefira não ser mais contatada, responda “não”."));
+  assertEquals(ehPerguntaDeIdentidade(
+    "Se quiser aproveitar essa condição, responda apenas “QUERO PAGAR” e envio as orientações para pagamento. "
+      + "Se não quiser receber mais mensagens, é só responder “não”.",
+  ), false);
 });

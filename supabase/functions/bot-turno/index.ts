@@ -15,6 +15,8 @@ import {
   ehObjecaoConfirmacaoIdentidade,
   ehPedidoDocumentoOrigem,
   ehPedidoNaoPerturbe,
+  ehPedidoParaPagar,
+  ehRecusaAntesDePerguntarIdentidade,
   ehPerguntaOrigemContato,
   ehRecusaSimplesNegociacao,
   ehPerguntaDeIdentidade,
@@ -33,6 +35,7 @@ import {
   saudacaoDoPeriodo,
 } from "../_shared/identity.ts";
 import { detalharPisoProposta, garantirExplicacaoPiso } from "../_shared/proposal.ts";
+import { formatarReais, respostaPixDireto } from "../_shared/pix-direto.ts";
 import { splitRespostas } from "../_shared/split-mensagens.ts";
 import { validarSaida } from "../_shared/guardrail-saida.ts";
 import {
@@ -781,6 +784,9 @@ Deno.serve(async (req) => {
   const confirmouAgora = classificacoes.includes("confirmou");
   // Negação só prevalece se ninguém na rajada tiver confirmado.
   const negouIdentidade = !confirmouAgora && classificacoes.includes("negou");
+  // "QUERO PAGAR" é o que a abordagem pede: o Pix sai direto (ver _shared/pix-direto.ts), mas a
+  // identidade NÃO conta como confirmada. Qualquer negação na rajada derruba o atalho.
+  const pediuParaPagar = !classificacoes.includes("negou") && algumaDaRajada(ehPedidoParaPagar);
   let identidadeConfirmada = !!conv.identidade_confirmada_em
     && conv.identidade_confirmada_por !== "legado_dados_ja_revelados";
 
@@ -807,8 +813,10 @@ Deno.serve(async (req) => {
 
   // O direito de interromper o contato não depende de confirmar identidade. Esta
   // regra vem antes de todo o restante para nunca responder "você é Fulano?" a
-  // quem acabou de pedir que as mensagens parem.
-  if (algumaDaRajada(ehPedidoNaoPerturbe)) {
+  // quem acabou de pedir que as mensagens parem. Um "não" seco antes de qualquer pergunta de
+  // identidade também é pedido para parar: é a saída que a abordagem v16+ oferece.
+  if (algumaDaRajada(ehPedidoNaoPerturbe)
+    || (!identidadeConfirmada && ehRecusaAntesDePerguntarIdentidade(rajada, perguntasJaFeitas.length))) {
     // Quem pede para parar e, na mesma frase, fala em advogado/Procon/justiça precisa das DUAS
     // coisas: o contato para de imediato E a equipe fica sabendo. A escalação não manda nada ao
     // devedor — só abre a nota interna e o registro em `escalacoes`.
@@ -892,6 +900,49 @@ Deno.serve(async (req) => {
         "encerrar_pessoa_errada",
         "encerrar",
       );
+    }
+
+    // "QUERO PAGAR": o Pix sai agora, pela mesma gerar-pix da ferramenta (que reaproveita a cobrança
+    // pendente, então repetir o pedido não duplica), e a identidade continua NÃO confirmada — ver
+    // _shared/pix-direto.ts. Se o Pix falhar, a conversa segue pela confirmação normal abaixo em vez
+    // de ficar sem resposta.
+    if (pediuParaPagar && prop && !prop.erro) {
+      const pixResp = await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/gerar-pix`, {
+        method: "POST",
+        headers: { "apikey": Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "", "Content-Type": "application/json" },
+        body: JSON.stringify({
+          devedor_id: conv.devedor_id, conversa_id: conv.id, desconto_pct: prop.desconto_pct,
+          valor_final: prop.valor_final, desconto_extra: false, simulacao,
+        }),
+      });
+      const pix = await pixResp.json().catch(() => ({}));
+      const copiaCola = pix?.ok && typeof pix.pix_copia_cola === "string" ? pix.pix_copia_cola.trim() : "";
+      if (copiaCola) {
+        const guardrails = carteira?.guardrails || cfg.bot_guardrails || {};
+        const mensagensPix = [
+          respostaPixDireto({
+            valor: formatarReais(pix.valor_final),
+            validoAte: pix.valido_ate ?? null,
+            avisarVoluntario: guardrails.responder_prescricao_honestamente !== false,
+          }),
+          // o copia-e-cola vai sozinho, para copiar com um toque
+          copiaCola,
+        ];
+        for (const conteudo of mensagensPix) {
+          await sb.from("mensagens").insert({ conversa_id: conv.id, direcao: "saida", origem: "bot", conteudo, simulacao });
+        }
+        const temPagamento = (carteira?.roteiro?.etapas ?? []).some((e: any) => ehConversa(e) && e.id === "pagamento");
+        await sb.from("conversas").update({
+          ultima_msg_em: new Date().toISOString(), ultima_msg_de: "bot",
+          ...(temPagamento ? { etapa_roteiro: "pagamento" } : {}),
+        }).eq("id", conv.id);
+        await marcarFila(sb, incomingMessageId, "concluida");
+        return json({
+          ok: true, acao: "responder", encerrar: false, simulacao,
+          enviado_direto: false, mensagens: mensagensPix,
+        });
+      }
+      console.error("pix_direto_falhou", { status: pixResp.status, erro: pix?.erro, conversa: conv.id });
     }
 
     // Robô de outra empresa respondendo: uma tentativa neutra, sem revelar o assunto, e sem

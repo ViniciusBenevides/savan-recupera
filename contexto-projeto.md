@@ -2232,23 +2232,33 @@ O W01 não mudou. Testes: 7 novos em `retomada-sem-whatsapp.test.ts` (164 no tot
 
 ## 46. Primeira mensagem "QUERO PAGAR" e o fluxo em modo passo a passo (24–25/09/2026)
 
-### A primeira mensagem nova (rascunho, não ativada)
+### A primeira mensagem nova
 
 O dono pediu que a abordagem siga um modelo de oferta direta: "Olá, {nome}! … MC CRED, responsável
 pelas negociações da SAVAN Calçados … acordo em aberto no valor de {valor} e … quitação por apenas
-{valor_quitacao} … responda apenas “QUERO PAGAR”". Está na **v16** da carteira 11, gravada por
-`scripts/roteiro-v16-quero-pagar.py` como rascunho; a **v15 continua no ar**. A frase do desconto vai
-em `[[...]]`: 1.808 das 1.942 pessoas na fila (24/09) recebem a oferta, as 134 no piso do Pix recebem a
-mensagem sem ela. A etapa `identificar` foi reescrita (a abordagem não pergunta mais quem é) e ganhou o
-caso "QUERO PAGAR → pagamento"; `pagamento` passou a dizer que é voluntário a quem pula `apresentar_tudo`.
+{valor_quitacao} … responda apenas “QUERO PAGAR”". Em 25/09 ele autorizou acrescentar a saída "Se não
+quiser receber mais mensagens, é só responder “não”" — a proteção anti-denúncia que sobreviveu a 02/09.
+Está na **v17** da carteira 11 (`scripts/roteiro-v17-quero-pagar.py`; a v16 é o mesmo texto sem a
+saída). A frase do desconto vai em `[[...]]`: 1.808 das 1.942 pessoas na fila (24/09) recebem a
+oferta, as 134 no piso do Pix recebem a mensagem sem ela. A etapa `identificar` foi reescrita (a
+abordagem não pergunta mais quem é) e ganhou o caso "QUERO PAGAR → pagamento".
 
-**Pendente, e é decisão do dono:** com o `bot-turno` de hoje, "QUERO PAGAR" cai na barreira de
-identidade ("falo com Fulano?") antes do Pix. Foi escrito um atalho que trata "QUERO PAGAR" como
-confirmação de identidade, mas ele **não foi validado nem deployado**: identidade confirmada libera CPF
-e origem da dívida (`consultar_origem`) a quem estiver com o número, e um número reciclado que responda
-"quero pagar" ganharia esse acesso. Também ficou pendente a saída "responda não" no texto (o modelo do
-dono não tem; foi a única proteção anti-denúncia mantida em 02/09) e a promessa de "voltar a ter
-relacionamento comercial com a SAVAN", que precisa ser confirmada com a loja.
+**`bot-turno` deployado em 25/09** com o par que o texto novo precisa:
+
+- **"QUERO PAGAR" gera o Pix direto** (`_shared/pix-direto.ts`), com mensagem fixa — valor, validade,
+  "o código vai na próxima mensagem" e, se a carteira responde prescrição com honestidade, "pode estar
+  prescrita, e o pagamento é voluntário". **A identidade NÃO é marcada como confirmada.** A primeira
+  versão deste atalho confirmava a identidade e foi barrada: isso libera CPF e origem da dívida
+  (`consultar_origem`) a quem estiver com o número, e um número reciclado que responda "quero pagar"
+  ganharia esse acesso. O Pix não revela nada além do valor que a abertura já disse. Se a `gerar-pix`
+  falhar, a conversa segue pela confirmação normal. Qualquer "não" na rajada derruba o atalho.
+- **"não" seco antes de qualquer pergunta de identidade é pedido para parar**
+  (`ehRecusaAntesDePerguntarIdentidade`), não "pessoa errada". A abordagem v15 conta como pergunta de
+  identidade ("Confirma que falo com a titular?"), então as conversas dela seguem como antes.
+
+**A v17 NÃO está ativa** — a ativação foi barrada pelo controle de permissões do agente e ficou com o
+dono (painel → Fluxo do robô → Versões e desempenho → v17 → Restaurar). Até lá a v15 segue no ar. A
+promessa de "voltar a ter relacionamento comercial com a SAVAN" ainda precisa ser confirmada com a loja.
 
 ### O fluxo em modo passo a passo
 
