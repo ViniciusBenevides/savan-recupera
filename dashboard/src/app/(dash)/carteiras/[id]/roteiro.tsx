@@ -21,7 +21,8 @@ import {
   type EtapaRoteiro, type TipoEtapa, type CasoRoteiro,
 } from "./roteiro-layout";
 import { TemplateMetaAbordagem } from "./template-meta";
-import { ehConectorBaileys } from "@/lib/conector";
+import { useHistoricoRoteiro, type HistoricoRoteiro } from "./roteiro-historico";
+import { FluxoSimples, useCanaisDaCarteira } from "./fluxo-simples";
 
 /* ---------------------------------------------------------------- nó de etapa */
 
@@ -157,16 +158,14 @@ const tiposDeNo = { etapa: NoEtapa, resposta: NoRespostaEsperada, marco: NoMarco
 
 /* ---------------------------------------------------------------- canvas */
 
-function Canvas({ carteira, padrao, salvar }: {
-  carteira: any; padrao: Record<string, any>; salvar: (body: any) => Promise<boolean>;
+function Canvas({ carteira, padrao, salvar, historico }: {
+  carteira: any; padrao: Record<string, any>; salvar: (body: any) => Promise<boolean>; historico: HistoricoRoteiro;
 }) {
   const tema = useTheme();
   const { fitView, setCenter } = useReactFlow();
   const editorRef = React.useRef<HTMLDivElement>(null);
   const modelo = padrao.roteiro_modelo ?? null;
-  const salvo = carteira.roteiro ?? null;
 
-  const historico = useHistoricoRoteiro({ ativo: !!salvo?.ativo, etapas: salvo?.etapas ?? [], pos_inicio: salvo?.pos_inicio });
   const { documento, setAtivo, setEtapas, setPosInicio, substituir, desfazer, refazer, marcarSalvo } = historico;
   const { ativo, etapas, pos_inicio: posInicio } = documento;
   const [abertaId, setAbertaId] = React.useState<string | null>(null);
@@ -180,22 +179,7 @@ function Canvas({ carteira, padrao, salvar }: {
   // Por qual canal a 1ª mensagem desta carteira sai. O bloco de disparo só vale para chip Baileys;
   // chip Meta manda o modelo aprovado, que vive fora do fluxo. Sem isto na tela, editar o texto e
   // não ver efeito nenhum é o resultado esperado — e ninguém entende por quê.
-  const [canais, setCanais] = React.useState<{ baileys: number; meta: number } | null>(null);
-  React.useEffect(() => {
-    let vivo = true;
-    fetch(`/api/carteiras/${carteira.id}/chips`, { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
-        if (!vivo || !d?.chips) return;
-        const ligados = d.chips.filter((c: any) => c.vinculado);
-        setCanais({
-          baileys: ligados.filter((c: any) => ehConectorBaileys(c.conector)).length,
-          meta: ligados.filter((c: any) => !ehConectorBaileys(c.conector)).length,
-        });
-      })
-      .catch(() => {});
-    return () => { vivo = false; };
-  }, [carteira.id]);
+  const canais = useCanaisDaCarteira(carteira.id);
 
   const problemas = React.useMemo(() => diagnosticar(etapas), [etapas]);
   const alertas = React.useMemo(() => avisos(etapas), [etapas]);
@@ -1085,97 +1069,54 @@ function Cabecalho({ ativo, setAtivo }: { ativo: boolean; setAtivo: (v: boolean)
   );
 }
 
+type ModoEditor = "simples" | "desenho";
+const CHAVE_MODO = "fluxo-do-robo:modo";
+
 export function AbaRoteiro(props: {
   carteira: any; padrao: Record<string, any>; salvar: (body: any) => Promise<boolean>;
 }) {
-  // o ReactFlowProvider é necessário para o useReactFlow() do canvas
-  return <ReactFlowProvider><Canvas {...props} /></ReactFlowProvider>;
-}
-
-type DocumentoRoteiro = { ativo: boolean; etapas: EtapaRoteiro[]; pos_inicio?: { x: number; y: number } };
-type Atualizador<T> = T | ((anterior: T) => T);
-type Transferencia = { modo: "copiar" | "colar"; texto: string; erro?: string };
-
-/** Histórico local inspirado no editor da Virtus; o banco continua recebendo o mesmo `roteiro`. */
-function useHistoricoRoteiro(inicial: DocumentoRoteiro) {
-  const [documento, setDocumento] = React.useState(inicial);
-  const documentoRef = React.useRef(inicial);
-  const passados = React.useRef<DocumentoRoteiro[]>([]);
-  const futuros = React.useRef<DocumentoRoteiro[]>([]);
-  const ultimoGrupo = React.useRef<{ nome: string; em: number } | null>(null);
-  const [salvo, setSalvo] = React.useState(() => assinatura(inicial));
-
-  const aplicar = React.useCallback((atualizador: Atualizador<DocumentoRoteiro>, grupo?: string) => {
-    const anterior = documentoRef.current;
-    const proximo = typeof atualizador === "function"
-      ? (atualizador as (valor: DocumentoRoteiro) => DocumentoRoteiro)(anterior)
-      : atualizador;
-    if (assinatura(anterior) === assinatura(proximo)) return;
-
-    const agora = Date.now();
-    const agrupado = !!grupo && ultimoGrupo.current?.nome === grupo && agora - ultimoGrupo.current.em < 900;
-    if (!agrupado) passados.current = [...passados.current.slice(-59), anterior];
-    futuros.current = [];
-    ultimoGrupo.current = grupo ? { nome: grupo, em: agora } : null;
-    documentoRef.current = proximo;
-    setDocumento(proximo);
+  const salvo = props.carteira.roteiro ?? null;
+  // O estado em edição mora aqui, acima dos dois editores: trocar de modo no meio de uma alteração
+  // não pode descartar o que foi digitado.
+  const historico = useHistoricoRoteiro({ ativo: !!salvo?.ativo, etapas: salvo?.etapas ?? [], pos_inicio: salvo?.pos_inicio });
+  // O modo guiado é o padrão: é o que alguém que acabou de comprar o sistema consegue ler. O desenho
+  // completo fica a um clique para quem já conhece o fluxo.
+  const [modo, setModoEstado] = React.useState<ModoEditor>("simples");
+  React.useEffect(() => {
+    try {
+      if (window.localStorage.getItem(CHAVE_MODO) === "desenho") setModoEstado("desenho");
+    } catch { /* sem armazenamento, fica no guiado */ }
   }, []);
-
-  const setEtapas = React.useCallback((atualizador: Atualizador<EtapaRoteiro[]>, grupo?: string) => {
-    aplicar((atual) => ({
-      ...atual,
-      etapas: typeof atualizador === "function"
-        ? (atualizador as (valor: EtapaRoteiro[]) => EtapaRoteiro[])(atual.etapas)
-        : atualizador,
-    }), grupo);
-  }, [aplicar]);
-
-  const setAtivo = React.useCallback((ativo: boolean) => aplicar((atual) => ({ ...atual, ativo })), [aplicar]);
-  const setPosInicio = React.useCallback((pos_inicio?: { x: number; y: number }) =>
-    aplicar((atual) => ({ ...atual, pos_inicio })), [aplicar]);
-  const substituir = React.useCallback((roteiro: DocumentoRoteiro) => aplicar(roteiro), [aplicar]);
-
-  const desfazer = React.useCallback(() => {
-    const anterior = passados.current.pop();
-    if (!anterior) return;
-    futuros.current = [documentoRef.current, ...futuros.current].slice(0, 60);
-    documentoRef.current = anterior;
-    ultimoGrupo.current = null;
-    setDocumento(anterior);
-  }, []);
-
-  const refazer = React.useCallback(() => {
-    const proximo = futuros.current.shift();
-    if (!proximo) return;
-    passados.current = [...passados.current.slice(-59), documentoRef.current];
-    documentoRef.current = proximo;
-    ultimoGrupo.current = null;
-    setDocumento(proximo);
-  }, []);
-
-  const marcarSalvo = React.useCallback(() => {
-    setSalvo(assinatura(documentoRef.current));
-    ultimoGrupo.current = null;
-  }, []);
-
-  return {
-    documento,
-    setAtivo,
-    setEtapas,
-    setPosInicio,
-    substituir,
-    desfazer,
-    refazer,
-    marcarSalvo,
-    podeDesfazer: passados.current.length > 0,
-    podeRefazer: futuros.current.length > 0,
-    alterado: assinatura(documento) !== salvo,
+  const setModo = (novo: ModoEditor) => {
+    setModoEstado(novo);
+    try { window.localStorage.setItem(CHAVE_MODO, novo); } catch { /* preferência só desta visita */ }
   };
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h3 className="font-display text-lg font-600 text-chalk">Fluxo do robô</h3>
+          <p className="text-xs text-mist">O que o robô manda, como ele conversa e quando ele para, na ordem em que acontece.</p>
+        </div>
+        <div role="tablist" aria-label="Modo de edição do fluxo" className="flex rounded-xl border border-line bg-ink-900 p-1">
+          {([["simples", "Passo a passo"], ["desenho", "Desenho completo"]] as [ModoEditor, string][]).map(([valor, rotulo]) => (
+            <button key={valor} role="tab" aria-selected={modo === valor} onClick={() => setModo(valor)}
+              className={`rounded-lg px-3 py-1.5 text-xs transition-colors ${modo === valor ? "bg-emerald/15 font-600 text-emerald" : "text-mist hover:text-chalk"}`}>
+              {rotulo}
+            </button>
+          ))}
+        </div>
+      </div>
+      {modo === "simples"
+        ? <FluxoSimples {...props} historico={historico} />
+        // o ReactFlowProvider é necessário para o useReactFlow() do canvas
+        : <ReactFlowProvider><Canvas {...props} historico={historico} /></ReactFlowProvider>}
+    </div>
+  );
 }
 
-function assinatura(documento: DocumentoRoteiro): string {
-  return JSON.stringify(documento);
-}
+type Transferencia = { modo: "copiar" | "colar"; texto: string; erro?: string };
 
 function alvoDeDigitacao(alvo: EventTarget | null): boolean {
   return alvo instanceof HTMLInputElement || alvo instanceof HTMLTextAreaElement || alvo instanceof HTMLSelectElement ||
