@@ -2256,9 +2256,10 @@ abordagem não pergunta mais quem é) e ganhou o caso "QUERO PAGAR → pagamento
   (`ehRecusaAntesDePerguntarIdentidade`), não "pessoa errada". A abordagem v15 conta como pergunta de
   identidade ("Confirma que falo com a titular?"), então as conversas dela seguem como antes.
 
-**A v17 NÃO está ativa** — a ativação foi barrada pelo controle de permissões do agente e ficou com o
-dono (painel → Fluxo do robô → Versões e desempenho → v17 → Restaurar). Até lá a v15 segue no ar. A
-promessa de "voltar a ter relacionamento comercial com a SAVAN" ainda precisa ser confirmada com a loja.
+**v17 ativada em 29/09/2026**, a pedido do dono, que confirmou com a SAVAN a promessa de "voltar a ter
+relacionamento comercial com a SAVAN". Ativação numa instrução só (versão ativa, `carteiras.roteiro`
+e o nome da versão), conferida depois: 39 etapas nos dois lugares e o texto novo no disparo. Quem já
+tinha recebido a v15 segue na v15 — a conversa fica presa à versão em que começou.
 
 ### O fluxo em modo passo a passo
 
