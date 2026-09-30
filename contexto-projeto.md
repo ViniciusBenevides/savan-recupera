@@ -2365,7 +2365,8 @@ renomeado:
   hostilidade e de pedido para parar, que não tinha.
 
 Os dois revisores automáticos não chegaram a rodar (limite de uso da sessão); a revisão foi feita à
-mão, passando dez respostas reais e variações pelas saídas novas. **A v18 está gravada como rascunho
-e NÃO ativa** — a ativação foi barrada pelo controle de permissões do agente e ficou com o dono (painel
-→ Fluxo do robô → Versões e desempenho → v18 → Restaurar). Conversas já começadas continuam na versão
-em que começaram.
+mão, passando dez respostas reais e variações pelas saídas novas. **v18 ativada em 30/09/2026**, a
+pedido do dono ("pode ativar a v18") — a primeira tentativa, com "pode arrumar", foi barrada pelo
+controle de permissões do agente. Conferida depois: cópia do disparador igual à versão, 39 etapas nos
+dois lugares, as duas saídas novas em `apresentar_tudo`. Conversas já começadas continuam na versão em
+que começaram.
