@@ -94,8 +94,6 @@ export function Composer({ conversaId, bloqueio, onEnviado }: {
   // modelos de uma WABA banida, que não entregam nada (§38).
   const foraDaJanela = !!atd && atd.janela_aplica && !atd.na_janela;
   const exigeModelo = modo === "resposta" && foraDaJanela;
-  // No Baileys nada do lado do WhatsApp barra o envio — quem pesa o risco é quem escreve.
-  const avisoAbordagem = modo === "resposta" && !!atd && !atd.janela_aplica && atd.abordagem;
 
   // "/" no começo da caixa abre as respostas prontas, como no Chatwoot.
   const sugestoes = useMemo(() => {
@@ -222,22 +220,6 @@ export function Composer({ conversaId, bloqueio, onEnviado }: {
             <span>
               Passaram-se mais de 24 h desde a última mensagem desta pessoa. O WhatsApp só entrega{" "}
               <b>modelo aprovado pela Meta</b> agora — o texto livre volta assim que ela responder.
-            </span>
-          </div>
-        </div>
-      )}
-
-      {/* ── Baileys fora de 24 h: não é proibição, é responsabilidade ─────────────────────── */}
-      {/* Aqui o WhatsApp não barra nada. Quem manda para quem está calado há dias está fazendo
-          ABORDAGEM — a única categoria de envio que gera denúncia e derruba número (CONTEXT.md).
-          Dizer isso na hora de escrever é o que resta, já que o canal não diz. */}
-      {avisoAbordagem && (
-        <div className="mx-3 mt-2 rounded-lg border border-amber/25 bg-amber/5 px-3 py-2">
-          <div className="flex items-start gap-2 text-[11px] leading-relaxed text-amber">
-            <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0" />
-            <span>
-              Esta pessoa não escreve há mais de 24 h. Mandar agora conta como <b>abordagem</b> — é o
-              tipo de envio que gera bloqueio e denúncia. O número aguenta, mas o risco é real.
             </span>
           </div>
         </div>
