@@ -482,7 +482,7 @@ Deno.serve(async (req) => {
       // some e a mensagem sai sem oferta. Um disparo sem desconto é recuperável na conversa; um
       // disparo com valor errado, não.
       const { data: proposta } = await sb.rpc("fn_proposta", { p_devedor_id: item.devedor_id });
-      const descontoPP = proposta?.erro ? null : descontoEfetivoPP(proposta?.valor_original, proposta?.valor_final);
+      const descontoPP = proposta?.erro ? null : descontoEfetivoPP(proposta?.valor_original, proposta?.valor_final, proposta?.desconto_pct);
 
       const primeiroNome = (dev?.nome ?? "").split(" ")[0];
       const primeiroNomeCap = primeiroNome.charAt(0) + primeiroNome.slice(1).toLowerCase();

@@ -2286,3 +2286,53 @@ A tela passou a dizer isso em vez de oferecer um editor que não tem efeito.
 
 Verificação: `tsc` e `next build` limpos; a tela foi aberta localmente com a v16 por uma página
 temporária sem login (apagada) — edição, prévia com e sem desconto e troca de modo conferidas.
+
+## 47. O robô falava por cima do operador que respondia pelo celular (29–30/09/2026)
+
+Conversa real de 29/09 (carteira 11, chip 1, fluxo v15). O operador escreveu pelo WhatsApp do próprio
+celular do chip — "Perdão… o robô assumiu um comportamento inesperado mas vou assumir por aqui" — e o
+robô respondeu por cima dele mais cinco vezes. Na mesma conversa o devedor viu `PROXIMA_ETAPA:
+pagamento` e `PROXIMA_ETAPA: sem_condicoes` no texto, e a abertura disse 39% de desconto enquanto o
+robô, dois turnos depois, disse 40%.
+
+### As três causas
+
+1. **Mensagem do celular entrava como do robô.** O robô só se cala em `conversas.estado = 'humano'`. O
+   painel já marca isso ao responder, mas o `chatwoot-sync` gravava toda saída sem `sender.type =
+   user` como `origem = bot`, e o que se digita no celular do chip chega ao Chatwoot sem remetente.
+2. **O marcador só era reconhecido sozinho numa linha.** O modelo o escreveu no fim da pergunta; o
+   marcador saiu para o devedor e, sem ser lido, a conversa ficou presa em `apresentar_tudo` — daí as
+   respostas fora de contexto ("Pode me dizer como posso ajudar?").
+3. **Arredondamento de centavo.** R$ 68,18 com 40% dá R$ 40,908 → R$ 40,91; a conta de volta dá
+   39,997%, que a abertura arredondava para baixo.
+
+### O sinal que separa robô de pessoa
+
+Conferido nas 100 conversas mais recentes do chip 1: tudo o que o sistema manda pelo baileys-api leva
+um `messageId` gerado por nós (`crypto.randomUUID()`), que o Chatwoot guarda como `source_id` — 126
+de 126. O que foi digitado no celular chega sem remetente e com o id nativo do WhatsApp — exatamente as
+3 mensagens do operador. Nenhuma resposta automática do WhatsApp Business. Em todos os inboxes, toda
+saída com remetente usuário era do usuário 1, que é o dono do token das automações.
+
+### O que mudou
+
+| Peça | Entrega |
+| --- | --- |
+| `_shared/autor-saida.ts` (+testes) | `classificarAutorSaida`: sem remetente + `source_id` não-UUID no conector `baileys_chatwoot` = humano pelo celular; `sender.type = user` de OUTRO usuário que não o da integração = humano pelo Chatwoot. O usuário da integração não pausa (as automações escrevem com ele). Na Evolution o formato do id não separa nada e a regra não se aplica |
+| `chatwoot-sync` | classifica a saída que ninguém registrou antes; se for humano, põe a conversa em `humano`, zera o follow-up e grava "Pelo celular do chip" como atendente. Só no webhook e só para mensagem de até 60 min — backfill e evento reenviado não pausam. O conector vem do INBOX da mensagem (o `chip_id` da conversa o failover reescreve). Relê a mensagem na API quando a saída chega sem `source_id` (o n8n não o repassa), e campo vazio do evento não apaga mais o que a API devolveu. Os caches só guardam acerto (conector com validade de 5 min) |
+| `bot-turno` | três pontos: (1) a releitura depois do lock trata `humano` como a checagem do começo; (2) o update do início do turno não sobrescreve mais `humano`, estados finais nem `pix_enviado` — incondicional, ele desfazia a pausa gravada no meio do turno; (3) logo depois da IA e de novo antes do envio, se alguém assumiu, o turno termina sem gravar etapa, sem executar encerramento do destino e sem mandar nada. Quando o próprio turno escala, o sinal é uma mensagem de pessoa desde o início do turno |
+| `_shared/marcador-etapa.ts` (+testes) | o marcador é achado em qualquer posição e nas variações que o modelo escreve (negrito, itálico, aspas, `<id>`, `->`, travessão, espaço não separável, id com acento); também é a última rede depois do split em balões. "A próxima etapa: …" em português normal fica intacto. Quantificadores limitados: o primeiro desenho era cúbico em sequência longa de espaços (4 mil espaços = 15 s de CPU) |
+| `_shared/oferta.ts` + espelho do painel | com o `desconto_pct` da proposta, anuncia esse percentual quando o valor final é ele aplicado sobre o valor EXATO (a `fn_proposta` arredonda em `numeric`, meio centavo sobe; arredondar em JS divergia em ~3% das dívidas). Com o piso do Pix no meio, continua o efetivo para baixo. Paridade painel × disparador conferida em 359 mil casos |
+
+Revisão antes do commit: três revisores independentes (bot-turno, chatwoot-sync, módulos
+compartilhados) levantaram 11 pontos, todos corrigidos com teste — os mais sérios eram o update
+incondicional do início do turno (que reabria o incidente) e o regex cúbico. 194 testes Deno passando.
+
+A conversa de 29/09 foi corrigida à mão em 30/09: estado `humano`, "Pelo celular do chip" como
+atendente e as três mensagens do operador com `origem = humano`. Volta ao robô pelo "Devolver ao
+robô" do painel.
+
+**Deploy pendente:** `chatwoot-sync`, `bot-turno` e `campanha-lote` foram escritos e testados, mas o
+deploy foi barrado pelo controle de permissões do agente e ficou com o dono:
+`bash scripts/supabase-deploy.sh chatwoot-sync bot-turno campanha-lote`. Até lá, responder pelo
+celular do chip não pausa o robô — use o painel (que já pausa) ou o botão "Assumir".

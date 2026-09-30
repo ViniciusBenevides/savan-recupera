@@ -21,6 +21,43 @@ Deno.test("percentual redondo nao e comido pelo ponto flutuante", () => {
   assertEquals(descontoEfetivoPP(70, 49), 30);
 });
 
+// Caso real de 29/09: abertura disse 39%, o robo disse 40% — para o mesmo Pix de R$ 40,91.
+Deno.test("com o percentual da proposta, o arredondamento do centavo nao vira outro numero", () => {
+  assertEquals(descontoEfetivoPP(68.18, 40.91, 40), 40);
+  assertEquals(descontoEfetivoPP(68.18, 40.91), 39); // sem o percentual, o efetivo para baixo
+  assertEquals(descontoEfetivoPP("1000", "400", "60"), 60);
+});
+
+// A fn_proposta arredonda em numeric (meio centavo sobe); Math.round em ponto flutuante as vezes desce.
+Deno.test("meio centavo arredondado pelo banco nao desfaz a regra", () => {
+  assertEquals(descontoEfetivoPP(64.07, 32.04, 50), 50);   // 32,035 -> 32,04 no banco
+  assertEquals(descontoEfetivoPP(42.85, 30, 30), 30);      // 29,995 -> 30,00 no banco
+  assertEquals(descontoEfetivoPP(66.70, 30.02, 55), 55);   // 30,015 -> 30,02 no banco
+});
+
+// Varredura: para todo saldo de R$ 30,00 a R$ 800,00 e toda faixa inteira comum, o valor que o banco
+// cobraria (meio centavo para cima) e anunciado com o percentual da faixa.
+Deno.test("varredura de saldos e faixas: sempre o percentual da faixa", () => {
+  for (let centavos = 3000; centavos <= 80000; centavos += 7) {
+    const saldo = centavos / 100;
+    for (const pct of [10, 20, 30, 40, 50, 55, 60, 70]) {
+      const exatoEmCentavos = centavos * (100 - pct);                 // inteiro exato (centavos x 100)
+      const cobrado = Math.floor((exatoEmCentavos + 50) / 100) / 100;  // round half up, como numeric
+      assertEquals(descontoEfetivoPP(saldo, cobrado, pct), pct, `${saldo} a ${pct}%`);
+    }
+  }
+});
+
+Deno.test("com o piso do Pix no meio, vale o efetivo e nao o percentual da faixa", () => {
+  // faixa de 60% daria R$ 18,00; o piso sobe para R$ 30,00 -> 33% reais
+  assertEquals(descontoEfetivoPP(45, 30, 60), 33);
+});
+
+Deno.test("percentual da proposta abaixo do minimo tambem nao e anunciado", () => {
+  assertEquals(descontoEfetivoPP(100, 95, 5), null);
+  assertEquals(descontoEfetivoPP(100, 60, "abc"), 40);
+});
+
 Deno.test("desconto abaixo do minimo nao e anunciado", () => {
   assertEquals(descontoEfetivoPP(100, 95), null);
   assertEquals(descontoEfetivoPP(100, 100 - DESCONTO_MINIMO_ANUNCIAVEL_PP), DESCONTO_MINIMO_ANUNCIAVEL_PP);

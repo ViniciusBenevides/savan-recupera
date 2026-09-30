@@ -36,6 +36,7 @@ import {
 } from "../_shared/identity.ts";
 import { detalharPisoProposta, garantirExplicacaoPiso } from "../_shared/proposal.ts";
 import { formatarReais, respostaPixDireto } from "../_shared/pix-direto.ts";
+import { extrairMarcadorEtapa } from "../_shared/marcador-etapa.ts";
 import { splitRespostas } from "../_shared/split-mensagens.ts";
 import { validarSaida } from "../_shared/guardrail-saida.ts";
 import {
@@ -705,7 +706,21 @@ Deno.serve(async (req) => {
       await marcarFila(sb, incomingMessageId, "concluida");
       return json({ ok: true, acao: "encerrada", ignorado: "conversa_finalizada", mensagens: [] });
     }
+    // Uma pessoa pode ter assumido enquanto esta execução esperava o lock (painel, ou celular do chip
+    // marcado pelo chatwoot-sync). Mesmo tratamento da checagem de `humano` do começo do handler.
+    if (estadoAtual?.estado === "humano") {
+      await sb.from("mensagens").upsert({
+        conversa_id: conv.id, direcao: "entrada", origem: "devedor", conteudo: b.mensagem,
+        chatwoot_message_id: incomingMessageId, simulacao,
+      }, incomingMessageId ? { onConflict: "chatwoot_message_id" } : undefined);
+      await sb.from("conversas").update({ ultima_msg_em: new Date().toISOString(), ultima_msg_de: "devedor" }).eq("id", conv.id);
+      await marcarFila(sb, incomingMessageId, "concluida");
+      return json({ ok: true, acao: "humano", mensagens: [] });
+    }
     await marcarFila(sb, incomingMessageId, "processando");
+    // Marco do início do turno: se uma pessoa escrever na conversa a partir daqui, nada do que a IA
+    // preparar sai por cima dela (ver humanoAssumiuDuranteOTurno, adiante).
+    const inicioTurno = new Date().toISOString();
 
   const { data: prop } = await sb.rpc("fn_proposta", { p_devedor_id: conv.devedor_id });
 
@@ -740,9 +755,14 @@ Deno.serve(async (req) => {
     chatwoot_message_id: incomingMessageId, simulacao,
   }, incomingMessageId ? { onConflict: "chatwoot_message_id" } : undefined);
   await sb.from("conversas").update({
-    estado: conv.estado === "pix_enviado" ? "pix_enviado" : "bot_ativo",
     ultima_msg_em: new Date().toISOString(), ultima_msg_de: "devedor", proximo_followup_em: null,
   }).eq("id", conv.id);
+  // O estado só vira `bot_ativo` se ninguém o mudou no meio do caminho. Incondicional, este update
+  // desfazia uma pausa `humano` gravada pelo chatwoot-sync durante o turno — e o robô voltava a
+  // falar por cima do operador, o incidente de 29/09. Também não rebaixa `pix_enviado`, que o
+  // chatwoot-sync marca quando o copia-e-cola é entregue.
+  await sb.from("conversas").update({ estado: "bot_ativo" })
+    .eq("id", conv.id).not("estado", "in", "(humano,pago,optout,encerrada,pix_enviado)");
   await sb.from("eventos_campanha").insert({ tipo: "resposta", devedor_id: conv.devedor_id, carteira_id: carteiraId, payload: { simulacao } });
   if (!simulacao) {
     await sb.rpc("fn_inc_metrica_dia", { p_dia: new Date().toISOString().slice(0, 10), p_campo: "respostas", p_n: 1 });
@@ -1254,6 +1274,27 @@ Deno.serve(async (req) => {
     }
   }
 
+  // Alguém assumiu enquanto a IA pensava? Pelo painel ou pelo celular do chip (o chatwoot-sync marca
+  // `humano`). Checado aqui, ANTES de gravar etapa, executar encerramento do destino ou escalar pelo
+  // guardrail — um turno descartado não pode mudar a conversa que a pessoa acabou de assumir.
+  // Quando é o próprio turno que escala, é ele quem grava `humano`; aí o sinal é uma mensagem de
+  // pessoa na conversa desde o início do turno: o operador que entrou porque o devedor pediu
+  // atendente não pode receber, logo em seguida, a despedida do robô mandando falar com outro número.
+  const humanoAssumiuDuranteOTurno = async (): Promise<boolean> => {
+    if (acao !== "escalar") {
+      const { data } = await sb.from("conversas").select("estado").eq("id", conv.id).maybeSingle();
+      return data?.estado === "humano";
+    }
+    const { data: escrita } = await sb.from("mensagens").select("id")
+      .eq("conversa_id", conv.id).eq("direcao", "saida").eq("origem", "humano")
+      .gte("criado_em", inicioTurno).limit(1);
+    return (escrita ?? []).length > 0;
+  };
+  if (await humanoAssumiuDuranteOTurno()) {
+    await marcarFila(sb, incomingMessageId, "concluida");
+    return json({ ok: true, acao: "humano", ignorado: "humano_assumiu", simulacao, mensagens: [] });
+  }
+
   const remetente = await infoRemetente(cfg, seg, convId);
   if (remetente?.lid && conv.telefone_id) {
     await sb.from("telefones_devedor").update({ chat_lid: remetente.lid }).eq("id", conv.telefone_id).is("chat_lid", null);
@@ -1268,14 +1309,14 @@ Deno.serve(async (req) => {
   if (etapaAtual) {
     // só etapas de CONVERSA são destino válido: o modelo não pode mandar a conversa "voltar" para
     // um bloco de disparo ou de pós-pagamento, que nem são executados aqui (§35)
-    const idsValidos = new Set(
-      (carteira?.roteiro?.etapas ?? []).filter(ehConversa).map((e: any) => e.id));
+    const idsValidos = new Set<string>(
+      (carteira?.roteiro?.etapas ?? []).filter(ehConversa).map((e: any) => String(e.id)));
+    // Em qualquer posição da resposta, não só numa linha própria: ver _shared/marcador-etapa.ts.
     let proxima: string | null = null;
     for (let i = 0; i < respostas.length; i++) {
-      respostas[i] = respostas[i].replace(/^\s*PROXIMA_ETAPA:\s*([a-z0-9_\-]+)\s*$/gim, (_m, id) => {
-        if (idsValidos.has(id)) proxima = id;
-        return "";
-      }).trim();
+      const extraido = extrairMarcadorEtapa(respostas[i], idsValidos);
+      respostas[i] = extraido.texto;
+      if (extraido.proxima) proxima = extraido.proxima;
     }
     for (let i = respostas.length - 1; i >= 0; i--) if (!respostas[i]) respostas.splice(i, 1);
     if (proxima && proxima !== conv.etapa_roteiro) {
@@ -1361,13 +1402,24 @@ Deno.serve(async (req) => {
   // Split de mensagens: um textao so vira 2-3 baloes, como uma pessoa digitando. Vem por ultimo,
   // depois das barreiras deterministicas, para que elas continuem raciocinando sobre a resposta
   // inteira. Roda antes do copia-e-cola justamente para nao encostar nele.
-  const respostasEmBaloes = splitRespostas(respostas);
+  const respostasEmBaloes = splitRespostas(respostas)
+    // Última rede: marcador de etapa nunca sai, nem quando não havia roteiro para lê-lo.
+    .map((txt) => extrairMarcadorEtapa(txt, new Set<string>()).texto)
+    .filter(Boolean);
   respostas.length = 0;
   respostas.push(...respostasEmBaloes);
 
   // O copia-e-cola vai sozinho na ultima mensagem para permitir copiar com um toque,
   // sem saudacao, rotulo, aspas, Markdown ou qualquer outro texto ao redor.
   if (pixCopiaCola) respostas.push(pixCopiaCola);
+
+  // Segunda checagem, para a janela entre a de cima e o envio. Em 29/09/2026 o operador escreveu
+  // "vou assumir por aqui" e o robô respondeu por cima dele: nada que o robô preparou sai depois que
+  // uma pessoa tomou a conversa.
+  if (await humanoAssumiuDuranteOTurno()) {
+    await marcarFila(sb, incomingMessageId, "concluida");
+    return json({ ok: true, acao: "humano", ignorado: "humano_assumiu", simulacao, mensagens: [] });
+  }
 
   for (const txt of respostas) {
     await sb.from("mensagens").insert({ conversa_id: conv.id, direcao: "saida", origem: "bot", conteudo: txt, simulacao });

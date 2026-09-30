@@ -32,7 +32,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   for (const dev of devedores ?? []) {
     if (comDesconto && semDesconto) break;
     const { data: proposta } = await admin.rpc("fn_proposta", { p_devedor_id: dev.id });
-    const pp = proposta?.erro ? null : descontoEfetivoPP(proposta?.valor_original, proposta?.valor_final);
+    const pp = proposta?.erro ? null : descontoEfetivoPP(proposta?.valor_original, proposta?.valor_final, proposta?.desconto_pct);
     if (pp !== null && comDesconto) continue;
     if (pp === null && semDesconto) continue;
 

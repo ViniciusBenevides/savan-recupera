@@ -4,6 +4,7 @@ import { createClient, SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import {
   deveGravarEntrega, entregaConfirmada, statusEntregaDoChatwoot,
 } from "../_shared/entrega.ts";
+import { classificarAutorSaida, nomeDoAtendenteExterno } from "../_shared/autor-saida.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -330,11 +331,83 @@ async function garantirConversa(
   return criada;
 }
 
+// Quem é o dono do token de integração. As automações escrevem no Chatwoot com ele, então uma
+// mensagem desse usuário não prova que uma pessoa assumiu (ver _shared/autor-saida.ts). Guardado
+// por instância: muda só se o token mudar.
+let usuarioIntegracao: { token: string; id: number } | null = null;
+async function usuarioDaIntegracao(cw: { url?: string; token: string }): Promise<number | null> {
+  if (usuarioIntegracao?.token === cw.token) return usuarioIntegracao.id;
+  try {
+    const id = cw.url ? numero((await cwGet(cw.url, cw.token, "/api/v1/profile"))?.id) : null;
+    // Só o acerto fica guardado: uma falha passageira do Chatwoot não pode desligar a pausa por
+    // atendente até a instância morrer.
+    if (id) usuarioIntegracao = { token: cw.token, id };
+    return id;
+  } catch (e) {
+    console.error("chatwoot-sync: perfil da integração indisponível:", e instanceof Error ? e.message : String(e));
+    return null;
+  }
+}
+
+// O conector sai do INBOX por onde a mensagem passou, e só na falta dele do chip da conversa:
+// `conversas.chip_id` é o que o failover reescreve (§42) — o operador pode estar respondendo pelo
+// celular do chip antigo numa conversa já reatribuída a outro. Guardado por 5 min, e só acerto: a
+// troca de conector de um chip (já aconteceu, migration 20260903180000) vale sem esperar a
+// instância morrer, e um erro passageiro do banco não desliga a pausa pelo celular.
+const TTL_CONECTOR_MS = 5 * 60 * 1000;
+const conectorGuardado = new Map<string, { conector: string | null; em: number }>();
+async function conectorDaMensagem(sb: SupabaseClient, inboxId: unknown, chipId: unknown): Promise<string | null> {
+  const inbox = numero(inboxId);
+  const chip = numero(chipId);
+  const chave = inbox ? `inbox:${inbox}` : chip ? `chip:${chip}` : null;
+  if (!chave) return null;
+  const guardado = conectorGuardado.get(chave);
+  if (guardado && Date.now() - guardado.em < TTL_CONECTOR_MS) return guardado.conector;
+  const { data, error } = inbox
+    ? await sb.from("chips").select("conector").eq("chatwoot_inbox_id", inbox).limit(1).maybeSingle()
+    : await sb.from("chips").select("conector").eq("id", chip!).maybeSingle();
+  if (error) {
+    console.error("chatwoot-sync: conector indisponível:", error.message);
+    return null;
+  }
+  if (!data && inbox && chip) return await conectorDaMensagem(sb, null, chip);
+  const conector = (data?.conector as string | null) ?? null;
+  conectorGuardado.set(chave, { conector, em: Date.now() });
+  return conector;
+}
+
+// Mensagem de humano só pausa o robô se for recente: um evento reenviado horas depois, ou a
+// importação de histórico, não pode calar uma conversa que alguém já devolveu ao robô.
+const JANELA_PAUSA_MS = 60 * 60 * 1000;
+
+async function pausarRoboPorHumano(
+  sb: SupabaseClient,
+  conv: any,
+  atendente: string,
+  criadoEm: string,
+): Promise<void> {
+  const { data: pausada, error } = await sb.from("conversas")
+    .update({ estado: "humano", proximo_followup_em: null })
+    .eq("id", conv.id)
+    .not("estado", "in", "(humano,pago,optout,encerrada)")
+    .select("id, atendente_id, atendente_nome").maybeSingle();
+  if (error) throw error;
+  if (!pausada) return;
+  if (!pausada.atendente_id && !pausada.atendente_nome) {
+    const { error: erroAtendente } = await sb.from("conversas")
+      .update({ atendente_nome: atendente, assumida_em: criadoEm }).eq("id", conv.id);
+    if (erroAtendente) throw erroAtendente;
+  }
+  conv.estado = "humano";
+  console.log("chatwoot-sync: humano assumiu, robô pausado", { conversa: conv.id, via: atendente });
+}
+
 async function espelharMensagem(
   sb: SupabaseClient,
   conv: any,
   msg: any,
-  cw: { token: string; openAiKey?: string },
+  cw: { url?: string; token: string; openAiKey?: string },
+  opcoes: { pausarSeHumano?: boolean } = {},
 ): Promise<{ status: "gravada" | "ignorada"; conteudo: string | null; transcricao: string | null }> {
   if (msg?.private === true) return { status: "ignorada", conteudo: null, transcricao: null };
   const direcao = tipoMensagem(msg?.message_type);
@@ -358,7 +431,18 @@ async function espelharMensagem(
     }
   }
   const senderType = String(msg?.sender?.type ?? msg?.sender_type ?? "").toLowerCase();
-  const origem = direcao === "entrada" ? "devedor" : (senderType === "user" ? "humano" : "bot");
+  // Só vale para a mensagem que ninguém do sistema registrou antes (o INSERT abaixo): as do robô e as
+  // do painel já existem e são reconciliadas pelo id ou pelo conteúdo, com o autor que já tinham.
+  const autor = direcao === "saida"
+    ? classificarAutorSaida({
+      senderType,
+      senderId: numero(msg?.sender?.id),
+      sourceId: msg?.source_id ?? null,
+      conector: await conectorDaMensagem(sb, msg?.inbox_id ?? conv?.chatwoot_inbox_id, conv.chip_id),
+      usuarioIntegracaoId: senderType === "user" ? await usuarioDaIntegracao(cw) : null,
+    })
+    : null;
+  const origem = direcao === "entrada" ? "devedor" : autor!.origem;
 
   const { data: porId, error: erroId } = await sb.from("mensagens")
     .select("id, origem").eq("chatwoot_message_id", messageId).maybeSingle();
@@ -411,6 +495,13 @@ async function espelharMensagem(
         if (erroCorrida) throw erroCorrida;
       } else if (error) {
         throw error;
+      } else if (
+        autor?.pausarRobo && autor.via && opcoes.pausarSeHumano
+        && Date.now() - new Date(criadoEm).getTime() < JANELA_PAUSA_MS
+      ) {
+        // Uma pessoa escreveu por fora do painel (celular do chip ou tela do Chatwoot): o robô
+        // para aqui, como para quando o operador responde pelo painel. Volta pelo "Devolver ao robô".
+        await pausarRoboPorHumano(sb, conv, nomeDoAtendenteExterno(autor.via, msg?.sender?.name), criadoEm);
       }
     }
   }
@@ -570,18 +661,31 @@ Deno.serve(async (req) => {
       created_at: body?.created_at,
       sender_type: body?.sender_type,
       sender: body?.sender,
+      source_id: body?.source_id,
       attachments: body?.attachments,
     };
     // O normalizador antigo do n8n nao enviava attachments. Busca a mensagem no Chatwoot
     // para que audio continue funcionando durante a transicao do workflow.
-    if (!Array.isArray(mensagemEvento.attachments) || mensagemEvento.attachments.length === 0) {
+    // Saida sem `source_id` tambem e buscada: e ele que separa o que o sistema mandou do que alguem
+    // digitou no celular do chip (_shared/autor-saida.ts), e o normalizador do n8n nao o repassa.
+    const semAnexos = !Array.isArray(mensagemEvento.attachments) || mensagemEvento.attachments.length === 0;
+    const saidaSemOrigem = tipoMensagem(mensagemEvento.message_type) === "saida" && !mensagemEvento.source_id;
+    if (semAnexos || saidaSemOrigem) {
       const idAlvo = numero(mensagemEvento.id);
       if (idAlvo) {
         const encontrada = (await mensagensDaConversa(cw, convId)).find((m) => numero(m?.id) === idAlvo);
-        if (encontrada) mensagemEvento = { ...encontrada, ...mensagemEvento, attachments: encontrada.attachments };
+        // Campo que o evento trouxe vazio não apaga o que a API devolveu (antes o `sender` ausente
+        // no evento sobrescrevia o da API com undefined).
+        const doEvento = Object.fromEntries(Object.entries(mensagemEvento).filter(([, v]) => v !== undefined && v !== null));
+        if (encontrada) {
+          mensagemEvento = {
+            ...encontrada, ...doEvento,
+            attachments: semAnexos ? encontrada.attachments : mensagemEvento.attachments,
+          };
+        }
       }
     }
-    const resultado = await espelharMensagem(sb, conv, mensagemEvento, cw);
+    const resultado = await espelharMensagem(sb, conv, mensagemEvento, cw, { pausarSeHumano: true });
     return json({
       ok: true,
       conversa_id: conv.id,

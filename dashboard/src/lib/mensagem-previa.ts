@@ -163,11 +163,20 @@ export function trechosParaDestaque(texto: string): Trecho[] {
 
 // supabase/functions/_shared/oferta.ts → DESCONTO_MINIMO_ANUNCIAVEL_PP e descontoEfetivoPP
 const DESCONTO_MINIMO_ANUNCIAVEL_PP = 10;
-export function descontoEfetivoPP(valorOriginal: unknown, valorFinal: unknown): number | null {
+export function descontoEfetivoPP(valorOriginal: unknown, valorFinal: unknown, pctDaProposta?: unknown): number | null {
   const bruto = Number(valorOriginal);
   const final = Number(valorFinal);
   if (!Number.isFinite(bruto) || !Number.isFinite(final)) return null;
   if (bruto <= 0 || final < 0 || final >= bruto) return null;
+  const pct = Number(pctDaProposta);
+  if (pctDaProposta != null && Number.isFinite(pct) && pct > 0 && pct < 100) {
+    // exato, sem arredondar aqui: a fn_proposta arredonda em numeric (ver _shared/oferta.ts)
+    const exato = bruto * (1 - pct / 100);
+    if (Math.abs(exato - final) <= 0.005 + 1e-9) {
+      const anunciado = Math.floor(pct + 1e-9);
+      return anunciado >= DESCONTO_MINIMO_ANUNCIAVEL_PP ? anunciado : null;
+    }
+  }
   const pp = Math.floor((1 - final / bruto) * 100 + 1e-9);
   return pp >= DESCONTO_MINIMO_ANUNCIAVEL_PP ? pp : null;
 }
