@@ -2332,7 +2332,40 @@ A conversa de 29/09 foi corrigida à mão em 30/09: estado `humano`, "Pelo celul
 atendente e as três mensagens do operador com `origem = humano`. Volta ao robô pelo "Devolver ao
 robô" do painel.
 
-**Deploy pendente:** `chatwoot-sync`, `bot-turno` e `campanha-lote` foram escritos e testados, mas o
-deploy foi barrado pelo controle de permissões do agente e ficou com o dono:
-`bash scripts/supabase-deploy.sh chatwoot-sync bot-turno campanha-lote`. Até lá, responder pelo
-celular do chip não pausa o robô — use o painel (que já pausa) ou o botão "Assumir".
+**Deploy em 30/09/2026** de `chatwoot-sync`, `bot-turno` e `campanha-lote` (a primeira tentativa foi
+barrada pelo controle de permissões do agente; saiu depois que o dono tentou rodar o script). As duas
+primeiras conferidas no ar: sobem e recusam chamada sem service role. O `campanha-lote` não foi chamado
+de propósito — sem trava de autorização visível no código, uma chamada de teste poderia disparar um
+lote de verdade.
+
+No Windows, o script de deploy precisa do Bash do Git: no PowerShell, `bash` aponta para o WSL (sem
+distribuição instalada nesta máquina) e falha com `execvpe(/bin/bash) failed`. Use
+`& "C:\Program Files\Git\bin\bash.exe" scripts/supabase-deploy.sh <funções>`.
+
+## 48. Fluxo v18: promessa com data e pagamento sem Pix (30/09/2026)
+
+Da conversa real do §47 saíram dois buracos de conteúdo no fluxo, pedidos pelo dono para arrumar:
+
+- **"Eu quero pagar mais recebo dia 6"** — `apresentar_tudo` não tinha saída para promessa com data;
+  a frase cabia em "quer pagar" e em "sem condições", e `agendar_retorno` não era alcançável dali.
+- **"Eu não tenho pix"** — nenhuma etapa tratava. O robô improvisou e disse que no escritório a pessoa
+  "recebe o termo de quitação na hora". Isso não está no fluxo nem na base de Conhecimento (a entrada
+  #2 diz só que existe atendimento presencial no endereço da bio).
+
+`scripts/roteiro-v18-formas-de-pagamento.py` gera a **v18** a partir da v17, sem etapa nova e sem id
+renomeado:
+
+- `apresentar_tudo`: saídas "quer pagar, mas numa data que indicou" → `agendar_retorno` e "não tem Pix /
+  quer pagar pessoalmente ou na loja" → `quer_pagar_na_loja`, na frente da saída "pagamento", que passa
+  a ser explicitamente de quem quer pagar agora;
+- `pagamento`: a mesma saída "não tem Pix", para quem diz isso depois de o Pix ser gerado;
+- `quer_pagar_na_loja`: cobre também quem não tem Pix; só oferece Pix ou o presencial da MC Cred; diz
+  o que o robô NÃO sabe e não promete (horário do escritório, como o termo é entregue no presencial,
+  qualquer prazo); sem Pix e sem poder ir → uma pessoa da equipe (`escalar`); ganhou as saídas de
+  hostilidade e de pedido para parar, que não tinha.
+
+Os dois revisores automáticos não chegaram a rodar (limite de uso da sessão); a revisão foi feita à
+mão, passando dez respostas reais e variações pelas saídas novas. **A v18 está gravada como rascunho
+e NÃO ativa** — a ativação foi barrada pelo controle de permissões do agente e ficou com o dono (painel
+→ Fluxo do robô → Versões e desempenho → v18 → Restaurar). Conversas já começadas continuam na versão
+em que começaram.
