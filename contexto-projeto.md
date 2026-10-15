@@ -2395,3 +2395,11 @@ o próximo a ligar sozinho.
 | `DELETE /api/chips/[id]` | apaga o chip primeiro e o inbox só depois. Chip com histórico recebe 409 com uma mensagem clara, e o Chatwoot não é tocado |
 
 O preço: uma queda curta de madrugada agora também deixa o chip pausado até alguém retomar.
+
+**Aplicado em 15/10/2026**, a pedido do dono ("pode aplicar"). Antes do deploy, o `status_antes` do
+Chip 2 foi trocado de `ativo` para `pausado` direto no banco (o do chip 1 já era `pausado`). Deploy do
+`chips-monitor` v15. O primeiro deploy (v14) subiu com `verify_jwt = false`, porque a função não estava
+no `config.toml`. Com isso a trava do §30 deixava passar um token forjado. A v15 foi feita com a linha
+no `config.toml` e conferida assim: token inválido barrado pelo gateway, e a rodada do n8n das 20:45 UTC
+rodou normalmente. `campanha-followup` e `disparar-teste` também estão com `verify_jwt = false` desde
+17/09 e não foram mexidas aqui.
