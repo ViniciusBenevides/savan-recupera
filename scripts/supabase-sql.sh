@@ -4,8 +4,8 @@
 # Uso:  bash scripts/supabase-sql.sh supabase/migrations/<arquivo>.sql
 #       bash scripts/supabase-sql.sh --sql "select 1"
 #
-# Por que existe: a política do projeto (CLAUDE.md) proíbe MCP para operar serviços externos,
-# então SQL em produção vai pela Management API com o token do .env. Este script existe para que
+# Por que existe: SQL em produção vai pela Management API com o token do .env (até 15/10/2026 era o
+# único caminho, porque o CLAUDE.md proibia MCP). Este script existe para que
 # a operação seja UMA linha auditável em vez de um curl montado na hora — e para poder receber uma
 # regra de permissão específica, em vez de liberar curl para qualquer destino.
 #

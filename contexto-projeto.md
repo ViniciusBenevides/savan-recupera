@@ -440,9 +440,9 @@ env vars na Vercel (produção). Segredos operacionais das Edge Functions: tabel
 
 **Política obrigatória para agentes:** antes de ler, usar, testar, alterar ou rotacionar qualquer
 credencial, seguir [Credenciais — Política para Agentes](<Guias Operacionais/Credenciais — Política para Agentes.md>).
-A autenticação deve vir do `.env`; a orientação, das skills aplicáveis e do guia operacional local do
-serviço. **Não usar MCP** para descobrir, validar, ler ou alterar credenciais, nem para operar esses
-serviços. Valores secretos nunca devem aparecer em conversa, logs, documentação, commits ou diffs.
+A orientação vem das skills aplicáveis e do guia operacional local do serviço. Desde 15/10/2026 o MCP
+é permitido, a pedido do dono; antes, a autenticação só podia vir do `.env`. Valores secretos nunca
+devem aparecer em conversa, logs, documentação, commits ou diffs.
 
 ---
 
@@ -2422,3 +2422,10 @@ compartilhado. A tentativa de excluir o chip 1 pelo painel apagou o inbox 10 e, 
 derrubou às 17:30 o mesmo número no outro projeto, onde ele precisa ser pareado de novo. Os inboxes 8, 9
 e 12 continuam no Chatwoot. O 12 tem o número do Chip 2, que o outro projeto usa: apagá-lo derrubaria
 esse número também.
+
+No mesmo dia, desligados no n8n: `SAVAN W01 - Disparador`, `W07 - Follow-up`, `W08 - Monitor de Chips`
+e `W09 - Métricas`. Para religar, basta ativar de novo. O `W02 - Bot Negociador` ficou ativo, porque sem
+chip ele não tem por onde responder. Os inboxes 8 e 9 **não** foram apagados: guardam 597 conversas no
+Chatwoot, várias só lá (o 8 tem 513, contra 70 do Chip Oficial no banco), e o §38 manda preservar o
+histórico do canal oficial. Também a pedido do dono, o MCP passou a ser permitido: a proibição saiu do
+`CLAUDE.md`, do `AGENTS.md` e dos guias.

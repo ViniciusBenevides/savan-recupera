@@ -12,11 +12,6 @@ Antes de ler, usar, testar, alterar, rotacionar, revogar ou documentar qualquer 
 5. Se não houver skill ou guia específico, informe a ausência; não invente documentação nem use uma
    skill não relacionada.
 
-**MCP é proibido para credenciais e operações de serviços externos neste projeto**, mesmo quando uma
-skill o recomendar. Para autenticação, use somente o `.env`; para orientação, use as skills e os guias
-locais. Se a tarefa autorizar uma operação externa, use apenas a API ou CLI oficial do serviço com a
-credencial do `.env`.
-
 Nunca revele valores secretos em respostas, comandos exibidos, logs, screenshots, documentação, diffs
 ou commits. Ações destrutivas ou difíceis de reverter — rotação, revogação, deregistro, exclusão e troca
 de vínculo — exigem autorização específica e avaliação prévia do impacto.

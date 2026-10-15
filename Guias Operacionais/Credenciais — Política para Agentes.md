@@ -55,7 +55,7 @@ agir:
 No Claude Code, carregar também as cópias espelhadas em
 [`.claude/skills/supabase`](../.claude/skills/supabase/SKILL.md) e
 [`.claude/skills/supabase-postgres-best-practices`](../.claude/skills/supabase-postgres-best-practices/SKILL.md)
-quando elas estiverem disponíveis. A proibição de MCP continua valendo para todas essas skills.
+quando elas estiverem disponíveis.
 
 ## Regra adicional para Evolution/Baileys
 
