@@ -100,7 +100,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   return NextResponse.json({ ok: true });
 }
 
-// Exclui o chip (cascade nas credenciais/métricas; fila/conversas viram null) e
+// Exclui o chip (cascade nas credenciais/métricas; fila/conversas/mensagens viram null) e
 // remove o inbox vinculado no Chatwoot (best-effort).
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -112,13 +112,12 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
   const { data: chip } = await admin.from("chips").select("chatwoot_inbox_id").eq("id", Number(id)).maybeSingle();
   if (!chip) return NextResponse.json({ erro: "chip_nao_encontrado" }, { status: 404 });
 
-  // O chip sai primeiro e o inbox só depois. Na ordem inversa, chip com histórico (a FK de
-  // `mensagens` não deixa apagá-lo) perdia o inbox e ficava no painel pela metade — foi o que
-  // aconteceu com o chip 1 em 15/10/2026.
+  // O chip sai primeiro e o inbox só depois: se o banco recusar a exclusão, o Chatwoot fica
+  // intacto. Na ordem inversa, o chip 1 perdeu o inbox em 15/10/2026 e ficou no painel pela metade.
   const { error } = await admin.from("chips").delete().eq("id", Number(id));
   if (error?.code === "23503") {
     return NextResponse.json(
-      { erro: "Este chip já tem mensagens no histórico e não pode ser excluído. Deixe-o pausado: ele continua sem abordar ninguém." },
+      { erro: "Este chip ainda está ligado a outros registros e não pode ser excluído." },
       { status: 409 },
     );
   }

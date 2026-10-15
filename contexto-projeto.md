@@ -2401,5 +2401,24 @@ Chip 2 foi trocado de `ativo` para `pausado` direto no banco (o do chip 1 já er
 `chips-monitor` v15. O primeiro deploy (v14) subiu com `verify_jwt = false`, porque a função não estava
 no `config.toml`. Com isso a trava do §30 deixava passar um token forjado. A v15 foi feita com a linha
 no `config.toml` e conferida assim: token inválido barrado pelo gateway, e a rodada do n8n das 20:45 UTC
-rodou normalmente. `campanha-followup` e `disparar-teste` também estão com `verify_jwt = false` desde
-17/09 e não foram mexidas aqui.
+rodou normalmente. `campanha-followup` e `disparar-teste` estavam com `verify_jwt = false` desde 17/09.
+Ganharam a linha no `config.toml` e foram publicadas de novo no mesmo dia (v15 e v12). Token inválido
+é barrado no gateway, e a chamada seguinte do n8n ao follow-up passou.
+
+### Todos os chips excluídos (15/10/2026, noite)
+
+O dono decidiu não usar mais chips neste projeto: os números foram para o outro projeto. Os 4 chips
+(`Chip Maurélio`, `Chip Oficial`, `chip 1`, `Chip 2`) foram excluídos pelo banco, não pelo painel. Há
+backup local em `backups/`, fora do git e sem o token da Meta. A migration
+`20261015210000_chip_excluido_mantem_historico.sql` trocou as duas FKs que travavam a exclusão para `on
+delete set null`. Ficaram as 3.839 mensagens, as 1.021 conversas, os 2.792 itens de fila e as 7
+escalações, agora sem chip. O `trg_touch_conversas` ficou desligado só dentro da transação, para as
+conversas não ganharem `atualizado_em` novo.
+
+**Por que pelo banco e não pelo painel:** no Chatwoot da fazer-ai, apagar um inbox Baileys chama `DELETE
+/connections/{número}` no baileys-api (`before_destroy :disconnect_channel_provider` em
+`Channel::Whatsapp`). Isso é logout: destrói a sessão. A conexão é endereçada pelo número e o servidor é
+compartilhado. A tentativa de excluir o chip 1 pelo painel apagou o inbox 10 e, com quase certeza,
+derrubou às 17:30 o mesmo número no outro projeto, onde ele precisa ser pareado de novo. Os inboxes 8, 9
+e 12 continuam no Chatwoot. O 12 tem o número do Chip 2, que o outro projeto usa: apagá-lo derrubaria
+esse número também.
