@@ -3,5 +3,10 @@ project_id = "wmggqsmqvklxlqwsksjs"
 [functions.campanha-lote]
 verify_jwt = true
 
+# A trava interna do monitor lê o `role` do token sem conferir a assinatura: quem confere é este
+# flag. Em 15/10/2026 um deploy sem esta linha subiu com verify_jwt = false.
+[functions.chips-monitor]
+verify_jwt = true
+
 [functions.gerar-pix]
 verify_jwt = false

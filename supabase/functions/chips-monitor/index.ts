@@ -9,6 +9,7 @@ import { carregarSegredos } from "../_shared/lib.ts";
 import { configEvolution, instanciasEvolution } from "../_shared/evolution-client.ts";
 import { configBaileysApi, consultarBloqueioBaileysApi, saudeConexaoBaileysApi } from "../_shared/baileys-api-client.ts";
 import { type BloqueioWhatsapp, bloqueioVigente, lerBloqueioWhatsapp, statusComBloqueio } from "../_shared/bloqueio-whatsapp.ts";
+import { statusNaVolta } from "../_shared/volta-da-queda.ts";
 
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, content-type", "Access-Control-Allow-Methods": "POST, OPTIONS" };
 const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { ...cors, "Content-Type": "application/json" } });
@@ -94,13 +95,9 @@ Deno.serve(async (req) => {
           // Instância sumiu da Evolution (apagada, ou servidor trocado).
           if (operando) { statusAntes = atual; novoStatus = "desconectado"; }
         } else if (aberta) {
-          // Voltou. Só devolve ao ar quem o operador tinha armado antes de cair — nunca arma
-          // sozinho um chip que o operador nunca colocou para abordar (aquecimento é decisão dele).
-          if (atual === "desconectado" && ["ativo", "aquecendo"].includes(String(statusAntes))) {
-            // Em repouso escolhido pelo operador (§43), volta pausado — o banco recusaria o resto.
-            novoStatus = statusComBloqueio(String(statusAntes), bloqueioVigente(chip.repouso_ate));
-            statusAntes = null;
-          }
+          // Voltou, mas não volta ao ar: quem abordava volta pausado (ver `statusNaVolta`).
+          const volta = atual === "desconectado" ? statusNaVolta(statusAntes) : null;
+          if (volta) { novoStatus = volta; statusAntes = null; }
         } else if (revogada || inst.estado === "close") {
           // `connecting` puro fica de fora de propósito: é o estado normal de quem está pareando.
           if (operando) { statusAntes = atual; novoStatus = "desconectado"; }
@@ -119,7 +116,11 @@ Deno.serve(async (req) => {
           atualizado_em: new Date().toISOString(),
         };
 
-        await sb.from("chips").update({ saude, status: novoStatus }).eq("id", chip.id);
+        // Só grava se o status ainda é o que foi lido: o operador pode ter pausado no meio da rodada,
+        // e regravar o status velho religaria o chip. A próxima rodada relê.
+        const { data: gravado } = await sb.from("chips").update({ saude, status: novoStatus })
+          .eq("id", chip.id).eq("status", atual).select("id");
+        if (!gravado?.length) continue;
 
         // Evento só na TRANSIÇÃO: o monitor roda a cada 15 min e um evento por rodada viraria ruído
         // no feed em vez de alerta.
@@ -186,8 +187,7 @@ Deno.serve(async (req) => {
       // baileys-api): `connected: true` só prova que o socket está de pé, não que o WhatsApp está
       // confirmando o que sai. `lastOutgoingAckAgoMs` é a única prova de ponta a ponta — se já
       // passou tempo suficiente desde um envio completo e NUNCA veio ack, tratar como suspeito.
-      // Sem essa trava, o monitor religou o chip 1 sozinho hoje com a conta possivelmente
-      // restrita, quase reabrindo o disparo em massa (ver `contexto-projeto.md`).
+      // Vira alerta no feed; a volta da queda não depende mais dele porque nunca arma o chip.
       const LIMITE_ACK_SUSPEITO_MS = 5 * 60_000;
       const semAckConfirmado =
         typeof saudeConsulta.ultimoEnvioCompletoAgoMs === "number" &&
@@ -195,14 +195,11 @@ Deno.serve(async (req) => {
         saudeConsulta.ultimoAckAgoMs === null;
 
       if (saudeConsulta.connected) {
-        if (
-          atual === "desconectado" &&
-          ["ativo", "aquecendo"].includes(String(statusAntes)) &&
-          !semAckConfirmado
-        ) {
-          novoStatus = String(statusAntes);
-          statusAntes = null;
-        }
+        // Voltou, mas não volta ao ar: quem abordava volta pausado (ver `statusNaVolta`). Aqui
+        // importa mais que na Evolution — este servidor é compartilhado, e conectar o número em
+        // outro projeto aparece como "conectado" para nós.
+        const volta = atual === "desconectado" ? statusNaVolta(statusAntes) : null;
+        if (volta) { novoStatus = volta; statusAntes = null; }
       } else if (operando) {
         statusAntes = atual;
         novoStatus = "desconectado";
@@ -262,9 +259,11 @@ Deno.serve(async (req) => {
         atualizado_em: new Date().toISOString(),
       };
 
-      await sb.from("chips").update({
+      // Mesma guarda do bloco da Evolution: não regravar status velho por cima de uma pausa nova.
+      const { data: gravado } = await sb.from("chips").update({
         saude, status: novoStatus, whatsapp_bloqueio_ate: travado ? bloqueioAte : null,
-      }).eq("id", chip.id);
+      }).eq("id", chip.id).eq("status", atual).select("id");
+      if (!gravado?.length) continue;
 
       if (novoStatus !== atual) {
         await sb.from("eventos_campanha").insert({

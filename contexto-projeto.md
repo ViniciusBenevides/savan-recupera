@@ -2370,3 +2370,28 @@ pedido do dono ("pode ativar a v18") — a primeira tentativa, com "pode arrumar
 controle de permissões do agente. Conferida depois: cópia do disparador igual à versão, 39 etapas nos
 dois lugares, as duas saídas novas em `apresentar_tudo`. Conversas já começadas continuam na versão em
 que começaram.
+
+## 49. O chip ligava sozinho quando o número era conectado em outro projeto (15/10/2026)
+
+O chip 1 caiu em 09/10 (`desconectado`, com `status_antes = ativo`). Em 15/10, às 12:30, o dono
+conectou o mesmo número num outro projeto que usa **o mesmo baileys-api e o mesmo Chatwoot** (mesma URL
+e mesma chave). O baileys-api endereça a conexão pelo número, então o `chips-monitor` perguntou "este
+número está conectado?", ouviu "sim" e devolveu o chip a `ativo`, como fazia com qualquer chip que
+voltava de uma queda. Das 12:31 às 17:28 o `campanha-lote` mandou 9 abordagens reais por um número que
+já não era da campanha.
+
+Depois disso, o dono tentou excluir o chip pelo painel. A rota apagava o inbox do Chatwoot **antes** de
+apagar o chip, e o chip não pode ser apagado (FK `mensagens_chip_id_fkey`, sem `on delete`). Resultado:
+o inbox 10 sumiu e o chip ficou no painel com `chatwoot_inbox_id` apontando para o nada. No mesmo dia, o
+número do Chip 2 também aparecia num inbox do outro projeto, com o Chip 2 em `status_antes = ativo`. Seria
+o próximo a ligar sozinho.
+
+### O que mudou
+
+| Peça | Entrega |
+| --- | --- |
+| `_shared/volta-da-queda.ts` (+testes) | `statusNaVolta`: quem abordava (`ativo`/`aquecendo`/`pausado`) volta `pausado`; `conectado` volta `conectado`. Reconectar nunca arma o chip; retomar é clique do operador |
+| `chips-monitor` | os dois blocos Baileys usam a regra acima. A escrita do status passou a exigir que ele ainda seja o lido (`.eq("status", atual)`): sem isso, uma pausa feita no meio da rodada era sobrescrita pelo status velho |
+| `DELETE /api/chips/[id]` | apaga o chip primeiro e o inbox só depois. Chip com histórico recebe 409 com uma mensagem clara, e o Chatwoot não é tocado |
+
+O preço: uma queda curta de madrugada agora também deixa o chip pausado até alguém retomar.

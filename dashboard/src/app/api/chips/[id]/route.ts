@@ -112,9 +112,18 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
   const { data: chip } = await admin.from("chips").select("chatwoot_inbox_id").eq("id", Number(id)).maybeSingle();
   if (!chip) return NextResponse.json({ erro: "chip_nao_encontrado" }, { status: 404 });
 
-  if (chip.chatwoot_inbox_id) await deletarInbox(chip.chatwoot_inbox_id);
-
+  // O chip sai primeiro e o inbox só depois. Na ordem inversa, chip com histórico (a FK de
+  // `mensagens` não deixa apagá-lo) perdia o inbox e ficava no painel pela metade — foi o que
+  // aconteceu com o chip 1 em 15/10/2026.
   const { error } = await admin.from("chips").delete().eq("id", Number(id));
+  if (error?.code === "23503") {
+    return NextResponse.json(
+      { erro: "Este chip já tem mensagens no histórico e não pode ser excluído. Deixe-o pausado: ele continua sem abordar ninguém." },
+      { status: 409 },
+    );
+  }
   if (error) return NextResponse.json({ erro: error.message }, { status: 400 });
+
+  if (chip.chatwoot_inbox_id) await deletarInbox(chip.chatwoot_inbox_id);
   return NextResponse.json({ ok: true });
 }
