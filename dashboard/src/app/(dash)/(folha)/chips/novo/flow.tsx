@@ -153,18 +153,18 @@ export function NovoChipFlow({ linhasLiberadas }: { linhasLiberadas: boolean }) 
       <form onSubmit={criar} className="max-w-lg">
         <Card className="flex flex-col gap-5">
           <div>
-            <Label>Nome do chip</Label>
-            <Input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Chip 01" required />
+            <Label>Nome da linha</Label>
+            <Input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Linha 01" required />
           </div>
           <div>
-            <Label>Papel do chip</Label>
+            <Label>Papel da linha</Label>
             <select value={papel} onChange={(e) => setPapel(e.target.value as "bot" | "equipe")}
                     className="h-10 w-full rounded-xl border border-line bg-ink-850 px-3 text-sm text-chalk outline-none">
               <option value="bot">Bot (dispara e negocia automaticamente)</option>
               <option value="equipe">Equipe (cobrador humano — só recebe escalações)</option>
             </select>
             <p className="mt-1.5 text-xs text-mist">
-              Marque <b className="text-chalk">Equipe</b> se este é o chip de um <b className="text-chalk">escalador humano</b>:
+              Marque <b className="text-chalk">Equipe</b> se esta é a linha de um <b className="text-chalk">escalador humano</b>:
               ele só recebe as transferências no WhatsApp, <b className="text-chalk">não dispara nada e não conecta em nada</b>.
               Você informa só o número dele.
             </p>
@@ -204,7 +204,7 @@ export function NovoChipFlow({ linhasLiberadas }: { linhasLiberadas: boolean }) 
                     </span>
                   </div>
                   <div>
-                    <Label>Número de WhatsApp deste chip</Label>
+                    <Label>Número de WhatsApp desta linha</Label>
                     <Input value={numero} onChange={(e) => setNumero(e.target.value)}
                            placeholder="(11) 99999-9999" required inputMode="tel" />
                     <p className="mt-1.5 text-xs text-mist">
@@ -270,7 +270,7 @@ export function NovoChipFlow({ linhasLiberadas }: { linhasLiberadas: boolean }) 
           ) : (
             <>
               <div>
-                <Label>Nome do cobrador (dono deste chip)</Label>
+                <Label>Nome do cobrador (dono desta linha)</Label>
                 <Input value={agente} onChange={(e) => setAgente(e.target.value)} placeholder="Ex.: Carlos" required />
               </div>
               <div>
@@ -279,7 +279,7 @@ export function NovoChipFlow({ linhasLiberadas }: { linhasLiberadas: boolean }) 
                        placeholder="(11) 99999-9999" required inputMode="tel" />
                 <p className="mt-1.5 text-xs text-mist">
                   Com DDD. É para este número que o bot avisa quando transferir um devedor — e é ele que o
-                  devedor recebe para falar com o cobrador. O chip dele <b className="text-chalk">não conecta no Chatwoot</b>:
+                  devedor recebe para falar com o cobrador. A linha dele <b className="text-chalk">não conecta no Chatwoot</b>:
                   fica só registrado para ser escolhido como escalador na carteira.
                 </p>
               </div>
@@ -334,7 +334,7 @@ export function NovoChipFlow({ linhasLiberadas }: { linhasLiberadas: boolean }) 
           </div>
           {!m.chatwoot.ok && m.chatwoot.mensagem && <p className="text-rose">{m.chatwoot.mensagem}</p>}
         </div>
-        <Button onClick={voltarParaLista}>Voltar para chips</Button>
+        <Button onClick={voltarParaLista}>Voltar para as linhas</Button>
       </Card>
 
       {/* Webhook do app da Meta: o SAVAN configura sozinho quando tem App ID + App Secret.
