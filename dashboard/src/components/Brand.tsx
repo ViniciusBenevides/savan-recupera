@@ -1,29 +1,21 @@
-// Nome do produto (white-label): defina NEXT_PUBLIC_APP_NAME para personalizar por cliente.
-// Default neutro, sem referência a nenhum credor. Use uma ou duas palavras
-// (a 2ª palavra ganha destaque em verde). Ex.: "Recupera", "Acme Cobranças".
-export const APP_NAME = process.env.NEXT_PUBLIC_APP_NAME?.trim() || "Recupera";
+import Image from "next/image";
 
-export function Logo({ size = 28 }: { size?: number }) {
-  const initial = APP_NAME.charAt(0).toUpperCase();
-  const partes = APP_NAME.split(" ");
+// Nome do produto. A MC CRED usa "MC COB"; NEXT_PUBLIC_APP_NAME continua permitindo outro nome.
+export const APP_NAME = process.env.NEXT_PUBLIC_APP_NAME?.trim() || "MC COB";
+
+// A marca é a do MC COB do Maurelio: o monograma MC em bronze com "Seu parceiro de negócios".
+// A arte tem um fundo quase preto desigual e um filete claro na borda direita: o contraste leva o
+// fundo a preto puro, que o lighten deixa sumir; a máscara esmaece as bordas e o recorte tira o filete.
+export function Logo({ largura = 176 }: { largura?: number }) {
   return (
-    <span className="inline-flex items-center gap-2.5">
-      <span
-        className="grid place-items-center rounded-[10px] bg-emerald font-display font-800 text-[#04140c]"
-        style={{ width: size, height: size, fontSize: size * 0.55 }}
-      >
-        {initial}
-      </span>
-      <span className="font-display text-[17px] font-700 tracking-tight text-chalk">
-        {partes.length > 1 ? (
-          <>
-            {partes[0]}
-            <span className="text-emerald"> {partes.slice(1).join(" ")}</span>
-          </>
-        ) : (
-          APP_NAME
-        )}
-      </span>
-    </span>
+    <Image
+      src="/marca/mc-cob.png"
+      alt={`${APP_NAME} · Seu parceiro de negócios`}
+      width={245}
+      height={155}
+      priority
+      className="h-auto mix-blend-lighten [clip-path:inset(0_4px_0_0)] [filter:contrast(1.25)] [mask-image:radial-gradient(ellipse_74%_70%_at_50%_46%,#000_62%,transparent_100%)]"
+      style={{ width: largura }}
+    />
   );
 }

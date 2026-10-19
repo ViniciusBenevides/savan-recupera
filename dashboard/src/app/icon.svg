@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f7dc8a"/>
+      <stop offset="0.55" stop-color="#e8a15a"/>
+      <stop offset="1" stop-color="#c97834"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="#07090b"/>
+  <rect x="1" y="1" width="62" height="62" rx="13" fill="none" stroke="#e8a15a" stroke-opacity="0.45" stroke-width="1.5"/>
+  <text x="32" y="40" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-weight="700" font-size="26" fill="url(#g)">MC</text>
+  <text x="32" y="53" text-anchor="middle" font-family="Georgia, serif" font-size="9" letter-spacing="2.5" fill="#a99b8e">COB</text>
+</svg>

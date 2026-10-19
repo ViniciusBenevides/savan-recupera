@@ -24,9 +24,8 @@ const FILTROS = [
   { k: "fechadas", t: "Fechadas" },
 ] as const;
 
-export function EscalacoesLista({ inicial, chatwootBase, erro }: {
+export function EscalacoesLista({ inicial, erro }: {
   inicial: any[];
-  chatwootBase: string;
   erro: string | null;
 }) {
   const router = useRouter();
@@ -53,8 +52,8 @@ export function EscalacoesLista({ inicial, chatwootBase, erro }: {
       <Card className="border-violet/25 bg-violet/5 p-4">
         <div className="text-sm font-medium text-chalk">Como usar esta fila</div>
         <p className="mt-1 text-xs leading-relaxed text-mist">
-          Assuma o caso, abra a conversa no Chatwoot para atender a pessoa e, ao terminar,
-          registre aqui se houve acordo ou se foi encerrado sem acordo.
+          Assuma o caso, responda a pessoa pela própria conversa (botão "Abrir a conversa") e, ao
+          terminar, registre aqui se houve acordo ou se foi encerrado sem acordo.
         </p>
       </Card>
 
@@ -81,12 +80,12 @@ export function EscalacoesLista({ inicial, chatwootBase, erro }: {
         </Card>
       )}
 
-      {itens.map((e) => <ItemEscalacao key={e.id} e={e} chatwootBase={chatwootBase} />)}
+      {itens.map((e) => <ItemEscalacao key={e.id} e={e} />)}
     </div>
   );
 }
 
-function ItemEscalacao({ e, chatwootBase }: { e: any; chatwootBase: string }) {
+function ItemEscalacao({ e }: { e: any }) {
   const router = useRouter();
   const [aberto, setAberto] = React.useState(false);
   const [pend, setPend] = React.useState(false);
@@ -97,8 +96,7 @@ function ItemEscalacao({ e, chatwootBase }: { e: any; chatwootBase: string }) {
   const st = STATUS[e.status] ?? STATUS.aberta;
   const aberta = e.status === "aberta" || e.status === "em_atendimento";
   const hist = e.contexto_snapshot?.historico ?? [];
-  const chatwootId = e.conversas?.chatwoot_conversation_id;
-  const chatwootHref = chatwootBase && chatwootId ? `${chatwootBase}/${chatwootId}` : null;
+  const conversaHref = e.conversa_id ? `/conversas?c=${e.conversa_id}` : null;
 
   async function atualizar(body: any) {
     setPend(true);
@@ -161,12 +159,12 @@ function ItemEscalacao({ e, chatwootBase }: { e: any; chatwootBase: string }) {
       {/* ações */}
       {aberta && (
         <div className="flex flex-wrap items-center gap-2">
-          {chatwootHref && (
-            <a href={chatwootHref} target="_blank" rel="noreferrer">
+          {conversaHref && (
+            <Link href={conversaHref}>
               <Button variant="outline" size="sm">
-                <ExternalLink className="h-4 w-4" /> Abrir atendimento
+                <MessageSquare className="h-4 w-4" /> Abrir a conversa
               </Button>
-            </a>
+            </Link>
           )}
           {e.status === "aberta" && (
             <Button variant="outline" size="sm" onClick={() => atualizar({ status: "em_atendimento" })} disabled={pend}>
@@ -217,13 +215,13 @@ function ItemEscalacao({ e, chatwootBase }: { e: any; chatwootBase: string }) {
             <div className="space-y-1.5">
               {hist.map((m: any, i: number) => (
                 <div key={i} className={`max-w-[85%] rounded-lg px-3 py-1.5 text-xs ${m.direcao === "entrada" ? "bg-ink-800 text-chalk" : "ml-auto bg-emerald/10 text-emerald-soft"}`}>
-                  <span className="mr-1 text-[10px] uppercase tracking-wide text-mist">{m.origem}</span>
+                  <span className="mr-1 text-meta font-600 text-lapis">{m.origem}</span>
                   {m.conteudo}
                 </div>
               ))}
               {e.contexto_snapshot?.mensagem && (
                 <div className="max-w-[85%] rounded-lg bg-amber/10 px-3 py-1.5 text-xs text-amber">
-                  <span className="mr-1 text-[10px] uppercase tracking-wide">última</span>
+                  <span className="mr-1 text-meta font-600">última</span>
                   {e.contexto_snapshot.mensagem}
                 </div>
               )}

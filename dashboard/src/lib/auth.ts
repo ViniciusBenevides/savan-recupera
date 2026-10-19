@@ -2,22 +2,36 @@ import { NextResponse } from "next/server";
 import type { User } from "@supabase/supabase-js";
 import { supabaseServer, supabaseAdmin } from "@/lib/supabase-server";
 
-// Papéis da hierarquia (ver migration 019/020):
+// Papéis da hierarquia (ver migrations 019/020 e 20261016120000):
 //  admin        — plataforma (único). Vê tudo de todos, com atribuição.
-//  cobrador      — operador. Vê/edita só o que é dele (suas carteiras/chips/chaves).
-//  credor        — dono da(s) carteira(s). Só leitura do andamento das suas carteiras.
-//  visualizador  — vê todos os dados operacionais do tenant, sempre sem escrita.
-export type Papel = "admin" | "cobrador" | "credor" | "visualizador";
+//  cobrador     — dono da operação (o Maurelio). Vê/edita só o que é dele (carteiras, chips, chaves).
+//  negociador   — quem trabalha a fila do dia nas carteiras de um cobrador: registra contato, agenda,
+//                 acordo, pagamento e conversa no WhatsApp. Não mexe em ajustes, chips, chaves ou equipe.
+//  credor       — dono da(s) carteira(s) de terceiros. Só leitura do andamento das suas carteiras.
+//  visualizador — vê todos os dados operacionais do tenant, sempre sem escrita.
+export type Papel = "admin" | "cobrador" | "negociador" | "credor" | "visualizador";
 
-export const PAPEIS: Papel[] = ["admin", "cobrador", "credor", "visualizador"];
+export const PAPEIS: Papel[] = ["admin", "cobrador", "negociador", "credor", "visualizador"];
+// Configurar (ajustes, carteiras, chips, equipe): só admin e cobrador.
 export const podeEscrever = (role: Papel) => role === "admin" || role === "cobrador";
+// Operar a cobrança (contato, agenda, acordo, pagamento, mensagem): inclui o negociador.
+export const podeOperar = (role: Papel) => role === "admin" || role === "cobrador" || role === "negociador";
+
+export const NOME_PAPEL: Record<Papel, string> = {
+  admin: "Administrador",
+  cobrador: "Dono da operação",
+  negociador: "Negociador",
+  credor: "Credor",
+  visualizador: "Só leitura",
+};
 
 export type Sessao = {
   user: User;
   role: Papel;
   cobrador_id: string | null;
-  // "tenant" do usuário: cobrador => próprio id; credor/visualizador => cobrador_id; admin => null
+  // "tenant": cobrador => próprio id; negociador/credor/visualizador => cobrador_id; admin => null
   tenant: string | null;
+  nome: string;
 };
 
 const negar = (msg: string, status: number) => NextResponse.json({ erro: msg }, { status });
@@ -27,11 +41,12 @@ export async function getSessao(): Promise<Sessao | null> {
   const sb = await supabaseServer();
   const { data: { user } } = await sb.auth.getUser();
   if (!user) return null;
-  const { data } = await sb.from("usuarios_app").select("role, cobrador_id").eq("id", user.id).maybeSingle();
+  const { data } = await sb.from("usuarios_app").select("role, cobrador_id, nome").eq("id", user.id).maybeSingle();
   const role = (data?.role ?? "visualizador") as Papel;
   const cobrador_id = (data?.cobrador_id ?? null) as string | null;
   const tenant = role === "cobrador" ? user.id : cobrador_id;
-  return { user, role, cobrador_id, tenant };
+  const nome = (data?.nome as string | null) ?? user.email?.split("@")[0] ?? "Usuário";
+  return { user, role, cobrador_id, tenant, nome };
 }
 
 type Guard = { erro: NextResponse; sessao?: undefined } | { erro?: undefined; sessao: Sessao };
@@ -76,6 +91,31 @@ export async function podeEditarChip(sessao: Sessao, chipId: number): Promise<bo
 }
 
 export const erroDono = () => negar("sem_permissao_neste_recurso", 403);
+
+// Exige quem opera a cobrança: admin, cobrador ou negociador.
+export async function exigirOperador(): Promise<Guard> {
+  const sessao = await getSessao();
+  if (!sessao) return { erro: negar("nao_autenticado", 401) };
+  if (!podeOperar(sessao.role)) return { erro: negar("sem_permissao", 403) };
+  return { sessao };
+}
+
+// O devedor está numa carteira que este operador pode trabalhar? (admin: qualquer uma;
+// cobrador: as dele; negociador: as do cobrador ao qual está ligado). Devolve a carteira.
+export async function carteiraDoDevedorSePodeOperar(
+  sessao: Sessao,
+  devedorId: number,
+): Promise<{ carteira_id: number; cobrador_id: string | null } | null> {
+  const adm = supabaseAdmin();
+  const { data: dev } = await adm.from("devedores").select("carteira_id").eq("id", devedorId).maybeSingle();
+  if (!dev?.carteira_id) return null;
+  const { data: cart } = await adm.from("carteiras").select("id, cobrador_id").eq("id", dev.carteira_id).maybeSingle();
+  if (!cart) return null;
+  if (sessao.role === "admin") return { carteira_id: cart.id, cobrador_id: cart.cobrador_id };
+  if (!podeOperar(sessao.role)) return null;
+  if (cart.cobrador_id && cart.cobrador_id === sessao.tenant) return { carteira_id: cart.id, cobrador_id: cart.cobrador_id };
+  return null;
+}
 
 // ---------------------------------------------------------------------------
 // Escopo "por conta" das telas/ajustes do cobrador (Campanha, Mensagens, Descontos, Chaves).

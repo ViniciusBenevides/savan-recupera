@@ -28,12 +28,29 @@ escolha.
 
 **Quitação**:
 O encerramento definitivo do registro mediante pagamento, formalizado por termo. É o único benefício
-que o produto oferece.
-_Avoid_: acordo, negociação, liquidação
+que o produto oferece. Um acordo é o caminho; a quitação é onde ele termina.
+_Avoid_: negociação, liquidação
 
 **Proposta**:
 O valor com desconto oferecido a um devedor, calculado pelo sistema a partir da idade da dívida. O
 robô nunca faz essa aritmética.
+
+**Acordo**:
+O combinado de pagamento que uma pessoa da equipe registra na ficha: à vista ou em entrada mais
+parcelas, sempre dentro dos limites da carteira (desconto máximo, parcelas, entrada e parcela mínima).
+Pago por inteiro, vira quitação; uma parcela vencida sem pagamento deixa o acordo atrasado, e quem
+parou de pagar tem o acordo quebrado.
+_Avoid_: negociação, parcelamento, contrato
+
+**Carnê**:
+As parcelas de um acordo vistas em fila, como canhotos: paga é riscada, atrasada fica vermelha. A
+entrada é o canhoto zero.
+_Avoid_: cronograma, tabela de parcelas
+
+**Recebimento**:
+Dinheiro que entrou de verdade: parcela registrada como paga ou Pix confirmado. Só recebimento abate o
+saldo; promessa e acordo não.
+_Avoid_: pagamento previsto, receita
 
 **Split**:
 A divisão automática do pagamento entre credor e operador no momento em que o Pix é pago.
@@ -50,6 +67,16 @@ O dono da dívida, que acompanha o andamento da própria carteira em leitura.
 **Escalador**:
 A pessoa de carne e osso que assume uma conversa quando o robô sai de cena.
 _Avoid_: agente, atendente, humano
+
+**Negociador**:
+Quem trabalha a fila do cobrador sem configurar nada: responde, registra contato, faz acordo dentro do
+limite da carteira e registra pagamento. Acima do limite, pede liberação ao cobrador.
+_Avoid_: operador, atendente, vendedor
+
+**Responsável**:
+A pessoa da equipe que cuida de um devedor. Quem trabalha um devedor sem dono passa a ser o responsável
+por ele.
+_Avoid_: dono do lead, atribuído
 
 ## Canal
 
@@ -128,6 +155,42 @@ conversa.
 **Balde**:
 Como um devedor já contatado no passado é tratado agora: quem respondeu recebe continuidade explícita;
 quem nunca respondeu é abordado como se fosse a primeira vez; quem recusou não é contatado nunca mais.
+
+## Trabalho do dia
+
+**Trabalho de hoje**:
+A lista de quem chamar agora, em ordem de urgência: quem respondeu e espera, quem esfriou, promessas e
+parcelas do dia, retornos marcados e quem nunca foi acionado. É a primeira tela e o lugar de onde quase
+todo o trabalho parte.
+_Avoid_: dashboard, painel, fila de atendimento
+
+**Ocorrência**:
+O registro de um contato com o devedor e do que aconteceu nele (não respondeu, prometeu pagar, pediu
+retorno, recusou…). Toda ocorrência entra no histórico da ficha; algumas criam um compromisso na agenda.
+_Avoid_: log, evento, interação, tabulação
+
+**Promessa**:
+O devedor diz que paga numa data. Vira compromisso na agenda e volta para o trabalho de hoje no dia;
+se o dia passa sem pagamento, a promessa é quebrada.
+_Avoid_: PTP, compromisso de pagamento
+
+**Retorno**:
+Um contato marcado para depois, a pedido do devedor ou por decisão da equipe.
+_Avoid_: callback, lembrete, follow-up (follow-up é do robô)
+
+**Agenda**:
+Todos os compromissos com data — promessas, retornos e parcelas — de todos os devedores, separados em
+atrasados, hoje, amanhã e próximos dias.
+
+**Esfriando**:
+Quem quis pagar e sumiu: pediu o Pix e não pagou em duas horas, ou estava numa conversa quente e parou
+de responder sem nada marcado. É o grupo que mais rende ligar de novo.
+_Avoid_: lead frio, abandono
+
+**Riscado**:
+O que já foi resolvido hoje. A linha recebe um risco de caneta e desce para "Feito hoje"; o número de
+riscados é o placar do dia.
+_Avoid_: concluído, finalizado, ticket fechado
 
 ## Operação
 

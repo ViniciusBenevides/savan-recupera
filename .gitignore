@@ -66,3 +66,12 @@ Material Secretária v3 (1)
 
 # Backups de workflow do n8n: contêm credenciais em claro nos nós HTTP.
 backups/
+
+# === Material de trabalho local (não versionar) ===
+# Capturas do Playwright, o zip do MC COB V5 (código de terceiro, sem revisão) e textos colados em
+# conversa com agente.
+.playwright-mcp/
+MC_COB_*.zip
+*-pastedcontent-*.txt
+# Material de contexto do projeto (pedidos, reuniões, análises): fica só na máquina.
+contexto/

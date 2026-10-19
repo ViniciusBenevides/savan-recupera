@@ -1,13 +1,15 @@
 "use client";
+import { FichaResumida, mascararCPF } from "@/components/ficha/ficha-resumida";
+import { ROTULO_SITUACAO } from "@/lib/resultados";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase-browser";
-import { Card, Badge, Button } from "@/components/ui/primitives";
+import { Button } from "@/components/ui/primitives";
 import { brl, dataHoraBR } from "@/lib/utils";
 import { rotuloEntrega } from "@/lib/entrega";
 import {
-  Search, MessageSquareText, ExternalLink, FileText, ArrowLeft, RefreshCw,
+  Search, MessageSquareText, FileText, ArrowLeft, RefreshCw,
   Bot, Headset, User, Cog, Loader2, FlaskConical, Smartphone, X, CornerDownRight,
   AudioLines, StickyNote, Hand, Undo2, CheckCircle2, RotateCcw, AlertTriangle,
 } from "lucide-react";
@@ -84,7 +86,7 @@ type Tentativa = {
 const ESTADO: Record<string, { tone: any; label: string; ring: string; dot: string; texto: string }> = {
   aguardando_resposta: { tone: "blue",    label: "Aguardando",    ring: "ring-blue/35",    dot: "bg-blue",    texto: "text-blue" },
   bot_ativo:           { tone: "green",   label: "Respondeu",     ring: "ring-emerald/40", dot: "bg-emerald", texto: "text-emerald-soft" },
-  humano:              { tone: "violet",  label: "Com humano",    ring: "ring-violet/40",  dot: "bg-violet",  texto: "text-violet" },
+  humano:              { tone: "blue",    label: "Com a equipe",  ring: "ring-blue/40",    dot: "bg-blue",    texto: "text-blue" },
   pix_enviado:         { tone: "amber",   label: "Pix enviado",   ring: "ring-amber/40",   dot: "bg-amber",   texto: "text-amber" },
   pago:                { tone: "green",   label: "Pagamento confirmado", ring: "ring-emerald/50", dot: "bg-emerald", texto: "text-emerald-soft" },
   encerrada:           { tone: "neutral", label: "Outro encerramento",   ring: "ring-line",       dot: "bg-mist",    texto: "text-mist" },
@@ -110,7 +112,7 @@ const FILTROS: { v: string; label: string }[] = [
   { v: NAO_LIDAS, label: "Esperam você" },
   { v: "aguardando_resposta", label: "Aguardando" },
   { v: "bot_ativo", label: "Responderam" },
-  { v: "humano", label: "Com humano" },
+  { v: "humano", label: "Com a equipe" },
   { v: "encerrada:pessoa_errada", label: "Pessoa errada" },
   { v: "encerrada:sem_resposta", label: "Sem resposta" },
   { v: "encerrada:outro", label: "Outros" },
@@ -172,13 +174,15 @@ function motivoBloqueio(c: Conversa): string | null {
   return null;
 }
 
-export function Inbox({ lista, chips, chipsTodos, chipPadrao, cwUrl, podeAtender }: {
+export function Inbox({ lista, chips, chipsTodos, chipPadrao, podeAtender, inicial = null }: {
   lista: Conversa[];
   /** Números que aparecem nos filtros: só os do robô. */
   chips: Chip[];
   /** TODOS os números conhecidos, para nomear o chip de mensagens antigas — inclusive o banido. */
   chipsTodos: Chip[];
-  chipPadrao: number | null; cwUrl: string; podeAtender: boolean;
+  chipPadrao: number | null; podeAtender: boolean;
+  /** Conversa para abrir já selecionada (link ?c= vindo do Trabalho de hoje ou da ficha). */
+  inicial?: number | null;
 }) {
   const sb = useMemo(() => supabaseBrowser(), []);
   const router = useRouter();
@@ -189,7 +193,7 @@ export function Inbox({ lista, chips, chipsTodos, chipPadrao, cwUrl, podeAtender
   const [verTestes, setVerTestes] = useState(false);
   // Abre já no número oficial que está conversando agora (ver Dialogos).
   const [chipFiltro, setChipFiltro] = useState<number | null>(chipPadrao);
-  const [sel, setSel] = useState<number | null>(null);
+  const [sel, setSel] = useState<number | null>(inicial);
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [carregando, setCarregando] = useState(false);
   /** id → E.164 dos telefones do devedor da conversa aberta. */
@@ -366,7 +370,7 @@ export function Inbox({ lista, chips, chipsTodos, chipPadrao, cwUrl, podeAtender
   }, [sel]);
 
   useEffect(() => {
-    fimRef.current?.scrollIntoView({ behavior: "auto" });
+    fimRef.current?.scrollIntoView({ behavior: "auto", block: "nearest" });
   }, [msgs.length, sel]);
 
   // Lista viva: qualquer conversa que muda (mensagem nova, estado, atendente) redesenha a caixa.
@@ -398,8 +402,10 @@ export function Inbox({ lista, chips, chipsTodos, chipPadrao, cwUrl, podeAtender
     [chipsTodos],
   );
 
+  // A caixa ocupa o que sobra da tela (cabeçalho em cima, barra do celular embaixo): a página não rola
+  // junto com a lista, só a lista rola.
   return (
-    <Card className="grid h-[calc(100dvh-210px)] min-h-[520px] grid-rows-[auto_1fr] gap-0 overflow-hidden p-0">
+    <div className="grid h-[calc(100dvh-404px)] min-h-[420px] grid-rows-[auto_1fr] overflow-hidden border-y border-pauta bg-folha sm:h-[calc(100dvh-355px)] lg:h-[calc(100dvh-255px)] lg:min-h-[500px]">
       {/* ───── Barra de contexto: de qual número é esta caixa, e se estamos vendo teste ───── */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-line bg-ink-900/40 px-3 py-2.5">
         <div className="flex min-w-0 items-center gap-2">
@@ -412,7 +418,7 @@ export function Inbox({ lista, chips, chipsTodos, chipPadrao, cwUrl, podeAtender
               a que fez parecer que um chip novo tinha disparado 400 mensagens (§38). Quem mandou
               cada mensagem está no rodapé de cada balão. */}
           <div className="min-w-0 leading-tight">
-            <div className="text-[10px] uppercase tracking-wider text-mist/70">Atende hoje</div>
+            <div className="text-meta text-lapis">Atende hoje</div>
             <div className="truncate text-xs font-medium text-chalk">
               {chipAtivo ? chipAtivo.nome : "Todos os números"}
               {chipAtivo?.numero && (
@@ -429,7 +435,7 @@ export function Inbox({ lista, chips, chipsTodos, chipPadrao, cwUrl, podeAtender
                 key={c.id}
                 onClick={() => setChipFiltro(c.id)}
                 title={c.numero ?? c.nome}
-                className={`max-w-[9rem] truncate rounded-full px-2.5 py-1 text-[11px] transition-colors ${
+                className={`alvo-toque max-w-[9rem] truncate rounded-full px-2.5 py-1 text-[11px] transition-colors ${
                   chipFiltro === c.id ? "bg-emerald/15 font-medium text-emerald-soft" : "text-mist hover:text-chalk"
                 }`}
               >
@@ -438,7 +444,7 @@ export function Inbox({ lista, chips, chipsTodos, chipPadrao, cwUrl, podeAtender
             ))}
             <button
               onClick={() => setChipFiltro(null)}
-              className={`rounded-full px-2.5 py-1 text-[11px] transition-colors ${
+              className={`alvo-toque rounded-full px-2.5 py-1 text-[11px] transition-colors ${
                 chipFiltro === null ? "bg-emerald/15 font-medium text-emerald-soft" : "text-mist hover:text-chalk"
               }`}
             >
@@ -450,7 +456,7 @@ export function Inbox({ lista, chips, chipsTodos, chipPadrao, cwUrl, podeAtender
         <button
           onClick={() => setVerTestes((v) => !v)}
           title="Conversas do modo teste ficam fora da caixa por padrão"
-          className={`ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] transition-colors ${
+          className={`alvo-toque ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] transition-colors ${
             verTestes
               ? "border-amber/40 bg-amber/10 text-amber"
               : "border-line text-mist hover:border-ink-500 hover:text-chalk"
@@ -461,7 +467,7 @@ export function Inbox({ lista, chips, chipsTodos, chipPadrao, cwUrl, podeAtender
         </button>
       </div>
 
-      <div className="grid min-h-0 grid-cols-1 grid-rows-[1fr] md:grid-cols-[340px_1fr]">
+      <div className="grid min-h-0 grid-cols-1 grid-rows-[1fr] md:grid-cols-[340px_1fr] 2xl:grid-cols-[340px_1fr_400px]">
         {/* ───── Lista ───── */}
         <div className={`flex min-h-0 flex-col border-line md:border-r ${noThreadMobile ? "hidden md:flex" : "flex"}`}>
           <div className="border-b border-line p-3">
@@ -471,7 +477,7 @@ export function Inbox({ lista, chips, chipsTodos, chipPadrao, cwUrl, podeAtender
                 value={busca}
                 onChange={(e) => setBusca(e.target.value)}
                 placeholder="Buscar nome, CPF ou mensagem…"
-                className="h-10 w-full rounded-xl border border-line bg-ink-850 pl-9 pr-9 text-sm text-chalk outline-none transition-colors placeholder:text-mist/60 focus:border-emerald/60"
+                className="h-10 w-full rounded-xl border border-line bg-ink-850 pl-9 pr-9 text-sm text-chalk outline-none [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:text-base transition-colors placeholder:text-mist/60 focus:border-emerald/60"
               />
               {busca && (
                 <button
@@ -483,7 +489,7 @@ export function Inbox({ lista, chips, chipsTodos, chipPadrao, cwUrl, podeAtender
                 </button>
               )}
             </div>
-            <div className="mt-2 flex flex-wrap gap-1.5">
+            <div className="mt-2 flex flex-wrap gap-1.5 [@media(pointer:coarse)]:gap-y-2.5">
               {FILTROS.map((f) => {
                 const n = contagem[f.v] ?? 0;
                 const ativo = filtro === f.v;
@@ -492,7 +498,7 @@ export function Inbox({ lista, chips, chipsTodos, chipPadrao, cwUrl, podeAtender
                   <button
                     key={f.v}
                     onClick={() => setFiltro(f.v)}
-                    className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] transition-colors ${
+                    className={`alvo-toque inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] transition-colors [@media(pointer:coarse)]:py-2 ${
                       ativo
                         ? "border-emerald/40 bg-emerald/15 text-emerald-soft"
                         : "border-line text-mist hover:border-ink-500 hover:text-chalk"
@@ -506,7 +512,7 @@ export function Inbox({ lista, chips, chipsTodos, chipPadrao, cwUrl, podeAtender
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto">
+          <div className="pagina-pautada flex-1 overflow-y-auto [--margem:4rem]">
             {filtradas.length === 0 && (
               <div className="px-6 py-12 text-center">
                 <MessageSquareText className="mx-auto mb-3 h-8 w-8 text-mist opacity-30" />
@@ -526,34 +532,20 @@ export function Inbox({ lista, chips, chipsTodos, chipPadrao, cwUrl, podeAtender
                 <button
                   key={c.id}
                   onClick={() => abrir(c.id)}
-                  className={`relative flex w-full items-start gap-3 border-b border-line/50 py-3 pl-3 pr-3 text-left transition-colors ${
-                    ativo ? "bg-ink-800" : "hover:bg-ink-850"
+                  className={`grid w-full grid-cols-[var(--margem)_minmax(0,1fr)] border-b border-pauta text-left transition-colors ${
+                    ativo ? "bg-tinta-clara" : "linha-hover"
                   }`}
                 >
-                  {/* espinha de seleção — marca a linha aberta sem alargar a lista */}
-                  <span
-                    className={`absolute inset-y-0 left-0 w-[3px] rounded-r bg-emerald transition-opacity ${
-                      ativo ? "opacity-100" : "opacity-0"
-                    }`}
-                  />
-                  <div
-                    className={`mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-full bg-ink-800 font-display text-sm font-700 text-chalk ring-2 ${e.ring}`}
-                  >
-                    {c.nome.charAt(0).toUpperCase()}
-                  </div>
-                  <div className="min-w-0 flex-1">
+                  {/* Hora na margem, como no Trabalho de hoje; o ponto vermelho é quem espera você */}
+                  <span className={`pl-3 pt-3 font-mono text-meta tabnums ${espera ? "font-600 text-margem" : "text-lapis"}`}>
+                    {relativo(c.ultima_msg_em)}
+                    {espera && <span className="mt-1.5 block h-2 w-2 rounded-full bg-margem" title="Não lida" />}
+                  </span>
+                  <div className="min-w-0 py-2.5 pl-3 pr-3">
                     <div className="flex items-baseline gap-2">
-                      <span className={`truncate text-sm text-chalk ${espera ? "font-semibold" : "font-medium"}`}>
+                      <span className={`truncate text-sm text-chalk ${espera ? "font-700" : "font-600"}`}>
                         {c.nome}
                       </span>
-                      <span
-                        className={`ml-auto shrink-0 font-mono text-[10px] tabnums ${
-                          espera ? "font-semibold text-emerald-soft" : "text-mist"
-                        }`}
-                      >
-                        {relativo(c.ultima_msg_em)}
-                      </span>
-                      {espera && <span className="h-2 w-2 shrink-0 rounded-full bg-emerald" title="Não lida" />}
                     </div>
                     <div className={`mt-0.5 flex items-center gap-1 text-xs ${espera ? "text-chalk/80" : "text-mist"}`}>
                       {c.preview_privado ? (
@@ -623,23 +615,18 @@ export function Inbox({ lista, chips, chipsTodos, chipPadrao, cwUrl, podeAtender
                   >
                     <ArrowLeft className="h-4 w-4" />
                   </button>
-                  <div
-                    className={`grid h-9 w-9 shrink-0 place-items-center rounded-full bg-ink-800 font-display text-sm font-700 text-chalk ring-2 ${estadoDe(atual).ring}`}
-                  >
-                    {atual.nome.charAt(0).toUpperCase()}
-                  </div>
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="truncate text-sm font-semibold text-chalk">{atual.nome}</span>
-                      <Badge tone={estadoDe(atual).tone}>{estadoDe(atual).label}</Badge>
-                      {atual.simulacao && <Badge tone="amber">Teste</Badge>}
+                    <div className="flex items-baseline gap-2">
+                      <span className="truncate text-[0.9375rem] font-700 text-chalk">{atual.nome}</span>
+                      <span className={`shrink-0 text-sm2 font-600 ${estadoDe(atual).texto}`}>{estadoDe(atual).label}</span>
+                      {atual.simulacao && <span className="shrink-0 text-sm2 font-600 text-atencao">teste</span>}
                     </div>
                     <div className="truncate text-[11px] text-mist">
-                      {atual.cpf && <span className="font-mono tabnums">{atual.cpf}</span>}
+                      {atual.cpf && <span className="font-mono tabnums">{mascararCPF(atual.cpf)}</span>}
                       {atual.cidade && <span> · {atual.cidade}{atual.uf ? `/${atual.uf}` : ""}</span>}
                       {atual.chip_nome && <span> · por {atual.chip_nome}</span>}
                       {atual.atendente_nome && (
-                        <span className="text-violet"> · com {atual.atendente_nome}</span>
+                        <span className="text-blue"> · com {atual.atendente_nome}</span>
                       )}
                     </div>
                   </div>
@@ -654,11 +641,6 @@ export function Inbox({ lista, chips, chipsTodos, chipPadrao, cwUrl, podeAtender
                     <Link href={`/devedores/${atual.devedor_id}`}>
                       <Button variant="outline" size="sm"><FileText className="h-3.5 w-3.5" /> Ficha</Button>
                     </Link>
-                    {cwUrl && atual.chatwoot_id && (
-                      <a href={`${cwUrl}/app/accounts/1/conversations/${atual.chatwoot_id}`} target="_blank" rel="noreferrer" className="hidden sm:block">
-                        <Button variant="outline" size="sm"><ExternalLink className="h-3.5 w-3.5" /> Chatwoot</Button>
-                      </a>
-                    )}
                   </div>
                 </div>
 
@@ -668,8 +650,8 @@ export function Inbox({ lista, chips, chipsTodos, chipPadrao, cwUrl, podeAtender
                   <div className="flex flex-wrap items-center gap-1.5 border-t border-line/60 px-3 py-1.5">
                     {atual.estado === "humano" ? (
                       <>
-                        <span className="inline-flex items-center gap-1.5 rounded-full border border-violet/30 bg-violet/10 px-2.5 py-1 text-[11px] text-violet">
-                          <Headset className="h-3 w-3" /> Robô pausado — atendimento humano
+                        <span className="inline-flex items-center gap-1.5 text-sm2 font-600 text-blue">
+                          <Headset className="h-3.5 w-3.5" aria-hidden="true" /> Robô pausado: a equipe está atendendo
                         </span>
                         <Button variant="ghost" size="sm" disabled={acaoPend}
                           onClick={() => acao(atual.id, "devolver_ao_robo")}>
@@ -687,8 +669,8 @@ export function Inbox({ lista, chips, chipsTodos, chipPadrao, cwUrl, podeAtender
                       </span>
                     ) : (
                       <>
-                        <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald/25 bg-emerald/10 px-2.5 py-1 text-[11px] text-emerald-soft">
-                          <Bot className="h-3 w-3" /> Robô conduzindo
+                        <span className="inline-flex items-center gap-1.5 text-sm2 text-lapis">
+                          <Bot className="h-3.5 w-3.5" aria-hidden="true" /> O robô está conduzindo
                         </span>
                         <Button variant="ghost" size="sm" disabled={acaoPend}
                           onClick={() => acao(atual.id, "assumir")}>
@@ -716,7 +698,7 @@ export function Inbox({ lista, chips, chipsTodos, chipPadrao, cwUrl, podeAtender
                     )}
                     {atual.carteira && <span className="text-mist">Carteira <b className="text-chalk">{atual.carteira}</b></span>}
                     {atual.status_cobranca && (
-                      <span className="text-mist">Situação <b className="text-chalk">{atual.status_cobranca}</b></span>
+                      <span className="text-mist">Situação <b className="text-chalk">{ROTULO_SITUACAO[atual.status_cobranca] ?? atual.status_cobranca}</b></span>
                     )}
                   </div>
                 )}
@@ -759,7 +741,7 @@ export function Inbox({ lista, chips, chipsTodos, chipPadrao, cwUrl, podeAtender
               </div>
 
               {/* Mensagens */}
-              <div className="flex-1 overflow-y-auto bg-ink-900/40 px-4 py-4">
+              <div className="flex-1 overflow-y-auto bg-papel px-4 py-4">
                 {carregando ? (
                   <div className="grid h-full place-items-center text-mist">
                     <Loader2 className="h-5 w-5 animate-spin" />
@@ -794,8 +776,8 @@ export function Inbox({ lista, chips, chipsTodos, chipPadrao, cwUrl, podeAtender
                             {novoDia && <SeparadorDia iso={m.criado_em} />}
                             <div className="my-1.5 flex justify-end">
                               <div className="max-w-[82%] rounded-2xl border border-amber/30 bg-amber/8 px-3.5 py-2 sm:max-w-[72%]">
-                                <div className="mb-1 flex items-center gap-1.5 text-[10px] font-600 uppercase tracking-wider text-amber">
-                                  <StickyNote className="h-3 w-3" /> Nota interna — o contato não vê
+                                <div className="mb-1 flex items-center gap-1.5 text-meta font-600 text-atencao">
+                                  <StickyNote className="h-3.5 w-3.5" aria-hidden="true" /> Nota interna: o contato não vê
                                 </div>
                                 <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-chalk">
                                   {m.conteudo}
@@ -830,12 +812,12 @@ export function Inbox({ lista, chips, chipsTodos, chipPadrao, cwUrl, podeAtender
                           <div className={`flex ${doContato ? "justify-start" : "justify-end"} ${inicio ? "mt-2" : ""}`}>
                             <div className="max-w-[82%] sm:max-w-[72%]">
                               <div
-                                className={`whitespace-pre-wrap break-words px-3.5 py-2 text-sm leading-relaxed shadow-sm ${
+                                className={`whitespace-pre-wrap break-words px-3.5 py-2 text-[0.9375rem] leading-6 text-chalk ${
                                   doContato
-                                    ? `bg-ink-800 text-chalk ${inicio ? "rounded-2xl rounded-tl-md" : "rounded-2xl rounded-l-md"}`
+                                    ? `border border-pauta bg-folha ${inicio ? "rounded-painel rounded-tl-[4px]" : "rounded-painel rounded-l-[4px]"}`
                                     : m.origem === "humano"
-                                      ? `bg-violet/15 text-chalk ring-1 ring-inset ring-violet/20 ${inicio ? "rounded-2xl rounded-tr-md" : "rounded-2xl rounded-r-md"}`
-                                      : `bg-emerald/12 text-chalk ring-1 ring-inset ring-emerald/20 ${inicio ? "rounded-2xl rounded-tr-md" : "rounded-2xl rounded-r-md"}`
+                                      ? `bg-tinta-clara ${inicio ? "rounded-painel rounded-tr-[4px]" : "rounded-painel rounded-r-[4px]"}`
+                                      : `border border-dashed border-pauta-forte bg-folha ${inicio ? "rounded-painel rounded-tr-[4px]" : "rounded-painel rounded-r-[4px]"}`
                                 }`}
                               >
                                 {m.tipo_conteudo === "audio" ? (
@@ -919,8 +901,15 @@ export function Inbox({ lista, chips, chipsTodos, chipPadrao, cwUrl, podeAtender
             </>
           )}
         </div>
+
+        {/* Ficha resumida do devedor da conversa aberta: o que a IA leu e o "Registrar resultado". */}
+        {atual && (
+          <aside className="hidden min-h-0 overflow-hidden border-l border-line 2xl:block" aria-label="Ficha resumida">
+            <FichaResumida key={atual.devedor_id} devedorId={atual.devedor_id} podeOperar={podeAtender} />
+          </aside>
+        )}
       </div>
-    </Card>
+    </div>
   );
 }
 
@@ -929,7 +918,7 @@ function SeparadorDia({ iso }: { iso: string }) {
   return (
     <div className="my-3 flex items-center gap-3">
       <span className="h-px flex-1 bg-line" />
-      <span className="text-[10px] font-medium uppercase tracking-wider text-mist">{rotuloDia(iso)}</span>
+      <span className="text-meta font-600 text-lapis">{rotuloDia(iso)}</span>
       <span className="h-px flex-1 bg-line" />
     </div>
   );

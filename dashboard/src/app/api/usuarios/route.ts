@@ -12,7 +12,7 @@ export async function POST(req: Request) {
   if (role === "admin") {
     return NextResponse.json({ erro: "Não é possível promover a administrador." }, { status: 400 });
   }
-  if (!["cobrador", "credor", "visualizador"].includes(role)) {
+  if (!["cobrador", "negociador", "credor", "visualizador"].includes(role)) {
     return NextResponse.json({ erro: "role_invalida" }, { status: 400 });
   }
 
@@ -34,7 +34,7 @@ export async function POST(req: Request) {
   // Admin pode (re)definir o tenant de um credor/visualizador. Se a troca de papel
   // veio do seletor compacto da lista (sem cobrador_id), preserva o vínculo atual;
   // se ele ainda não existe, usa a conta principal do próprio admin.
-  if (sessao.role === "admin" && (role === "credor" || role === "visualizador")) {
+  if (sessao.role === "admin" && (role === "credor" || role === "visualizador" || role === "negociador")) {
     patch.cobrador_id = typeof cobrador_id === "string" && cobrador_id
       ? cobrador_id
       : (alvo.cobrador_id ?? sessao.user.id);

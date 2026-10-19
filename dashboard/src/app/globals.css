@@ -2,90 +2,81 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ===== TEMA ESCURO (padrão) ===== */
+/* =====================================================================================
+   MC COB — a identidade que o Maurelio já usa (MC COB V5) e a da MC CRED (site e Instagram):
+   fundo preto-grafite, painéis com filete bronze, tinta cobre-dourada nas ações, ouro nos títulos,
+   creme no texto. Verde é pago, vermelho é atrasado/quebrado. Uso o dia inteiro: contraste alto,
+   brilho baixo. A lista pautada e o risco de caneta continuam: viraram livro-caixa escuro.
+   ===================================================================================== */
 :root {
   color-scheme: dark;
 
-  --c-bg: 8 9 12;
-  --c-900: 11 13 18;
-  --c-surface: 15 17 23;
-  --c-800: 19 21 29;
-  --c-700: 27 30 40;
-  --c-600: 38 42 54;
-  --c-500: 58 63 79;
-  --c-line: 31 35 48;
-  --c-mist: 138 145 166;
-  --c-chalk: 231 234 242;
+  /* capa (barra lateral) */
+  --c-capa: 7 9 11;             /* #07090B */
+  --c-capa-escura: 14 17 20;    /* #0E1114  passar o mouse na barra */
+  --c-capa-texto: 238 228 217;  /* #EEE4D9 */
+  --c-capa-apagado: 154 141 128;/* #9A8D80 */
 
-  --c-emerald: 43 217 140;
-  --c-emerald-soft: 52 211 153;
-  --c-emerald-deep: 14 92 61;
-  --c-violet: 139 124 246;
-  --c-violet-deep: 59 46 115;
-  --c-amber: 245 181 68;
-  --c-rose: 244 96 122;
-  --c-blue: 124 176 255;
+  /* fundo e painéis */
+  --c-bg: 5 6 8;                /* papel  #050608 */
+  --c-900: 11 15 18;
+  --c-surface: 11 15 18;        /* folha  #0B0F12 */
+  --c-800: 18 23 27;            /* passar o mouse #12171B */
+  --c-700: 24 30 35;
+  --c-600: 36 42 48;
+  --c-500: 108 100 92;
+  --c-line: 62 45 31;           /* pauta: filete bronze #3E2D1F */
+  --c-pauta-forte: 120 78 42;   /* borda de campo e botão #784E2A */
 
-  --card-shadow: 0 1px 0 0 rgba(255, 255, 255, 0.03) inset, 0 24px 50px -28px rgba(0, 0, 0, 0.8);
-  --card-top: rgba(255, 255, 255, 0.018);
-  --glow-1: rgba(43, 217, 140, 0.10);
-  --glow-2: rgba(139, 124, 246, 0.08);
-  --grain-opacity: 0.025;
-  --scroll-thumb: 31 35 48;
-}
+  /* texto e tinta */
+  --c-chalk: 238 228 217;       /* texto creme #EEE4D9 */
+  --c-mist: 169 155 142;        /* lápis #A99B8E */
+  --c-tinta: 232 161 90;        /* tinta cobre-dourada #E8A15A: ação e link */
+  --c-tinta-media: 201 120 52;  /* cobre #C97834 */
+  --c-tinta-clara: 37 25 15;    /* linha em foco, balão da equipe #25190F */
+  --c-ouro: 242 193 129;        /* ouro dos títulos e números grandes #F2C181 */
+  --c-sobre-tinta: 22 13 5;     /* texto em cima da tinta #160D05 */
 
-/* ===== TEMA CLARO ===== */
-html.light {
-  color-scheme: light;
+  /* estados */
+  --c-margem: 214 96 82;        /* margem vermelha / atrasado #D66052 */
+  --c-margem-fundo: 40 17 15;
+  --c-pago: 46 196 128;         /* #2EC480 */
+  --c-pago-fundo: 11 33 24;
+  --c-amber: 245 196 91;        /* esfriando / atenção #F5C45B */
+  --c-atencao-fundo: 40 31 13;
 
-  --c-bg: 244 246 250;
-  --c-900: 255 255 255;
-  --c-surface: 255 255 255;
-  --c-800: 240 243 248;
-  --c-700: 228 233 240;
-  --c-600: 205 212 224;
-  --c-500: 150 159 176;
-  --c-line: 224 228 236;
-  --c-mist: 90 99 116;
-  --c-chalk: 15 19 30;
+  /* nomes antigos */
+  --c-emerald: 232 161 90;
+  --c-emerald-soft: 240 180 112;
+  --c-emerald-deep: 138 86 40;
+  --c-violet: 104 164 222;      /* "com a equipe": azul, como o "em negociação" do MC COB */
+  --c-violet-deep: 70 128 186;
+  --c-rose: 214 96 82;
+  --c-blue: 104 164 222;        /* #68A4DE */
 
-  --c-emerald: 16 163 106;
-  --c-emerald-soft: 14 159 98;
-  --c-emerald-deep: 8 92 58;
-  --c-violet: 109 84 224;
-  --c-violet-deep: 76 60 150;
-  --c-amber: 183 121 31;
-  --c-rose: 225 29 72;
-  --c-blue: 37 99 235;
+  --card-shadow: 0 1px 0 rgba(255, 214, 160, 0.03) inset, 0 10px 30px -18px rgba(0, 0, 0, 0.8);
+  --scroll-thumb: 66 50 37;
 
-  --card-shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 12px 32px -18px rgba(16, 24, 40, 0.16);
-  --card-top: transparent;
-  --glow-1: rgba(16, 163, 106, 0.08);
-  --glow-2: rgba(109, 84, 224, 0.06);
-  --grain-opacity: 0;
-  --scroll-thumb: 205 212 224;
+  --ease-saida: cubic-bezier(0.23, 1, 0.32, 1);
 }
 
 html, body {
   background-color: rgb(var(--c-bg));
   color: rgb(var(--c-chalk));
   -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
 }
-html { transition: background-color 0.25s ease; }
+body { font-size: 1rem; line-height: 1.5; }
 
-/* Atmosfera: glow + grade tênue, atrás de tudo */
-body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 0;
-  background:
-    radial-gradient(900px 500px at 12% -8%, var(--glow-1), transparent 60%),
-    radial-gradient(800px 480px at 92% 0%, var(--glow-2), transparent 55%);
+::selection { background: rgb(var(--c-tinta) / 0.32); color: rgb(var(--c-chalk)); }
+
+:focus-visible {
+  outline: 2px solid rgb(var(--c-tinta));
+  outline-offset: 2px;
+  border-radius: 6px;
 }
-
-::selection { background: rgba(43, 217, 140, 0.25); }
+input, textarea { caret-color: rgb(var(--c-tinta)); }
+a { text-underline-offset: 3px; }
 
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: transparent; }
@@ -94,28 +85,128 @@ body::before {
   border-radius: 999px;
   border: 2px solid rgb(var(--c-bg));
 }
+* { scrollbar-color: rgb(var(--scroll-thumb)) transparent; }
 
 .tabnums { font-variant-numeric: tabular-nums; }
 
-.grain::after {
+/* Superfície padrão (telas antigas e painéis) */
+.card-surface {
+  background: rgb(var(--c-surface));
+  border: 1px solid rgb(var(--c-line));
+  border-radius: 12px;
+  box-shadow: var(--card-shadow);
+}
+.glow-ring { box-shadow: 0 0 0 1px rgb(var(--c-tinta) / 0.25); }
+.grain::after { content: none; }
+
+/* ---------- Assinatura: o risco de caneta na linha resolvida ---------- */
+.risco {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 2px;
+  margin-top: -1px;
+  background: rgb(var(--c-tinta));
+  border-radius: 2px;
+  clip-path: inset(0 100% 0 0);
+  transition: clip-path 220ms var(--ease-saida);
+  pointer-events: none;
+}
+[data-riscado="true"] .risco { clip-path: inset(0 0 0 0); }
+
+/* Linha pautada: a margem vermelha da caderneta passa pela lista inteira */
+.pagina-pautada { position: relative; }
+.pagina-pautada::before {
   content: "";
   position: absolute;
-  inset: 0;
+  top: 0;
+  bottom: 0;
+  left: var(--margem, 96px);
+  width: 1px;
+  background: rgb(var(--c-margem) / 0.55);
   pointer-events: none;
-  opacity: var(--grain-opacity);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
-.card-surface {
-  background:
-    linear-gradient(180deg, var(--card-top), transparent),
-    rgb(var(--c-surface));
-  border: 1px solid rgb(var(--c-line));
-  border-radius: 18px;
-  box-shadow: var(--card-shadow);
-  transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+@media (hover: hover) and (pointer: fine) {
+  .linha-hover:hover { background: rgb(var(--c-800)); }
 }
 
-.glow-ring {
-  box-shadow: 0 0 0 1px rgb(var(--c-emerald) / 0.20), 0 30px 80px -36px rgb(var(--c-emerald) / 0.45);
+/* Movimento reduzido: o risco aparece direto; transições de cor e opacidade continuam. */
+@media (prefers-reduced-motion: reduce) {
+  .risco { transition: none; }
+}
+
+/* Abas que deslizam no celular: sem a barra de rolagem do Windows por cima delas */
+.sem-barra { scrollbar-width: none; }
+.sem-barra::-webkit-scrollbar { display: none; }
+
+/* Item ativo da barra lateral: o do MC COB, faixa de bronze que esmaece com filete de ouro */
+.nav-ativo {
+  background: linear-gradient(90deg, rgb(93 50 23 / 0.9), rgb(37 22 13 / 0.55) 72%, transparent);
+  box-shadow: inset 3px 0 0 rgb(var(--c-tinta));
+}
+
+/* Controles nativos no tema: seta do select, ícone do calendário e caixa de seleção. Sem isso o navegador
+   desenha os dele (seta do sistema, calendário preto, quadrado cinza), que destoam do bronze. */
+select {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23E8A15A' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.75rem center;
+  background-size: 1rem 1rem;
+}
+select:not([multiple]) { padding-right: 2.25rem; }
+select option { background: rgb(var(--c-surface)); color: rgb(var(--c-chalk)); }
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="datetime-local"]::-webkit-calendar-picker-indicator,
+input[type="time"]::-webkit-calendar-picker-indicator {
+  filter: invert(70%) sepia(45%) saturate(560%) hue-rotate(338deg) brightness(97%);
+  cursor: pointer;
+}
+input[type="checkbox"] {
+  appearance: none;
+  display: inline-grid;
+  place-content: center;
+  width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
+  border: 1px solid rgb(var(--c-pauta-forte));
+  border-radius: 4px;
+  background: rgb(var(--c-surface));
+  cursor: pointer;
+  transition: background-color 120ms var(--ease-saida), border-color 120ms var(--ease-saida);
+}
+input[type="checkbox"]:hover { border-color: rgb(var(--c-tinta)); }
+input[type="checkbox"]:checked { background: rgb(var(--c-tinta)); border-color: rgb(var(--c-tinta)); }
+input[type="checkbox"]:checked::after {
+  content: "";
+  width: 0.55rem;
+  height: 0.3rem;
+  margin-top: -2px;
+  border-left: 2px solid rgb(var(--c-sobre-tinta));
+  border-bottom: 2px solid rgb(var(--c-sobre-tinta));
+  transform: rotate(-45deg);
+}
+@media (pointer: coarse) {
+  input[type="checkbox"] { position: relative; width: 1.25rem; height: 1.25rem; }
+  input[type="checkbox"]::before { content: ""; position: absolute; inset: -0.75rem; }
+}
+
+/* No toque, link de texto, ícone e chip pequenos ganham alvo de 44px sem mudar o desenho nem o
+   layout: a área invisível cresce a partir do centro do próprio elemento. Fica na camada de
+   componentes para que um `absolute` passado pela tela vença o `relative` daqui. */
+@layer components {
+  @media (pointer: coarse) {
+    .alvo-toque { position: relative; }
+    .alvo-toque::after {
+      content: "";
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: max(100%, 44px);
+      height: max(100%, 44px);
+      transform: translate(-50%, -50%);
+    }
+  }
 }

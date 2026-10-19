@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-server";
-import { exigirCobrador, podeEditarCarteira, erroDono, type Sessao } from "@/lib/auth";
+import { exigirOperador, podeEditarCarteira, erroDono, type Sessao } from "@/lib/auth";
 
 export type ConversaAtendimento = {
   id: number;
@@ -39,7 +39,8 @@ export async function exigirConversa(id: unknown): Promise<GuardaConversa> {
   if (!Number.isInteger(convId) || convId <= 0) {
     return { erro: NextResponse.json({ erro: "conversa_invalida" }, { status: 400 }) };
   }
-  const g = await exigirCobrador();
+  // Quem opera (admin, cobrador dono da carteira ou negociador desse cobrador) atende a conversa.
+  const g = await exigirOperador();
   if (g.erro) return { erro: g.erro };
   const { sessao } = g;
 
@@ -49,6 +50,9 @@ export async function exigirConversa(id: unknown): Promise<GuardaConversa> {
 
   if (conversa.carteira_id == null) {
     if (sessao.role !== "admin") return { erro: erroDono() };
+  } else if (sessao.role === "negociador") {
+    const { data: cart } = await admin.from("carteiras").select("cobrador_id").eq("id", conversa.carteira_id).maybeSingle();
+    if (!cart || !cart.cobrador_id || cart.cobrador_id !== sessao.tenant) return { erro: erroDono() };
   } else if (!(await podeEditarCarteira(sessao, conversa.carteira_id))) {
     return { erro: erroDono() };
   }

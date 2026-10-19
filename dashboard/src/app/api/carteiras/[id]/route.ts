@@ -4,7 +4,14 @@ import { exigirCobrador, podeEditarCarteira, erroDono } from "@/lib/auth";
 
 const STATUS_VALIDOS = ["importando", "ativa", "pausada", "arquivada"];
 // campos que o painel pode atualizar (credor_id liga o usuário-credor dono da carteira)
-const CAMPOS = ["nome", "credor", "credor_id", "descricao", "status", "prompt_persona", "contexto_negocio", "guardrails", "config_override", "roteiro"];
+const CAMPOS = ["nome", "credor", "credor_id", "descricao", "status", "prompt_persona", "contexto_negocio", "guardrails", "config_override", "roteiro",
+  // Regras de negociação (MC COB): conferidas abaixo com os mesmos limites do banco.
+  "tipo_carteira", "honorarios_pct", "desconto_max_pct", "parcelas_max", "entrada_min_pct", "parcela_min_valor", "dias_sem_contato_max"];
+
+const FAIXAS: Record<string, [number, number]> = {
+  honorarios_pct: [0, 100], desconto_max_pct: [0, 95], parcelas_max: [1, 60], entrada_min_pct: [0, 100],
+  parcela_min_valor: [0, 100000], dias_sem_contato_max: [1, 365],
+};
 
 // PATCH: atualiza status / overrides de prompt e config da carteira (admin ou cobrador dono)
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -18,6 +25,16 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   for (const c of CAMPOS) if (c in b) patch[c] = b[c];
   if ("status" in patch && !STATUS_VALIDOS.includes(String(patch.status))) {
     return NextResponse.json({ erro: "status_invalido" }, { status: 400 });
+  }
+  if ("tipo_carteira" in patch && !["propria", "terceiros"].includes(String(patch.tipo_carteira))) {
+    return NextResponse.json({ erro: "Tipo de carteira inválido." }, { status: 400 });
+  }
+  for (const [campo, [min, max]] of Object.entries(FAIXAS)) {
+    if (!(campo in patch)) continue;
+    if (campo === "honorarios_pct" && patch[campo] === null) continue;
+    const v = Number(patch[campo]);
+    if (!Number.isFinite(v) || v < min || v > max) return NextResponse.json({ erro: `Valor fora do permitido em ${campo.replace(/_/g, " ")} (${min} a ${max}).` }, { status: 400 });
+    patch[campo] = ["parcelas_max", "dias_sem_contato_max"].includes(campo) ? Math.round(v) : v;
   }
   if (Object.keys(patch).length === 0) return NextResponse.json({ erro: "nada_para_atualizar" }, { status: 400 });
 

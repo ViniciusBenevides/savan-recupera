@@ -3,8 +3,9 @@ import { supabaseAdmin } from "@/lib/supabase-server";
 import { exigirCobrador } from "@/lib/auth";
 
 // Quem pode criar quais papéis. NINGUÉM cria admin (admin único = dono da plataforma).
-const CRIAVEIS_ADMIN = ["cobrador", "credor", "visualizador"];
-const CRIAVEIS_COBRADOR = ["credor", "visualizador"];
+const CRIAVEIS_ADMIN = ["cobrador", "negociador", "credor", "visualizador"];
+// O negociador trabalha a fila do dia nas carteiras do cobrador que o criou.
+const CRIAVEIS_COBRADOR = ["negociador", "credor", "visualizador"];
 
 // Cria um novo usuário do painel. Admin cria cobrador/credor/visualizador; cobrador cria
 // o próprio credor/visualizador (já anexados ao tenant dele). E-mail já confirmado.
@@ -31,7 +32,7 @@ export async function POST(req: Request) {
   let tenant: string | null = null;
   if (sessao.role === "cobrador") {
     tenant = sessao.user.id;
-  } else if (papel === "credor" || papel === "visualizador") {
+  } else if (papel === "credor" || papel === "visualizador" || papel === "negociador") {
     // Na conta principal ainda não há um usuário com papel "cobrador": as carteiras
     // pertencem ao próprio admin. Nesse caso, vincula o leitor ao admin em vez de
     // deixá-lo sem tenant (o que faria o RLS devolver zero linhas).

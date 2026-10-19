@@ -31,7 +31,7 @@ export function SeletorConta({ cobradores, conta }: { cobradores: Cobrador[]; co
             {ehGlobal ? <Globe2 className="h-4 w-4" /> : <User className="h-4 w-4" />}
           </span>
           <div>
-            <div className="text-[11px] uppercase tracking-wider text-mist">Admin · você está vendo</div>
+            <div className="text-[11px] text-mist">Admin · você está vendo</div>
             <div className="text-sm font-medium text-chalk">
               {ehGlobal
                 ? "Padrão global da plataforma"

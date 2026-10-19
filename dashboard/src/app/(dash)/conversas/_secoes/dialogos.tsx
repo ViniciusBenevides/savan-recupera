@@ -12,7 +12,7 @@ function emLotes<T>(itens: T[], tamanho = TAMANHO_LOTE): T[][] {
 }
 
 /** Aba "Todas" — a caixa de entrada das conversas do robô (e do atendimento humano). */
-export async function Dialogos({ podeAtender = false }: { podeAtender?: boolean }) {
+export async function Dialogos({ podeAtender = false, inicial = null }: { podeAtender?: boolean; inicial?: number | null }) {
   const sb = await supabaseServer();
 
   // Lista COMPLETA de conversas (mais recentes primeiro). A Data API limita o tamanho
@@ -40,7 +40,7 @@ export async function Dialogos({ podeAtender = false }: { podeAtender?: boolean 
 
   // Os relacionamentos também são consultados em lotes. Isso evita URLs enormes no `.in()`
   // e garante que aumentar o histórico não volte a truncar nomes, carteiras ou prévias.
-  const [devResultados, cartResultados, chipResultados, msgResultados, { data: cfg, error: cfgErro }] = await Promise.all([
+  const [devResultados, cartResultados, chipResultados, msgResultados] = await Promise.all([
     Promise.all(emLotes(devIds).map((ids) =>
       sb.from("devedores").select("id, nome, cpf_cnpj, saldo, status_cobranca, cidade, uf").in("id", ids),
     )),
@@ -57,11 +57,10 @@ export async function Dialogos({ podeAtender = false }: { podeAtender?: boolean 
         .order("criado_em", { ascending: false })
         .limit(4000),
     )),
-    sb.from("configuracoes").select("valor").eq("chave", "chatwoot").is("cobrador_id", null).maybeSingle(),
   ]);
 
   const resultados = [...devResultados, ...cartResultados, ...chipResultados, ...msgResultados];
-  const erroRelacionado = resultados.find((r) => r.error)?.error ?? cfgErro;
+  const erroRelacionado = resultados.find((r) => r.error)?.error;
   if (erroRelacionado) throw new Error(`Falha ao carregar dados das conversas: ${erroRelacionado.message}`);
 
   const devs = devResultados.flatMap((r) => r.data ?? []);
@@ -172,8 +171,8 @@ export async function Dialogos({ podeAtender = false }: { podeAtender?: boolean 
       chips={chips}
       chipsTodos={chipsTodos}
       chipPadrao={chipPadrao}
-      cwUrl={(cfg?.valor as any)?.url ?? ""}
       podeAtender={podeAtender}
+      inicial={inicial}
     />
   );
 }

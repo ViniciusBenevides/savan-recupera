@@ -14,86 +14,94 @@ export function Card({ className, glow, ...props }: React.HTMLAttributes<HTMLDiv
   );
 }
 
+type Variante = "primary" | "ghost" | "outline" | "danger" | "quiet";
+
+export const estiloBotao = (variant: Variante = "primary", size: "sm" | "md" | "lg" = "md") =>
+  cn(
+    "inline-flex select-none items-center justify-center gap-2 rounded-botao font-600 whitespace-nowrap",
+    "transition-[transform,background-color,border-color,color] duration-150 ease-saida active:scale-[0.97]",
+    "disabled:pointer-events-none disabled:opacity-45",
+    {
+      primary: "bg-tinta text-sobre-tinta hover:bg-ouro",
+      outline: "border border-pauta-forte bg-folha text-tinta hover:border-tinta/50 hover:bg-tinta-clara",
+      ghost: "text-lapis hover:bg-ink-800 hover:text-texto",
+      quiet: "text-tinta hover:bg-tinta-clara",
+      danger: "border border-margem/35 bg-margem-fundo text-margem hover:border-margem/60",
+    }[variant],
+    {
+      sm: "alvo-toque h-8 px-3 text-sm2",
+      md: "h-10 px-4 text-[0.9375rem] [@media(pointer:coarse)]:h-11",
+      lg: "h-12 px-5 text-corpo",
+    }[size],
+  );
+
 export function Button({
   className, variant = "primary", size = "md", ...props
 }: React.ButtonHTMLAttributes<HTMLButtonElement> & {
-  variant?: "primary" | "ghost" | "outline" | "danger";
+  variant?: Variante;
   size?: "sm" | "md" | "lg";
 }) {
-  const variants = {
-    primary: "bg-emerald text-[#04140c] hover:bg-emerald-soft font-semibold shadow-[0_8px_30px_-12px_rgba(43,217,140,0.55)]",
-    ghost: "text-mist hover:text-chalk hover:bg-ink-800",
-    outline: "border border-line text-chalk hover:border-ink-500 hover:bg-ink-800",
-    danger: "bg-rose/15 text-rose hover:bg-rose/25 border border-rose/30",
-  };
-  const sizes = { sm: "h-8 px-3 text-xs", md: "h-10 px-4 text-sm", lg: "h-12 px-6 text-base" };
-  return (
-    <button
-      className={cn(
-        "inline-flex items-center justify-center gap-2 rounded-xl transition-all duration-150 active:scale-[0.98] disabled:opacity-40 disabled:pointer-events-none",
-        variants[variant], sizes[size], className,
-      )}
-      {...props}
-    />
-  );
+  return <button className={cn(estiloBotao(variant, size), className)} {...props} />;
 }
 
+export type Tom = "neutral" | "green" | "violet" | "amber" | "rose" | "blue" | "tinta";
+
 export function Badge({ tone = "neutral", children, className }: {
-  tone?: "neutral" | "green" | "violet" | "amber" | "rose" | "blue"; children: React.ReactNode; className?: string;
+  tone?: Tom; children: React.ReactNode; className?: string;
 }) {
-  const tones = {
-    neutral: "bg-ink-700 text-mist border-line",
-    green: "bg-emerald/12 text-emerald-soft border-emerald/25",
-    violet: "bg-violet/12 text-violet border-violet/25",
-    amber: "bg-amber/12 text-amber border-amber/25",
-    rose: "bg-rose/12 text-rose border-rose/25",
-    blue: "bg-blue/12 text-blue border-blue/25",
+  const tones: Record<Tom, string> = {
+    neutral: "text-lapis",
+    green: "text-pago",
+    violet: "text-violet",
+    amber: "text-atencao",
+    rose: "text-margem",
+    blue: "text-tinta",
+    tinta: "text-tinta",
   };
   return (
-    <span className={cn("inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-medium", tones[tone], className)}>
+    <span className={cn("inline-flex items-center gap-1.5 whitespace-nowrap text-meta font-600", tones[tone], className)}>
       {children}
     </span>
   );
 }
 
+const campo =
+  "w-full rounded-controle border border-pauta-forte bg-folha text-[0.9375rem] text-texto placeholder:text-lapis/70 " +
+  "outline-none transition-[border-color,box-shadow] duration-150 focus:border-tinta focus:ring-2 focus:ring-tinta/15 " +
+  "disabled:bg-ink-800 disabled:text-lapis";
+
 export function Input({ className, ...props }: React.InputHTMLAttributes<HTMLInputElement>) {
-  return (
-    <input
-      className={cn(
-        "h-10 w-full rounded-xl border border-line bg-ink-850 px-3.5 text-sm text-chalk placeholder:text-mist/60",
-        "outline-none transition-colors focus:border-emerald/60 focus:ring-2 focus:ring-emerald/15",
-        className,
-      )}
-      {...props}
-    />
-  );
+  return <input className={cn(campo, "h-10 px-3 [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:text-base", className)} {...props} />;
 }
 
 export function Label({ className, ...props }: React.LabelHTMLAttributes<HTMLLabelElement>) {
-  return <label className={cn("mb-1.5 block text-xs font-medium text-mist", className)} {...props} />;
+  return <label className={cn("mb-1.5 block text-sm2 font-600 text-texto", className)} {...props} />;
 }
 
-export function Switch({ checked, onChange, size = "md" }: {
-  checked: boolean; onChange: (v: boolean) => void; size?: "md" | "lg";
+export function Switch({ checked, onChange, size = "md", label }: {
+  checked: boolean; onChange: (v: boolean) => void; size?: "md" | "lg"; label?: string;
 }) {
   const dims = size === "lg"
-    ? { w: "w-16", h: "h-9", knob: "h-7 w-7", on: "translate-x-7" }
-    : { w: "w-12", h: "h-7", knob: "h-5 w-5", on: "translate-x-5" };
+    ? { w: "w-14", h: "h-8", knob: "h-6 w-6", on: "translate-x-6" }
+    : { w: "w-11", h: "h-6", knob: "h-4 w-4", on: "translate-x-5" };
   return (
     <button
       type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
       onClick={() => onChange(!checked)}
       className={cn(
-        "relative inline-flex shrink-0 items-center rounded-full border transition-colors duration-200",
+        "alvo-toque relative inline-flex shrink-0 items-center rounded-full border transition-colors duration-200",
         dims.w, dims.h,
-        checked ? "border-emerald/40 bg-emerald/25" : "border-line bg-ink-700",
+        checked ? "border-tinta bg-tinta" : "border-pauta-forte bg-ink-700",
       )}
     >
       <span
         className={cn(
-          "ml-1 inline-block transform rounded-full transition-transform duration-200",
+          "ml-[3px] inline-block rounded-full bg-white shadow-sobe transition-transform duration-200 ease-saida",
           dims.knob,
-          checked ? `${dims.on} bg-emerald` : "translate-x-0 bg-mist",
+          checked ? dims.on : "translate-x-0",
         )}
       />
     </button>
@@ -101,37 +109,19 @@ export function Switch({ checked, onChange, size = "md" }: {
 }
 
 export function Textarea({ className, ...props }: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
-  return (
-    <textarea
-      className={cn(
-        "w-full rounded-xl border border-line bg-ink-850 px-3.5 py-2.5 text-sm text-chalk placeholder:text-mist/60",
-        "outline-none transition-colors focus:border-emerald/60 focus:ring-2 focus:ring-emerald/15",
-        className,
-      )}
-      {...props}
-    />
-  );
+  return <textarea className={cn(campo, "px-3 py-2.5 leading-6 [@media(pointer:coarse)]:text-base", className)} {...props} />;
 }
 
 export function Select({ className, ...props }: React.SelectHTMLAttributes<HTMLSelectElement>) {
-  return (
-    <select
-      className={cn(
-        "h-10 w-full rounded-xl border border-line bg-ink-850 px-3 text-sm text-chalk",
-        "outline-none transition-colors focus:border-emerald/60 focus:ring-2 focus:ring-emerald/15",
-        className,
-      )}
-      {...props}
-    />
-  );
+  return <select className={cn(campo, "h-10 px-2.5 [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:text-base", className)} {...props} />;
 }
 
-export function SectionTitle({ title, sub, action }: { title: string; sub?: string; action?: React.ReactNode }) {
+export function SectionTitle({ title, sub, action }: { title: string; sub?: React.ReactNode; action?: React.ReactNode }) {
   return (
-    <div className="mb-5 flex items-end justify-between gap-4">
-      <div>
-        <h1 className="font-display text-2xl font-700 tracking-tight text-chalk">{title}</h1>
-        {sub && <p className="mt-1 text-sm text-mist">{sub}</p>}
+    <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
+      <div className="min-w-0">
+        <h1 className="font-display text-pagina font-600 text-ouro">{title}</h1>
+        {sub && <p className="mt-1 text-[0.9375rem] text-lapis">{sub}</p>}
       </div>
       {action}
     </div>

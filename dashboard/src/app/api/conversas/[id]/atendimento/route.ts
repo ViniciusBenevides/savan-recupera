@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { exigirConversa, cobradorDoChip } from "@/lib/conversas";
 import { contaChatwoot, respostasProntas, modelosAprovados } from "@/lib/chatwoot-atendimento";
 import { canalDaConversa } from "@/lib/canal-conversa";
+import { modoDemoLocal } from "@/lib/demo";
 
 /**
  * GET — o que a caixa de resposta precisa saber para esta conversa, agora.
@@ -21,6 +22,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const { conversa } = g;
 
   const canal = await canalDaConversa(conversa);
+  // Demonstração local sem número conectado: a resposta é gravada como enviada e nada sai de verdade
+  // (o POST de mensagens faz o mesmo). Conversa de quem pediu para parar continua fechada.
+  const demo = modoDemoLocal() && canal.caminho === "nenhum" && !conversa.chip_id && conversa.estado !== "optout";
 
   const conta = await contaChatwoot();
   const [modelos, prontas] = await Promise.all([
@@ -39,9 +43,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     // ── canal ──
     conector: canal.conector,
     chip_nome: canal.chip?.nome ?? null,
-    caminho: canal.caminho,
-    impedimento: canal.impedimento,
-    texto_livre: canal.texto_livre,
+    caminho: demo ? "demo" : canal.caminho,
+    impedimento: demo ? null : canal.impedimento,
+    texto_livre: demo ? true : canal.texto_livre,
     usa_modelo: canal.usa_modelo,
     abordagem: canal.abordagem,
 

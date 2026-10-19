@@ -1,119 +1,81 @@
-import { supabaseServer } from "@/lib/supabase-server";
-import { Card, SectionTitle, Badge, Button } from "@/components/ui/primitives";
-import { brl, dataBR, dataHoraBR } from "@/lib/utils";
-import { ArrowLeft, ExternalLink, Phone } from "lucide-react";
-import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
+import { supabaseServer, supabaseAdmin } from "@/lib/supabase-server";
+import { getSessao, podeOperar } from "@/lib/auth";
+import { Ficha, type DadosFicha } from "./ficha";
 
 export const dynamic = "force-dynamic";
 
-export default async function DevedorPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
   const sb = await supabaseServer();
+  const { data } = await sb.from("devedores").select("nome").eq("id", Number((await params).id)).maybeSingle();
+  return { title: data?.nome ?? "Devedor não encontrado" };
+}
 
-  const { data: d } = await sb.from("devedores").select("*").eq("id", Number(id)).maybeSingle();
+export default async function Page({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ aba?: string }> }) {
+  const sessao = await getSessao();
+  if (!sessao) redirect("/login");
+  const id = Number((await params).id);
+  if (!Number.isInteger(id) || id <= 0) notFound();
+  const { aba } = await searchParams;
+
+  const sb = await supabaseServer();
+  const { data: d } = await sb
+    .from("devedores")
+    .select("id, nome, cpf_cnpj, processo, saldo, vencimento, cidade, uf, emails, tags, fase, motivo_inadimplencia, status_cobranca, responsavel_id, carteira_id, ultimo_contato_em, criado_em, carteiras(id, nome, credor, cobrador_id, desconto_max_pct, parcelas_max, entrada_min_pct, parcela_min_valor, tipo_carteira)")
+    .eq("id", id)
+    .maybeSingle();
   if (!d) notFound();
 
-  const [{ data: telefones }, { data: conversas }, { data: negociacoes }, { data: pagamentos }, { data: eventos }, { data: cfg }] =
-    await Promise.all([
-      sb.from("telefones_devedor").select("*").eq("devedor_id", d.id).order("ordem"),
-      sb.from("conversas").select("*").eq("devedor_id", d.id).order("criado_em", { ascending: false }),
-      sb.from("negociacoes").select("*").eq("devedor_id", d.id).order("criado_em", { ascending: false }),
-      sb.from("pagamentos").select("*").eq("devedor_id", d.id).order("criado_em", { ascending: false }),
-      sb.from("eventos_campanha").select("*").eq("devedor_id", d.id).order("criado_em", { ascending: false }).limit(20),
-      sb.from("configuracoes").select("valor").eq("chave", "chatwoot").is("cobrador_id", null).maybeSingle(),
-    ]);
+  const [prop, fones, conversas, ocorrencias, agenda, acordos, pagamentos, bloqueio] = await Promise.all([
+    sb.rpc("fn_proposta", { p_devedor_id: id }),
+    sb.from("telefones_devedor").select("id, telefone_e164, tipo, whatsapp_valido, ordem").eq("devedor_id", id).order("ordem"),
+    sb.from("conversas").select("id, estado, ultima_msg_em, ultima_msg_de, atendente_nome").eq("devedor_id", id).order("ultima_msg_em", { ascending: false, nullsFirst: false }),
+    sb.from("ocorrencias").select("id, canal, resultado, descricao, autor_nome, criado_em").eq("devedor_id", id).order("criado_em", { ascending: false }).limit(200),
+    sb.from("agenda").select("id, tipo, quando, dia_inteiro, valor, status, observacao, criado_em, concluido_em").eq("devedor_id", id).order("quando", { ascending: false }).limit(100),
+    sb.from("acordos").select("id, valor_divida, desconto_pct, valor_total, entrada, parcelas, forma_pagamento, status, criado_por_nome, criado_em, quitado_em, encerrado_em, observacao, acordo_parcelas(id, numero, vencimento, valor, status, pago_em, valor_pago, forma_pagamento)").eq("devedor_id", id).order("criado_em", { ascending: false }),
+    sb.from("pagamentos").select("id, valor, status, criado_em, pago_em, pix_payload").eq("devedor_id", id).eq("simulacao", false).order("criado_em", { ascending: false }).limit(20),
+    sb.from("bloqueios_contato").select("motivo, criado_em").eq("devedor_id", id).limit(1),
+  ]);
 
-  const cwUrl = cfg?.valor?.url ?? "https://chatwoot.example.com";
-  const conv = conversas?.[0];
+  const conversaAtual = conversas.data?.[0] ?? null;
+  let mensagens: DadosFicha["mensagens"] = [];
+  if (conversaAtual) {
+    const { data } = await sb.from("mensagens").select("id, direcao, origem, conteudo, criado_em, autor_nome, privado, status_entrega")
+      .eq("conversa_id", conversaAtual.id).order("criado_em", { ascending: true }).limit(300);
+    mensagens = data ?? [];
+  }
 
-  return (
-    <>
-      <Link href="/carteiras?aba=devedores" className="mb-4 inline-flex items-center gap-1.5 text-sm text-mist hover:text-chalk">
-        <ArrowLeft className="h-4 w-4" /> Voltar
-      </Link>
-      <SectionTitle
-        title={d.nome}
-        sub={`CPF ${d.cpf_cnpj} · Processo ${d.processo}`}
-        action={conv && (
-          <a href={`${cwUrl}/app/accounts/1/conversations/${conv.chatwoot_conversation_id}`} target="_blank" rel="noreferrer">
-            <Button variant="outline" size="sm"><ExternalLink className="h-4 w-4" /> Abrir conversa</Button>
-          </a>
-        )}
-      />
+  // Outras carteiras do mesmo CPF ("Exposição total" do MC COB) e nomes da equipe
+  const adm = supabaseAdmin();
+  const carteira = d.carteiras as unknown as DadosFicha["carteira"];
+  const [outras, equipe] = await Promise.all([
+    sb.from("devedores").select("id, saldo, status_cobranca, carteiras(nome)").eq("cpf_cnpj", d.cpf_cnpj).neq("id", id).limit(20),
+    carteira?.cobrador_id
+      ? adm.from("usuarios_app").select("id, nome, role").or(`id.eq.${carteira.cobrador_id},cobrador_id.eq.${carteira.cobrador_id}`)
+      : Promise.resolve({ data: [] as { id: string; nome: string | null; role: string }[] }),
+  ]);
+  const equipeOp = (equipe.data ?? []).filter((u) => u.role === "cobrador" || u.role === "negociador").map((u) => ({ id: u.id, nome: u.nome ?? "—" }));
 
-      <div className="grid gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-2 flex flex-col gap-4">
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-            {[
-              ["Dívida", brl(d.saldo)],
-              ["Vencimento", dataBR(d.vencimento)],
-              ["Cidade", `${d.cidade ?? "—"}${d.uf ? `, ${d.uf}` : ""}`],
-              ["Status", d.status_cobranca.replace(/_/g, " ")],
-            ].map(([k, v]) => (
-              <div key={k}>
-                <div className="text-xs text-mist">{k}</div>
-                <div className="mt-0.5 font-medium text-chalk">{v}</div>
-              </div>
-            ))}
-          </div>
+  const dados: DadosFicha = {
+    devedor: {
+      id: d.id, nome: d.nome, cpf: d.cpf_cnpj, processo: d.processo, saldo: Number(d.saldo), vencimento: d.vencimento,
+      cidade: d.cidade, uf: d.uf, emails: d.emails ?? [], tags: d.tags, fase: d.fase, motivo: d.motivo_inadimplencia,
+      situacao: d.status_cobranca, responsavel_id: d.responsavel_id, ultimo_contato_em: d.ultimo_contato_em,
+    },
+    carteira,
+    proposta: prop.data?.valor_final != null ? { valor: Number(prop.data.valor_final), desconto_pct: Number(prop.data.desconto_pct ?? 0), ano: prop.data.ano_divida ?? null } : null,
+    telefones: fones.data ?? [],
+    conversa: conversaAtual,
+    mensagens,
+    ocorrencias: ocorrencias.data ?? [],
+    agenda: agenda.data ?? [],
+    acordos: (acordos.data ?? []) as DadosFicha["acordos"],
+    pagamentos: pagamentos.data ?? [],
+    bloqueado: (bloqueio.data?.length ?? 0) > 0,
+    outras: (outras.data ?? []).map((o) => ({ id: o.id, saldo: Number(o.saldo), situacao: o.status_cobranca, carteira: (o.carteiras as unknown as { nome: string } | null)?.nome ?? "" })),
+    equipe: equipeOp,
+    responsavelNome: equipeOp.find((u) => u.id === d.responsavel_id)?.nome ?? null,
+  };
 
-          <div>
-            <h4 className="mb-2 text-xs font-medium uppercase tracking-wider text-mist">Telefones</h4>
-            <div className="flex flex-wrap gap-2">
-              {(telefones ?? []).map((t) => (
-                <Badge key={t.id} tone={t.whatsapp_valido === false ? "rose" : t.whatsapp_valido ? "green" : "neutral"}>
-                  <Phone className="h-3 w-3" /> {t.telefone_e164}
-                </Badge>
-              ))}
-            </div>
-          </div>
-
-          {(negociacoes ?? []).length > 0 && (
-            <div>
-              <h4 className="mb-2 text-xs font-medium uppercase tracking-wider text-mist">Negociações</h4>
-              <div className="flex flex-col gap-2">
-                {negociacoes!.map((n) => (
-                  <div key={n.id} className="flex items-center justify-between rounded-xl border border-line bg-ink-850 px-3 py-2 text-sm">
-                    <span className="text-mist">{n.desconto_pct}% off · válido {dataBR(n.validade)}</span>
-                    <span className="font-mono text-chalk tabnums">{brl(n.valor_proposto)}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {(pagamentos ?? []).length > 0 && (
-            <div>
-              <h4 className="mb-2 text-xs font-medium uppercase tracking-wider text-mist">Pagamentos</h4>
-              <div className="flex flex-col gap-2">
-                {pagamentos!.map((p) => (
-                  <div key={p.id} className="flex items-center justify-between rounded-xl border border-line bg-ink-850 px-3 py-2 text-sm">
-                    <Badge tone={["recebido", "confirmado"].includes(p.status) ? "green" : "neutral"}>{p.status}</Badge>
-                    <span className="font-mono text-chalk tabnums">{brl(p.valor)}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </Card>
-
-        <Card>
-          <h4 className="mb-3 font-display text-base font-600 text-chalk">Linha do tempo</h4>
-          <div className="flex flex-col gap-3">
-            {(eventos ?? []).length === 0 && <p className="text-sm text-mist">Sem eventos ainda.</p>}
-            {(eventos ?? []).map((e) => (
-              <div key={e.id} className="flex gap-3">
-                <div className="mt-1 h-2 w-2 shrink-0 rounded-full bg-emerald" />
-                <div>
-                  <div className="text-sm text-chalk">{e.tipo.replace(/_/g, " ")}</div>
-                  <div className="text-[11px] text-mist">{dataHoraBR(e.criado_em)}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </Card>
-      </div>
-    </>
-  );
+  return <Ficha dados={dados} abaInicial={aba ?? "resumo"} podeOperar={podeOperar(sessao.role)} papel={sessao.role} meuId={sessao.user.id} />;
 }

@@ -17,7 +17,7 @@ export type Atendimento = {
   /** Conector do chip que atende esta conversa. É ele que escolhe a regra de saída. */
   conector: "baileys" | "meta_cloud";
   chip_nome: string | null;
-  caminho: "evolution" | "chatwoot" | "nenhum";
+  caminho: "evolution" | "chatwoot" | "nenhum" | "demo";
   impedimento: string | null;
   texto_livre: boolean;
   usa_modelo: boolean;
@@ -204,7 +204,7 @@ export function Composer({ conversaId, bloqueio, onEnviado }: {
         {atd && modo === "resposta" && !atd.janela_aplica && (
           <span
             className="ml-auto inline-flex items-center gap-1.5 text-[10px] text-mist"
-            title="Número comum (Baileys): não existe janela de 24 h nem modelo aprovado. Texto livre sempre."
+            title="Número comum (QR): não existe janela de 24 h nem modelo aprovado. Texto livre sempre."
           >
             <Smartphone className="h-3 w-3" />
             {atd.chip_nome ?? "Número comum"} · texto livre
@@ -297,7 +297,7 @@ export function Composer({ conversaId, bloqueio, onEnviado }: {
                   </button>
                 )}
                 <span className="px-1 text-[10px] text-mist/60">
-                  {modo === "nota" ? "Só a equipe vê" : "Vai para o WhatsApp da pessoa"}
+                  {modo === "nota" ? "Só a equipe vê" : atd?.caminho === "demo" ? "Demonstração: fica gravada como enviada, nada sai pelo WhatsApp" : "Vai para o WhatsApp da pessoa"}
                 </span>
               </div>
               <Button
@@ -418,7 +418,7 @@ function PainelModelo({ modelos, selecionado, params, onSelecionar, onParams, on
             <div className="grid gap-2 sm:grid-cols-2">
               {Array.from({ length: selecionado.variaveis }, (_, i) => (
                 <label key={i} className="block">
-                  <span className="mb-1 block text-[10px] uppercase tracking-wider text-mist">
+                  <span className="mb-1 block text-meta font-600 text-lapis">
                     Valor {`{{${i + 1}}}`}
                   </span>
                   <input
@@ -435,7 +435,7 @@ function PainelModelo({ modelos, selecionado, params, onSelecionar, onParams, on
             </div>
           )}
           <div className="rounded-lg bg-ink-900 px-3 py-2 text-xs leading-relaxed text-chalk">
-            <span className="mb-1 block text-[10px] uppercase tracking-wider text-mist">Vai chegar assim</span>
+            <span className="mb-1 block text-meta font-600 text-lapis">Vai chegar assim</span>
             <span className="whitespace-pre-wrap">{previa}</span>
           </div>
         </div>

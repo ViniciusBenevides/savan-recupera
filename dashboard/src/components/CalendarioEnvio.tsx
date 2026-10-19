@@ -106,7 +106,7 @@ export function CalendarioEnvio({ janela, onChangeFeriadosExtra }: {
       <div className="mt-4 border-t border-line pt-4">
         <div className="flex items-end gap-2">
           <div className="flex-1">
-            <label className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-mist">Adicionar folga (feriado regional/ponto facultativo)</label>
+            <label className="mb-1 block text-[11px] font-medium text-mist">Adicionar folga (feriado regional/ponto facultativo)</label>
             <Input type="date" value={novaData} onChange={(e) => setNovaData(e.target.value)} />
           </div>
           <Button size="md" variant="outline" onClick={adicionarData} disabled={!novaData}>
@@ -129,7 +129,7 @@ export function CalendarioEnvio({ janela, onChangeFeriadosExtra }: {
 
       {/* feriados nacionais do ano exibido (referência) */}
       <div className="mt-4 border-t border-line pt-4">
-        <div className="mb-2 text-[11px] font-medium uppercase tracking-wide text-mist">Feriados nacionais em {ano}</div>
+        <div className="mb-2 text-[11px] font-medium text-mist">Feriados nacionais em {ano}</div>
         <div className="grid gap-x-4 gap-y-1 sm:grid-cols-2">
           {listaFeriados(ano).map((f) => (
             <div key={f.data + f.nome} className="flex items-baseline justify-between gap-2 text-xs">

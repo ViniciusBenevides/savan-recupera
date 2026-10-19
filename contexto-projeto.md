@@ -2429,3 +2429,34 @@ chip ele não tem por onde responder. Os inboxes 8 e 9 **não** foram apagados: 
 Chatwoot, várias só lá (o 8 tem 513, contra 70 do Chip Oficial no banco), e o §38 manda preservar o
 histórico do canal oficial. Também a pedido do dono, o MCP passou a ser permitido: a proibição saiu do
 `CLAUDE.md`, do `AGENTS.md` e dos guias.
+
+## 50. MC COB: a cobrança volta a ter gente, e a IA vira copiloto (16–17/10/2026)
+
+Em mais de quatro meses o robô sozinho recuperou R$ 0. A base explica boa parte: SAVAN tem 50.577
+registros, ticket médio de R$ 213, dívidas com 15,8 anos em média, quase todas prescritas. Ninguém paga
+dívida de quinze anos para um robô. E o robô deixava cair justamente quem queria pagar. Quem disse
+"consigo dia 10" num dia 1 não ganhou data nenhuma. Quem disse "quero pagar" e sumiu não foi chamado de
+novo.
+
+O Maurelio já trabalhava assim no **MC COB V5**, um sistema local feito com o ChatGPT (WhatsApp Web +
+extensão). O vocabulário e o jeito de trabalhar dele estão certos: ficha do devedor, ocorrência, agenda,
+acordo, recebimento. Faltava banco online, versão e conta certa: no V5, registrar pagamento não abatia
+o saldo. O painel novo junta o fluxo do MC COB com o que este projeto já tinha, como carteiras,
+conversas, Pix com split e proposta por idade da dívida.
+
+### O que mudou (branch `mc-cob-v6`)
+
+| Peça | Entrega |
+| --- | --- |
+| `20261016120000_papel_negociador.sql` | papel `negociador`: trabalha a fila do cobrador, não configura nada |
+| `20261016120100_mc_cob_operacao_humana.sql` | `ocorrencias`, `agenda` (promessa/retorno), `acordos` + `acordo_parcelas` (entrada = parcela 0); limites de negociação na carteira; `responsavel_id` e `ultimo_contato_em` no devedor; triggers (ocorrência atualiza o devedor e o não perturbe; última parcela paga quita o acordo e o devedor); views `v_recebimentos`, `v_conversas_esperando` e `v_funil_carteira`, todas `security_invoker` |
+| Telas | Trabalho de hoje (fila do dia + ficha ao lado), Ficha do devedor, Devedores, Agenda, Acordos, Financeiro (livro-caixa, CSV), Relatórios (resultado por carteira, equipe, robô), Conversas com a ficha ao lado |
+| Lógica pura, com testes (`src/lib/__testes__`) | `datas.ts` (fuso de SP), `ia/ler-mensagem.ts` ("dia 10" num dia 16 vira 10 do mês que vem; "quando receber" vira 5º dia útil), `ia/sugerir-resposta.ts` (rascunho sem ameaça; o valor vem da `fn_proposta`), `acordo.ts` (conta em centavos, igual na tela e no servidor), `fila-hoje.ts` |
+| Visual | mundo "Caderneta de fiado", conferido pelo Impeccable; regras em `DESIGN.md` |
+| Demonstração | `dashboard/scripts/seed-demo.mjs`, que só roda contra o Supabase local e apaga tudo antes de semear. `--pior-caso` acrescenta os dados que quebram tela: nome enorme, CNPJ com R$ 1,2 mi e acordo de 24 parcelas, dívida de R$ 9,90 |
+
+A IA lê e sugere; quem manda a mensagem é a pessoa. Nada sai sozinho do Trabalho de hoje.
+
+**Não aplicado em produção.** Para ir ao ar: as duas migrations acima e o deploy do painel, só com o
+dono mandando. O fluxo do robô (§35) e o ritmo das abordagens não mudaram. Ficaram fora desta fase:
+precatórios, discador, boleto/CNAB, NFS-e e portal do credor.

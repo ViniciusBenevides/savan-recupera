@@ -4,11 +4,14 @@
 // continuam válidas e caem na aba correspondente — links salvos e favoritos não quebram.
 // O que era a área /robo virou o fluxo de cada carteira (§35), então cai na lista de carteiras:
 // não há mais uma tela única de mensagens/comportamento/conhecimento para onde apontar.
+// MC COB (16/10/2026): /devedores, /relatorios, /agenda, /acordos e /financeiro voltaram a ser telas
+// próprias; o que apontava para o antigo "Início" cai nelas. Em 17/10 o Painel voltou para a raiz e o
+// Trabalho de Hoje para /trabalho-hoje, as rotas do MC COB V5.
 const rotasAntigas = [
-  ["/pagamentos", "/?aba=dinheiro"],
-  ["/relatorios", "/?aba=historico"],
+  ["/pagamentos", "/financeiro"],
+  ["/minha-carteira", "/devedores?aba=minha"],
+  ["/negociacoes", "/acordos"],
   ["/campanha", "/ajustes?aba=envio"],
-  ["/devedores", "/carteiras?aba=devedores"],
   ["/escalacoes", "/conversas?aba=escaladas"],
   ["/robo", "/carteiras"],
   ["/robo/:resto*", "/carteiras"],

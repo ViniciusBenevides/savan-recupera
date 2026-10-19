@@ -17,7 +17,7 @@ export function StatCard({
   return (
     <Card glow={glow} className="flex flex-col gap-3">
       <div className="flex items-center justify-between">
-        <span className="text-xs font-medium uppercase tracking-wider text-mist">{label}</span>
+        <span className="text-xs font-medium text-mist">{label}</span>
         {Icon && (
           <span className={cn("grid h-8 w-8 place-items-center rounded-lg bg-ink-800", accent)}>
             <Icon className="h-4 w-4" />

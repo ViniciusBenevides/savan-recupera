@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-server";
 import { exigirConversa, cobradorDoChip } from "@/lib/conversas";
 import { canalDaConversa, type CanalConversa } from "@/lib/canal-conversa";
+import { modoDemoLocal } from "@/lib/demo";
 import {
   contaChatwoot, enviarTexto, enviarNota, enviarTemplate, renderizarModelo,
 } from "@/lib/chatwoot-atendimento";
@@ -119,6 +120,18 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
 
   // ── Mensagem para o contato ───────────────────────────────────────────────────────────────
+  let envio: Envio;
+
+  // Demonstração local: grava como enviada sem tocar em WhatsApp/Chatwoot. Bloqueio e "não
+  // perturbe" continuam valendo, para a demonstração não ensinar o caminho errado.
+  if (modoDemoLocal()) {
+    const { data: bloq } = await admin.from("bloqueios_contato").select("id").eq("devedor_id", conversa.devedor_id).limit(1);
+    if (conversa.estado === "optout" || (bloq?.length ?? 0) > 0) {
+      return NextResponse.json({ erro: "Esta pessoa pediu para não ser contatada.", motivo: "sem_caminho" }, { status: 409 });
+    }
+    envio = { ok: true, conteudo, chatwoot_message_id: null };
+  } else {
+
   // `impedimento` já cobre opt-out, bloqueio permanente de contato (ADR-0003), pessoa errada,
   // chip ausente e ponteiro morto. É limite duro: 409 e nada sai.
   if (canal.caminho === "nenhum") {
@@ -127,8 +140,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       { status: 409 },
     );
   }
-
-  let envio: Envio;
 
   if (canal.caminho === "evolution") {
     if (modeloPedido) {
@@ -171,6 +182,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         ? { ok: true, conteudo: t.conteudo, chatwoot_message_id: t.chatwoot_message_id }
         : { ok: false, erro: t.erro };
     }
+  }
   }
 
   if (!envio.ok) return NextResponse.json({ erro: envio.erro }, { status: 400 });

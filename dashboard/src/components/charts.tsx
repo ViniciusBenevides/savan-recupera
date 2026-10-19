@@ -8,14 +8,14 @@ import { useTheme } from "@/components/ThemeToggle";
 export function RecuperacaoChart({ data }: { data: { dia: string; valor: number }[] }) {
   const tema = useTheme();
   const c = tema === "light"
-    ? { grid: "#E6EAF0", axis: "#5A6374", area: "#10A36A", tip: "#FFFFFF", tipB: "#E0E4EC", tipT: "#0F131E" }
+    ? { grid: "#30251D", axis: "#A99B8E", area: "#E8A15A", tip: "#0B0F12", tipB: "#603F24", tipT: "#EEE4D9" }
     : { grid: "#1F2330", axis: "#8A91A6", area: "#2BD98C", tip: "#13151D", tipB: "#1F2330", tipT: "#E7EAF2" };
   return (
     <ResponsiveContainer width="100%" height={240}>
       <AreaChart data={data} margin={{ top: 8, right: 8, left: -8, bottom: 0 }}>
         <defs>
           <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={c.area} stopOpacity={0.45} />
+            <stop offset="0%" stopColor={c.area} stopOpacity={0.14} />
             <stop offset="100%" stopColor={c.area} stopOpacity={0} />
           </linearGradient>
         </defs>

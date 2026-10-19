@@ -6,6 +6,7 @@ import { verificarNumero, subscribarWaba } from "@/lib/meta";
 import { configurarWebhookDoChip } from "@/lib/meta-webhook";
 import { normalizarTelefone } from "@/lib/import/normalizar";
 import { nomeInstanciaEvolution } from "@/lib/conector";
+import { linhasLiberadas, AVISO_LINHAS_BLOQUEADAS } from "@/lib/linhas";
 
 // Cria chip + credenciais + (best-effort) inbox no Chatwoot. Caminhos:
 //  - chip de bot em transporte Baileys: `baileys` (Evolution) ou `baileys_chatwoot` (baileys-api,
@@ -21,6 +22,11 @@ export async function POST(req: Request) {
   const body = await req.json();
   const { nome, maturidade, limite_dia_override, limite_hora_override, papel, agente_nome, cobrador_id, numero_e164 } = body;
   if (!nome) return NextResponse.json({ erro: "campos_obrigatorios" }, { status: 400 });
+
+  // Chip de bot cria inbox no Chatwoot: só com o atendimento próprio do MC COB (ver lib/linhas.ts).
+  if (papel !== "equipe" && !linhasLiberadas()) {
+    return NextResponse.json({ erro: AVISO_LINHAS_BLOQUEADAS }, { status: 409 });
+  }
 
   const admin = supabaseAdmin();
   // dono do chip: cobrador => ele mesmo; admin => o cobrador alvo informado, senão ele mesmo

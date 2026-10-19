@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-server";
 import { exigirCobrador, podeEditarChip, erroDono } from "@/lib/auth";
+import { linhasLiberadas, AVISO_LINHAS_BLOQUEADAS } from "@/lib/linhas";
 import { criarInstancia, estadoInstancia, ligarChatwoot } from "@/lib/evolution";
 import {
   abrirConexaoBaileys, buscarInboxPorNome, conexaoBaileys, criarInboxBaileys, nomeDoInbox,
@@ -53,6 +54,8 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   const g = await exigirCobrador();
   if (g.erro) return g.erro;
   if (!(await podeEditarChip(g.sessao, chipId))) return erroDono();
+  // abrir conexão por QR cria inbox no Chatwoot: só com o atendimento próprio (ver lib/linhas.ts)
+  if (!linhasLiberadas()) return NextResponse.json({ erro: AVISO_LINHAS_BLOQUEADAS }, { status: 409 });
 
   const admin = supabaseAdmin();
   const { data: chip } = await admin

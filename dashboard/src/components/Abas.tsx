@@ -34,7 +34,7 @@ export function Abas({ abas, atual, className }: { abas: Aba[]; atual: string; c
   if (abas.length < 2) return null;
 
   return (
-    <div className={cn("mb-5 -mx-1 overflow-x-auto", className)}>
+    <div className={cn("sem-barra mb-5 -mx-1 overflow-x-auto overflow-y-hidden", className)}>
       <div className="flex w-max min-w-full gap-1 border-b border-line px-1">
         {abas.map(({ k, t, icon }) => {
           const ativo = k === atual;
@@ -45,7 +45,7 @@ export function Abas({ abas, atual, className }: { abas: Aba[]; atual: string; c
               href={href(k)}
               scroll={false}
               className={cn(
-                "-mb-px flex shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 px-3.5 py-2.5 text-sm transition-colors",
+                "-mb-px flex shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 px-3.5 py-2.5 text-sm transition-colors [@media(pointer:coarse)]:py-3",
                 ativo
                   ? "border-emerald font-medium text-chalk"
                   : "border-transparent text-mist hover:text-chalk",

@@ -83,7 +83,7 @@ export function FailoverBanner() {
                   </select>
                   <button
                     onClick={() => agir(ev, "aplicar")} disabled={pend === ev.id}
-                    className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-emerald px-3.5 text-sm font-semibold text-[#04140c] hover:bg-emerald-soft disabled:opacity-40"
+                    className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-tinta px-3.5 text-sm font-semibold text-sobre-tinta hover:bg-ouro disabled:opacity-40"
                   >
                     {pend === ev.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />} Reatribuir e confirmar
                   </button>
