@@ -21,8 +21,9 @@ por HTTP com o `service_role` como `Bearer`.
 | **SAVAN W08 - Monitor de Chips** | Schedule, **15 min** | `chips-monitor` | Consulta a qualidade de cada número na API oficial e atualiza saúde/status. |
 | **SAVAN W09 - Métricas** | Schedule, **5 min** | `metricas-sync` | Reabre itens presos, recalcula métricas do dia, promove chips aquecidos→ativos. |
 
-**Webhook do Chatwoot** (inbox/integração) deve apontar para
-`https://<seu-n8n>/webhook/savan-bot`, eventos `message_created` e `conversation_created`.
+**Webhook do Chatwoot** (na conta do MC COB, §51) deve apontar para
+`https://<seu-n8n>/webhook/savan-bot`, eventos `message_created`, `conversation_created` e
+`message_updated`. O W02 descarta evento de qualquer outra conta.
 
 `chatwoot-sync` reconcilia pelo `chatwoot_message_id`: retorno imediato da API, webhook e backfill podem
 processar a mesma mensagem sem criar duplicata. Notas privadas e mensagens de atividade não aparecem

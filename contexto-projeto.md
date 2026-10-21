@@ -2460,3 +2460,36 @@ A IA lê e sugere; quem manda a mensagem é a pessoa. Nada sai sozinho do Trabal
 **Não aplicado em produção.** Para ir ao ar: as duas migrations acima e o deploy do painel, só com o
 dono mandando. O fluxo do robô (§35) e o ritmo das abordagens não mudaram. Ficaram fora desta fase:
 precatórios, discador, boleto/CNAB, NFS-e e portal do credor.
+
+## 51. MC COB numa conta própria do Chatwoot (21/10/2026)
+
+O MC COB usava a conta 1 do Chatwoot, que é compartilhada com outro projeto do dono (§49). Por isso o
+cadastro de linha nova estava travado desde 18/10: uma linha conectada ali ficaria entre as caixas do
+outro projeto, e o robô do MC COB (W02) recebia os eventos da conta inteira.
+
+Uma conta nova no mesmo Chatwoot basta para separar: quem está numa conta não vê as caixas da outra.
+Continuam sendo um só para a instância o baileys-api (o Chatwoot aponta para um provedor) e o número de
+cada linha, que é único na instância. Ou seja, nenhum número pode estar nos dois projetos (§49).
+
+| Peça | O que mudou |
+| --- | --- |
+| Chatwoot | conta 2 "MC COB", criada pelo dono no super admin; o webhook do `savan-bot` saiu da conta 1 |
+| `configuracoes.chatwoot.account_id` | 1 → 2. Edge Functions e painel leem a conta daqui |
+| n8n W02 (no ar) | descarta evento cujo `account.id` não seja 2; a reserva "Enviar pelo Chatwoot" responde na conta 2 |
+| n8n W01 (desligado) | "Enviar msg" na conta 2 |
+| `n8n/criar_workflows.py` | `CONTA_CW = 2` nos dois lugares; aviso de que o W02 no ar tem nós que o script não gera |
+| migration `20261021200000_chatwoot_conta_propria.sql` | guarda os ids da conta 1 em colunas `*_conta1` |
+
+Por que a migration: cada conta numera as conversas a partir do 1, e `conversas.chatwoot_conversation_id`
+é único e obrigatório. Sem ela, a primeira conversa da conta nova "acharia" a conversa antiga de mesmo
+número e misturaria o dossiê de dois devedores. Os números de conversa da conta 1 viraram negativos (o
+original fica em `*_conta1`; chamada ao Chatwoot com eles dá 404). Contato e inbox ficaram nulos, então
+o contato é recriado na conta nova e a adoção do `chatwoot-sync` (§42) amarra a conversa nova à linha
+antiga do devedor. Os gatilhos `trg_touch_*` ficaram desligados só dentro da transação: sem isso as 1.021
+conversas pareceriam mexidas agora e a ordem das filas do painel mudaria. Conferido depois: nenhuma
+conversa com número positivo, nenhuma linha com `atualizado_em` novo, gatilhos ligados de novo.
+
+**Aplicado em 21/10/2026**, a pedido do dono. O usuário dele entrou na conta 2 como administrador (o
+token do `.env` e o de `segredos.CHATWOOT_TOKEN` são o mesmo, dele), o webhook do `savan-bot` foi criado
+na conta 2 com os mesmos três eventos, e `LINHAS_WHATSAPP_LIBERADAS=1` foi ligada na Vercel só em
+production: uma prévia não deve conseguir criar caixa de verdade.

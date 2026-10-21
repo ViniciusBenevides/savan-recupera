@@ -35,6 +35,9 @@ SRK = env("SUPABASE_SERVICE_ROLE_KEY")
 HDR = {"X-N8N-API-KEY": N8N_KEY, "Content-Type": "application/json"}
 AUTH = f"Bearer {SRK}"
 TAG_PRODUTO = "SAVAN"   # todos os workflows ganham esta tag (organização na instância)
+# Conta do MC COB no Chatwoot (§51). As Edge Functions leem a mesma de `configuracoes.chatwoot`; as
+# duas têm que bater, senão o robô responde numa conversa de outra conta com o mesmo número.
+CONTA_CW = 2
 _tag_cache = {}
 
 
@@ -192,7 +195,7 @@ def w01():
     # META CLOUD (§32): a 1a mensagem abre a conversa, entao esta fora da janela de 24h e a Cloud
     # API so aceita modelo aprovado. O campanha-lote ja manda o descritor pronto em `template`.
     envia = http_chatwoot("Enviar msg", [2220, 460],
-        f"={env('CHATWOOT_URL').rstrip('/')}/api/v1/accounts/1/conversations/{{{{ $('Criar contato').item.json.conversation_id }}}}/messages",
+        f"={env('CHATWOOT_URL').rstrip('/')}/api/v1/accounts/{CONTA_CW}/conversations/{{{{ $('Criar contato').item.json.conversation_id }}}}/messages",
         '={ "content": {{ JSON.stringify($(\'Loop\').item.json.mensagem) }}, "message_type": "outgoing", '
         '"template_params": {{ JSON.stringify($(\'Loop\').item.json.template) }} }')
     # Um no de veredicto para os dois caminhos, porque a resposta tem formato diferente em cada um:
@@ -291,11 +294,18 @@ def w09():
 
 # ============================ W02 — BOT (RECEPÇÃO) ============================
 def w02():
+    # ATENÇÃO: o W02 no ar (21/10/2026) tem nós que este script não gera — a resposta sai pelo
+    # `enviar-mensagem` ("Tem chip e telefone?") e o Chatwoot é só a reserva ("Expandir para o
+    # Chatwoot", "Enviar pelo Chatwoot"). Regerar por cima volta a versão antiga; edite o do n8n.
     wh = node("Webhook Chatwoot", "n8n-nodes-base.webhook", 2.1, [240, 300], {
         "httpMethod": "POST", "path": "savan-bot", "responseMode": "onReceived",
         "options": {}}, {"webhookId": "savan-bot"})
     normalizar = node("Normalizar evento", "n8n-nodes-base.code", 2, [460, 300], {"jsClass": "", "jsCode": (
         "const b = $json.body || $json;\n"
+        "// Só eventos da conta do MC COB no Chatwoot. Evento de outra conta vem com números de conversa\n"
+        "// de outra contagem: não pode tocar no painel nem receber resposta do robô.\n"
+        f"const CONTA = {CONTA_CW};\n"
+        "if (Number(b.account && b.account.id) !== CONTA) return [];\n"
         "const evento = String(b.event || '');\n"
         "if (!['message_created', 'conversation_created', 'message_updated'].includes(evento)) return [];\n"
         "const conv = Number((b.conversation && b.conversation.id) || b.conversation_id || (evento === 'conversation_created' ? b.id : 0));\n"
@@ -357,7 +367,7 @@ def w02():
     loop = node("Loop msgs", "n8n-nodes-base.splitInBatches", 3, [2220, 360],
                 {"batchSize": 1, "options": {}})
     envia = http_chatwoot("Enviar resposta", [2440, 420],
-        f"={env('CHATWOOT_URL').rstrip('/')}/api/v1/accounts/1/conversations/{{{{ $json.conv }}}}/messages",
+        f"={env('CHATWOOT_URL').rstrip('/')}/api/v1/accounts/{CONTA_CW}/conversations/{{{{ $json.conv }}}}/messages",
         '={ "content": {{ JSON.stringify($json.texto) }}, "message_type": "outgoing" }')
     espera = node("Aguardar", "n8n-nodes-base.wait", 1.1, [2660, 420],
                   {"resume": "timeInterval", "amount": 3, "unit": "seconds"}, {"webhookId": "savan-w02-wait"})
