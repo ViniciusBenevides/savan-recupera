@@ -24,6 +24,7 @@ export function TrabalhoDeHoje({
   const fecharLinha = useRef<(() => void) | null>(null);
 
   const restantes = ordem.filter((i) => !saindo.has(i.chave));
+  const filaVazia = restantes.length === 0 && feitosAgora.length + fila.feitos.length === 0;
   const item = ordem.find((i) => i.chave === selecionada) ?? null;
   // Depois do router.refresh o servidor já conta quem foi riscado agora: não somar duas vezes. O placar
   // sobe junto com o traço da caneta, não depois que a linha some.
@@ -107,7 +108,7 @@ export function TrabalhoDeHoje({
           </div>
         </header>
 
-        {restantes.length === 0 && feitosAgora.length + fila.feitos.length === 0 && <FilaVazia />}
+        {filaVazia && <FilaVazia />}
         {restantes.length === 0 && feitosAgora.length + fila.feitos.length > 0 && (
           <div className="mx-4 mb-6 flex items-start gap-3 rounded-painel border border-pago/25 bg-pago-fundo px-4 py-3.5 sm:mx-6 lg:mx-8">
             <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-pago" aria-hidden="true" />
@@ -118,55 +119,58 @@ export function TrabalhoDeHoje({
           </div>
         )}
 
-        <div className="pagina-pautada border-t border-pauta bg-folha [--margem:72px] sm:[--margem:104px]">
-          {fila.grupos.map((g) => {
-            const itens = g.itens.filter((i) => !saindo.has(i.chave));
-            if (!itens.length) return null;
-            return (
-              <div key={g.id} role="group" aria-labelledby={`g-${g.id}`}>
-                <h2
-                  id={`g-${g.id}`}
-                  className={cn(
-                    "flex items-baseline gap-2 border-b border-pauta pb-2 pl-[calc(var(--margem)+16px)] pr-4 pt-5 text-[0.9375rem] font-700",
-                    g.tom === "quente" ? "text-margem" : g.tom === "morno" ? "text-atencao" : "text-texto",
-                  )}
-                >
-                  {g.titulo}
-                  <span className="font-mono text-meta font-500 text-lapis">{itens.length}</span>
+        {/* Sem nenhuma linha, a página pautada seria só uma faixa vazia com a margem: o aviso basta. */}
+        {!filaVazia && (
+          <div className="pagina-pautada border-t border-pauta bg-folha [--margem:72px] sm:[--margem:104px]">
+            {fila.grupos.map((g) => {
+              const itens = g.itens.filter((i) => !saindo.has(i.chave));
+              if (!itens.length) return null;
+              return (
+                <div key={g.id} role="group" aria-labelledby={`g-${g.id}`}>
+                  <h2
+                    id={`g-${g.id}`}
+                    className={cn(
+                      "flex items-baseline gap-2 border-b border-pauta pb-2 pl-[calc(var(--margem)+16px)] pr-4 pt-5 text-[0.9375rem] font-700",
+                      g.tom === "quente" ? "text-margem" : g.tom === "morno" ? "text-atencao" : "text-texto",
+                    )}
+                  >
+                    {g.titulo}
+                    <span className="font-mono text-meta font-500 text-lapis">{itens.length}</span>
+                  </h2>
+                  <ul role="list">
+                    {itens.map((it) => (
+                      <Linha
+                        key={it.chave}
+                        item={it}
+                        ativa={it.chave === selecionada}
+                        riscada={riscando?.chave === it.chave}
+                        onFechada={() => fecharLinha.current?.()}
+                        onClick={() => escolher(it.chave)}
+                      />
+                    ))}
+                  </ul>
+                </div>
+              );
+            })}
+
+            {(feitosAgora.length > 0 || fila.feitos.length > 0) && (
+              <div role="group" aria-labelledby="g-feito">
+                <h2 id="g-feito" className="flex items-baseline gap-2 border-b border-pauta pb-2 pl-[calc(var(--margem)+16px)] pr-4 pt-5 text-[0.9375rem] font-700 text-texto">
+                  Feito hoje <span className="font-mono text-meta font-500 text-lapis">{feitosAgora.length + fila.feitos.length}</span>
                 </h2>
                 <ul role="list">
-                  {itens.map((it) => (
-                    <Linha
-                      key={it.chave}
-                      item={it}
-                      ativa={it.chave === selecionada}
-                      riscada={riscando?.chave === it.chave}
-                      onFechada={() => fecharLinha.current?.()}
-                      onClick={() => escolher(it.chave)}
-                    />
+                  {feitosAgora.filter((f) => !fila.feitos.some((x) => x.devedor_id === f.item.devedor_id)).map((f) => (
+                    <LinhaFeita key={`agora-${f.item.chave}`} nova nome={f.item.nome} hora={hora(f.hora)} resultado={RESULTADOS[f.resultado].rotulo} carteira={f.item.carteira} valor={null} />
+                  ))}
+                  {fila.feitos.map((f) => (
+                    <LinhaFeita key={`f-${f.devedor_id}`} nome={f.nome} hora={hora(f.hora)} resultado={`${RESULTADOS[f.resultado as Resultado]?.rotulo ?? f.resultado}${f.autor ? ` · ${f.autor.split(" ")[0]}` : ""}`} carteira={f.carteira} valor={null} />
                   ))}
                 </ul>
               </div>
-            );
-          })}
-
-          {(feitosAgora.length > 0 || fila.feitos.length > 0) && (
-            <div role="group" aria-labelledby="g-feito">
-              <h2 id="g-feito" className="flex items-baseline gap-2 border-b border-pauta pb-2 pl-[calc(var(--margem)+16px)] pr-4 pt-5 text-[0.9375rem] font-700 text-texto">
-                Feito hoje <span className="font-mono text-meta font-500 text-lapis">{feitosAgora.length + fila.feitos.length}</span>
-              </h2>
-              <ul role="list">
-                {feitosAgora.filter((f) => !fila.feitos.some((x) => x.devedor_id === f.item.devedor_id)).map((f) => (
-                  <LinhaFeita key={`agora-${f.item.chave}`} nova nome={f.item.nome} hora={hora(f.hora)} resultado={RESULTADOS[f.resultado].rotulo} carteira={f.item.carteira} valor={null} />
-                ))}
-                {fila.feitos.map((f) => (
-                  <LinhaFeita key={`f-${f.devedor_id}`} nome={f.nome} hora={hora(f.hora)} resultado={`${RESULTADOS[f.resultado as Resultado]?.rotulo ?? f.resultado}${f.autor ? ` · ${f.autor.split(" ")[0]}` : ""}`} carteira={f.carteira} valor={null} />
-                ))}
-              </ul>
-            </div>
-          )}
-          <div className="h-10" />
-        </div>
+            )}
+            <div className="h-10" />
+          </div>
+        )}
       </section>
 
       {/* Painel: ao lado no computador; por cima no celular */}

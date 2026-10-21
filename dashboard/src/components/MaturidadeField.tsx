@@ -42,7 +42,7 @@ export function MaturidadeField({ value, onChange }: {
   return (
     <div>
       <Label>
-        Maturidade do chip
+        Maturidade da linha
         <HelpHint text="Diz ao sistema se o número já vinha sendo usado no WhatsApp (aquecido) ou se é novo/recém-comprado (frio). Isso muda a velocidade de envio para evitar bloqueio." />
       </Label>
 
@@ -76,11 +76,11 @@ export function MaturidadeField({ value, onChange }: {
         </button>
       </div>
 
-      {/* Ritmo de envio deste chip — só o teto por hora, com veredicto */}
+      {/* Ritmo de envio desta linha — só o teto por hora, com veredicto */}
       <div className="mt-3 rounded-xl border border-line bg-ink-850 p-3">
         <Label className="text-xs">
-          <Gauge className="mr-1 inline h-3.5 w-3.5" /> Ritmo de envio deste chip
-          <HelpHint text="Em branco = usa os limites seguros sugeridos pelo sistema para a maturidade e a idade deste chip. Preencher aqui personaliza somente este chip." />
+          <Gauge className="mr-1 inline h-3.5 w-3.5" /> Ritmo de envio desta linha
+          <HelpHint text="Em branco = usa os limites seguros sugeridos pelo sistema para a maturidade e a idade desta linha. Preencher aqui personaliza somente esta linha." />
         </Label>
 
         <div className="mt-2">
