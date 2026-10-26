@@ -70,13 +70,20 @@ volta para a fila sozinho**. O humano negocia; o sistema lembra.
 - Entra agora: ocorrências (contato + resultado), agenda (retornos e promessas com data), acordos com
   parcelas, fila "Trabalho de hoje", limites de negociação por carteira, responsável por devedor,
   registro de pagamento manual, sugestão da IA na conversa.
+- Entrou em 26/10/2026, vindo da V5.7.01 do Maurelio: produtividade da equipe no Painel (metas e
+  ranking), Jurídico automático (fontes oficiais do Planalto, triagem, minuta, aprovação do advogado,
+  casos e documentos), excluir telefone sem perder histórico, inativar e excluir cliente (Zona de
+  risco, só admin), importação que só enriquece contatos, planilhas de acionáveis e não acionáveis e
+  ordem da fila por carteira (mais antigos ou mais recentes primeiro).
 - **Fora desta fase**: precatórios e compradores (continuam no MC COB V5), discador/ligação,
-  boleto/CNAB, NFS‑e, portal do credor, prestação de contas completa a credor de terceiros.
+  boleto/CNAB, NFS‑e, portal do credor, prestação de contas completa a credor de terceiros. O Hub
+  bancário da V5.7.00 (Banco Inter, boleto + Pix com baixa automática) ficou para depois: só dá para
+  testar com o Client ID, o Secret e o certificado do Maurelio.
 - **Pedidos do Maurelio na reunião (próximas fases)**: até 10 linhas de WhatsApp dele, conectadas por
   QR; boleto pela API do banco dele ao fechar acordo, com lembrete automático perto do vencimento;
   disparo também pelo Telegram; vender o sistema para outras empresas de cobrança, com equipe de suporte.
 - **Em aberto**: quais números de WhatsApp o Maurelio vai conectar; se o "Fluxo do robô" continua
-  fazendo a primeira abordagem sozinho; qual banco e qual API de boleto; publicação em produção (só com
+  fazendo a primeira abordagem sozinho; as credenciais do Banco Inter para o boleto (a V5.7.00 já escolheu o banco); publicação em produção (só com
   o dono mandando).
 
 ## Brand Commitments

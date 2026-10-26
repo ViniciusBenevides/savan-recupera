@@ -2,9 +2,15 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Eye, EyeOff, MessageSquareText, QrCode, Phone, Mail, MapPin, Handshake, NotebookPen } from "lucide-react";
+import { ArrowLeft, Eye, EyeOff, MessageSquareText, QrCode, Mail, MapPin, Handshake, NotebookPen } from "lucide-react";
 import { Button, Input, Label, Select, Textarea, estiloBotao } from "@/components/ui/primitives";
 import { Carne } from "@/components/ficha/carne";
+import { Telefones } from "@/components/ficha/telefones";
+import { ZonaDeRisco } from "@/components/ficha/zona-de-risco";
+import { JuridicoFicha } from "@/components/ficha/juridico";
+import { DocumentosFicha } from "@/components/ficha/documentos";
+import type { Analise, Caso, Documento } from "@/lib/juridico/tipos";
+import type { Vinculos } from "@/lib/vinculos";
 import { FazerAcordo } from "@/components/ficha/fazer-acordo";
 import { formatarCPF, mascararCPF } from "@/components/ficha/ficha-resumida";
 import { RESULTADOS, RESULTADOS_RAPIDOS, CANAIS, ROTULO_SITUACAO, corSituacao, proximoPasso, type Resultado } from "@/lib/resultados";
@@ -14,10 +20,15 @@ import { dataCurta, dataLonga, diaISO, ha, hora, margem, prazo, diasEntre, deDia
 
 type Parcela = { id: number; numero: number; vencimento: string; valor: number; status: string; pago_em: string | null; valor_pago: number | null; forma_pagamento: string | null };
 export type DadosFicha = {
-  devedor: { id: number; nome: string; cpf: string; processo: string | null; saldo: number; vencimento: string | null; cidade: string | null; uf: string | null; emails: string[]; tags: string | null; fase: string | null; motivo: string | null; situacao: string; responsavel_id: string | null; ultimo_contato_em: string | null };
+  devedor: {
+    id: number; nome: string; cpf: string; processo: string | null; saldo: number; vencimento: string | null; cidade: string | null; uf: string | null; emails: string[]; tags: string | null; fase: string | null; motivo: string | null; situacao: string; responsavel_id: string | null; ultimo_contato_em: string | null;
+    inativo_em: string | null; inativado_por_nome: string | null;
+    titulo: { especie: string | null; emissao: string | null; prescricao: string | null; observacao: string | null };
+  };
   carteira: { id: number; nome: string; credor: string | null; cobrador_id: string | null; desconto_max_pct: number; parcelas_max: number; entrada_min_pct: number; parcela_min_valor: number; tipo_carteira: string } | null;
   proposta: { valor: number; desconto_pct: number; ano: number | null } | null;
-  telefones: { id: number; telefone_e164: string; tipo: string | null; whatsapp_valido: boolean | null; ordem: number }[];
+  telefones: Telefone[];
+  telefonesExcluidos: Telefone[];
   conversa: { id: number; estado: string; ultima_msg_em: string | null; ultima_msg_de: string | null; atendente_nome: string | null } | null;
   mensagens: { id: number; direcao: string; origem: string; conteudo: string | null; criado_em: string; autor_nome: string | null; privado: boolean | null; status_entrega: number | null }[];
   ocorrencias: { id: number; canal: string; resultado: string; descricao: string | null; autor_nome: string | null; criado_em: string }[];
@@ -28,29 +39,30 @@ export type DadosFicha = {
   outras: { id: number; saldo: number; situacao: string; carteira: string }[];
   equipe: { id: string; nome: string }[];
   responsavelNome: string | null;
+  documentos: Documento[];
+  analises: Analise[];
+  casos: Caso[];
+  vinculos: Vinculos | null;
 };
+export type Telefone = { id: number; telefone_e164: string; tipo: string | null; whatsapp_valido: boolean | null; ordem: number; excluido_em: string | null; excluido_por_nome: string | null; motivo_exclusao: string | null };
 
 const ABAS = [
   { k: "resumo", t: "Resumo" },
   { k: "conversa", t: "Conversa" },
   { k: "acordo", t: "Acordo" },
   { k: "historico", t: "Histórico" },
-  { k: "contatos", t: "Contatos" },
+  { k: "cadastro", t: "Cadastro" },
+  { k: "juridico", t: "Jurídico" },
+  { k: "documentos", t: "Documentos" },
 ] as const;
 type AbaFicha = (typeof ABAS)[number]["k"];
 
 const FORMA: Record<string, string> = { pix: "Pix", loja: "Na loja", transferencia: "Transferência", boleto: "Boleto", dinheiro: "Dinheiro" };
-const formatarFone = (e164: string) => {
-  const d = e164.replace(/\D/g, "").replace(/^55/, "");
-  if (d.length === 11) return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
-  if (d.length === 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
-  return e164;
-};
-
 // A próxima ação recomendada (o "PRÓXIMA AÇÃO RECOMENDADA" da Ficha 360° do MC COB), numa frase.
 function proximaAcao(f: DadosFicha): { texto: string; tom: "margem" | "atencao" | "tinta" | "pago" | "lapis" } {
   const hojeISO = diaISO();
   const ativo = f.acordos.find((a) => a.status === "ativo");
+  if (f.devedor.inativo_em) return { texto: "Inativo: fora da operação até o administrador reativar.", tom: "lapis" };
   if (f.bloqueado) return { texto: "Pediu para não ser contatado. Não chame mais.", tom: "lapis" };
   if (f.devedor.situacao === "pago") return { texto: "Quitado. Nada a cobrar.", tom: "pago" };
   const atrasada = ativo?.acordo_parcelas.find((p) => p.status === "aberta" && p.vencimento < hojeISO);
@@ -68,9 +80,11 @@ function proximaAcao(f: DadosFicha): { texto: string; tom: "margem" | "atencao" 
   return { texto: "Dar continuidade à negociação.", tom: "tinta" };
 }
 
-export function Ficha({ dados, abaInicial, podeOperar, papel, meuId }: { dados: DadosFicha; abaInicial: string; podeOperar: boolean; papel: string; meuId: string }) {
+export function Ficha({ dados, abaInicial, podeOperar, podeJuridico, papel, meuId }: { dados: DadosFicha; abaInicial: string; podeOperar: boolean; podeJuridico: boolean; papel: string; meuId: string }) {
   const router = useRouter();
-  const [aba, setAba] = useState<AbaFicha>(ABAS.some((a) => a.k === abaInicial) ? (abaInicial as AbaFicha) : "resumo");
+  // "contatos" era o nome antigo da aba Cadastro: link guardado continua abrindo o lugar certo
+  const inicial = abaInicial === "contatos" ? "cadastro" : abaInicial;
+  const [aba, setAba] = useState<AbaFicha>(ABAS.some((a) => a.k === inicial) ? (inicial as AbaFicha) : "resumo");
   const [verCPF, setVerCPF] = useState(false);
   const [aviso, setAviso] = useState<{ tipo: "ok" | "erro"; msg: string } | null>(null);
   const d = dados.devedor;
@@ -153,6 +167,12 @@ export function Ficha({ dados, abaInicial, podeOperar, papel, meuId }: { dados: 
         )}
       </header>
 
+      {d.inativo_em && (
+        <p className="mt-4 rounded-controle bg-atencao-fundo px-3 py-2 text-sm2 text-atencao">
+          Cliente inativo desde {dataLonga(d.inativo_em)}{d.inativado_por_nome ? `, por ${d.inativado_por_nome}` : ""}. Saiu da fila do robô, da agenda e das listas; o histórico continua aqui.
+          {papel === "admin" && <> <button type="button" onClick={() => irPara("cadastro")} className="alvo-toque font-600 underline underline-offset-2">Reativar no Cadastro</button></>}
+        </p>
+      )}
       {aviso && <p role="status" className={cn("mt-4 rounded-controle px-3 py-2 text-sm2", aviso.tipo === "ok" ? "bg-pago-fundo text-pago" : "bg-margem-fundo text-margem")}>{aviso.msg}</p>}
 
       {/* Faixa da ficha: os números que importam, numa linha pautada. As colunas vêm da largura em rem,
@@ -189,6 +209,7 @@ export function Ficha({ dados, abaInicial, podeOperar, papel, meuId }: { dados: 
           >
             {a.t}
             {a.k === "acordo" && ativo && <span className="ml-1.5 font-mono text-meta">{ativo.acordo_parcelas.filter((p) => p.status === "paga").length}/{ativo.acordo_parcelas.length}</span>}
+            {a.k === "documentos" && dados.documentos.length > 0 && <span className="ml-1.5 font-mono text-meta">{dados.documentos.length}</span>}
             {aba === a.k && <span className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-tinta" />}
           </button>
         ))}
@@ -326,44 +347,54 @@ export function Ficha({ dados, abaInicial, podeOperar, papel, meuId }: { dados: 
           </section>
         )}
 
-        {aba === "contatos" && (
-          <div className="grid gap-6 lg:grid-cols-2">
-            <section aria-labelledby="t-fones">
-              <h2 id="t-fones" className="font-display text-titulo font-600 text-ouro">Telefones</h2>
-              {dados.telefones.length === 0 ? <p className="mt-2 text-[0.9375rem] text-lapis">Nenhum telefone. Sem telefone, este devedor precisa de higienização.</p> : (
+        {aba === "cadastro" && (
+          <div className="space-y-10">
+            <div className="grid gap-6 lg:grid-cols-2">
+              <Telefones
+                telefones={dados.telefones}
+                excluidos={dados.telefonesExcluidos}
+                podeOperar={podeOperar}
+                onMudou={(m) => { setAviso({ tipo: "ok", msg: m }); router.refresh(); }}
+                onErro={(m) => setAviso({ tipo: "erro", msg: m })}
+              />
+              <section aria-labelledby="t-outros">
+                <h2 id="t-outros" className="font-display text-titulo font-600 text-ouro">E-mail e endereço</h2>
                 <ul className="mt-2 divide-y divide-pauta border-y border-pauta bg-folha">
-                  {dados.telefones.map((t) => (
-                    <li key={t.id} className="flex items-center justify-between gap-3 px-4 py-3">
-                      <span className="flex items-center gap-2.5">
-                        <Phone className="h-4 w-4 text-lapis" aria-hidden="true" />
-                        <a href={`tel:${t.telefone_e164}`} className="alvo-toque font-mono tabnums text-texto hover:text-tinta hover:underline">{formatarFone(t.telefone_e164)}</a>
-                        <span className="text-sm2 text-lapis">{t.tipo === "fixo" ? "fixo" : "celular"}{t.ordem === 1 ? " · principal" : ""}</span>
-                      </span>
-                      <span className={cn("text-sm2 font-600", t.whatsapp_valido === true ? "text-pago" : t.whatsapp_valido === false ? "text-margem" : "text-lapis")}>
-                        {t.whatsapp_valido === true ? "Tem WhatsApp" : t.whatsapp_valido === false ? "Sem WhatsApp" : "Não verificado"}
-                      </span>
-                    </li>
-                  ))}
+                  {d.emails.length > 0 ? d.emails.map((e) => (
+                    <li key={e} className="flex items-center gap-2.5 px-4 py-3"><Mail className="h-4 w-4 shrink-0 text-lapis" aria-hidden="true" /> <a href={`mailto:${e}`} className="alvo-toque min-w-0 [overflow-wrap:anywhere] hover:text-tinta hover:underline">{e}</a></li>
+                  )) : <li className="px-4 py-3 text-lapis">Nenhum e-mail.</li>}
+                  <li className="flex items-center gap-2.5 px-4 py-3"><MapPin className="h-4 w-4 text-lapis" aria-hidden="true" /> {[d.cidade, d.uf].filter(Boolean).join("/") || "Endereço não informado na planilha"}</li>
                 </ul>
-              )}
-            </section>
-            <section aria-labelledby="t-outros">
-              <h2 id="t-outros" className="font-display text-titulo font-600 text-ouro">E-mail e endereço</h2>
-              <ul className="mt-2 divide-y divide-pauta border-y border-pauta bg-folha">
-                {d.emails.length > 0 ? d.emails.map((e) => (
-                  <li key={e} className="flex items-center gap-2.5 px-4 py-3"><Mail className="h-4 w-4 shrink-0 text-lapis" aria-hidden="true" /> <a href={`mailto:${e}`} className="alvo-toque min-w-0 [overflow-wrap:anywhere] hover:text-tinta hover:underline">{e}</a></li>
-                )) : <li className="px-4 py-3 text-lapis">Nenhum e-mail.</li>}
-                <li className="flex items-center gap-2.5 px-4 py-3"><MapPin className="h-4 w-4 text-lapis" aria-hidden="true" /> {[d.cidade, d.uf].filter(Boolean).join("/") || "Endereço não informado na planilha"}</li>
-              </ul>
-              {(d.motivo || d.fase || d.tags) && (
-                <dl className="mt-4 grid grid-cols-[140px_minmax(0,1fr)] gap-y-2 text-[0.9375rem]">
-                  {d.motivo && <><dt className="text-lapis">Motivo</dt><dd>{d.motivo}</dd></>}
-                  {d.fase && <><dt className="text-lapis">Fase</dt><dd>{d.fase}</dd></>}
-                  {d.tags && <><dt className="text-lapis">Marcadores</dt><dd>{d.tags}</dd></>}
-                </dl>
-              )}
-            </section>
+                {(d.motivo || d.fase || d.tags) && (
+                  <dl className="mt-4 grid grid-cols-[140px_minmax(0,1fr)] gap-y-2 text-[0.9375rem]">
+                    {d.motivo && <><dt className="text-lapis">Motivo</dt><dd>{d.motivo}</dd></>}
+                    {d.fase && <><dt className="text-lapis">Fase</dt><dd>{d.fase}</dd></>}
+                    {d.tags && <><dt className="text-lapis">Marcadores</dt><dd>{d.tags}</dd></>}
+                  </dl>
+                )}
+              </section>
+            </div>
+            {papel === "admin" && dados.vinculos && (
+              <ZonaDeRisco devedorId={d.id} nome={d.nome} inativoEm={d.inativo_em} vinculos={dados.vinculos}
+                onMudou={(m) => { setAviso({ tipo: "ok", msg: m }); router.refresh(); }} />
+            )}
           </div>
+        )}
+
+        {aba === "juridico" && (
+          <JuridicoFicha
+            devedor={{ id: d.id, saldo: d.saldo, vencimento: d.vencimento, situacao: d.situacao, titulo: d.titulo }}
+            analises={dados.analises}
+            casos={dados.casos}
+            documentos={dados.documentos.length}
+            podeOperar={podeOperar}
+            podeJuridico={podeJuridico}
+            irParaDocumentos={() => irPara("documentos")}
+          />
+        )}
+
+        {aba === "documentos" && (
+          <DocumentosFicha devedorId={d.id} documentos={dados.documentos} podeOperar={podeOperar} podeExcluir={podeJuridico} />
         )}
       </div>
     </div>

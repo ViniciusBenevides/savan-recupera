@@ -3,14 +3,14 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
-  LayoutDashboard, ListChecks, MessagesSquare, CalendarDays, Users, Wallet, Handshake, FolderOpen, Landmark, BarChart3, Settings2, Menu, X,
+  LayoutDashboard, ListChecks, MessagesSquare, CalendarDays, Users, Wallet, Handshake, FolderOpen, Landmark, BarChart3, Settings2, Menu, X, Scale,
 } from "lucide-react";
 import { Logo } from "@/components/Brand";
 import { cn } from "@/lib/utils";
 
 // O menu é o do MC COB V5 que o Maurelio usa, com os nomes e a ordem dele (Painel, Central / Agenda,
 // Trabalho de Hoje, Minha Carteira, Devedores / Processos…). Saíram só os que são outro negócio
-// (Precatórios, Compradores) e os que ainda não existem aqui (Jurídico).
+// (Precatórios, Compradores). O Jurídico entrou com a V5.7.01.
 type Item = { href: string; label: string; curto?: string; icon: typeof ListChecks; roles: string[]; contador?: "conversas" | "agenda" };
 const OPERA = ["admin", "cobrador", "negociador", "visualizador"];
 const DONO = ["admin", "cobrador", "credor", "visualizador"];
@@ -41,7 +41,10 @@ const grupos: { titulo: string; itens: Item[] }[] = [
   },
   {
     titulo: "Especialidades",
-    itens: [{ href: "/financeiro", label: "Financeiro", icon: Landmark, roles: DONO }],
+    itens: [
+      { href: "/juridico", label: "Jurídico", icon: Scale, roles: OPERA },
+      { href: "/financeiro", label: "Financeiro", icon: Landmark, roles: DONO },
+    ],
   },
 ];
 const ajustes: Item = { href: "/ajustes", label: "Configurações", icon: Settings2, roles: [...OPERA, "credor"] };

@@ -15,7 +15,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Bus
   const sessao = await getSessao();
   if (!sessao) redirect("/login");
   const f = await searchParams;
-  const aba = f.aba === "minha" || f.aba === "sem" ? f.aba : "todos";
+  const aba = f.aba === "minha" || f.aba === "sem" || f.aba === "inativos" ? f.aba : "todos";
   const pagina = Math.max(1, Number(f.p) || 1);
   const sb = await supabaseServer();
 
@@ -23,6 +23,8 @@ export default async function Page({ searchParams }: { searchParams: Promise<Bus
     .from("devedores")
     .select("id, nome, cpf_cnpj, processo, saldo, status_cobranca, responsavel_id, ultimo_contato_em, carteira_id, carteiras(nome)", { count: "exact" });
 
+  // Inativo saiu da operação (V5.7.01): só aparece na aba dele
+  qb = aba === "inativos" ? qb.not("inativo_em", "is", null) : qb.is("inativo_em", null);
   if (aba === "minha") qb = qb.eq("responsavel_id", sessao.user.id);
   if (aba === "sem") qb = qb.is("responsavel_id", null);
   if (f.carteira) qb = qb.eq("carteira_id", Number(f.carteira));
@@ -43,16 +45,19 @@ export default async function Page({ searchParams }: { searchParams: Promise<Bus
     qb = qb.or(partes.join(","));
   }
 
-  if (f.ordem === "divida") qb = qb.order("saldo", { ascending: false });
+  // Sem ordem escolhida, a carteira filtrada usa a ordem que o dono definiu para ela (V5.5.20)
+  const { data: carteiras } = await sb.from("carteiras").select("id, nome, cobrador_id, ordem_fila").order("nome");
+  const ordemCarteira = f.carteira ? carteiras?.find((c) => c.id === Number(f.carteira))?.ordem_fila : null;
+  const ordem = f.ordem || (ordemCarteira && ordemCarteira !== "prioridade" ? ordemCarteira : "");
+  if (ordem === "antigos") qb = qb.order("vencimento", { ascending: true, nullsFirst: false }).order("id");
+  else if (ordem === "recentes") qb = qb.order("vencimento", { ascending: false, nullsFirst: false }).order("id");
+  else if (f.ordem === "divida") qb = qb.order("saldo", { ascending: false });
   else if (f.ordem === "contato") qb = qb.order("ultimo_contato_em", { ascending: true, nullsFirst: true });
   else if (f.ordem === "nome") qb = qb.order("nome");
   else qb = qb.order("prioridade", { ascending: false }).order("saldo", { ascending: false });
 
   const ini = (pagina - 1) * POR_PAGINA;
-  const [{ data, count, error }, { data: carteiras }] = await Promise.all([
-    qb.range(ini, ini + POR_PAGINA - 1),
-    sb.from("carteiras").select("id, nome, cobrador_id").order("nome"),
-  ]);
+  const { data, count, error } = await qb.range(ini, ini + POR_PAGINA - 1);
 
   const ids = (data ?? []).map((d) => d.id);
   const proximos = new Map<number, { tipo: string; quando: string }>();
@@ -82,6 +87,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Bus
       pagina={pagina}
       porPagina={POR_PAGINA}
       filtros={{ aba, q: f.q ?? "", carteira: f.carteira ?? "", situacao: f.situacao ?? "", contato: f.contato ?? "", ordem: f.ordem ?? "" }}
+      ordemDaCarteira={!f.ordem && ordem ? ordem : null}
       carteiras={(carteiras ?? []).map((c) => ({ id: c.id, nome: c.nome }))}
       equipe={equipe}
       podeOperar={podeOperar(sessao.role)}

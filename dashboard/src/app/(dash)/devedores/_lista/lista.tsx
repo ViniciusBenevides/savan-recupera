@@ -19,12 +19,13 @@ const ABAS = [
   { k: "todos", t: "Todos" },
   { k: "minha", t: "Minha carteira" },
   { k: "sem", t: "Sem responsável" },
+  { k: "inativos", t: "Inativos" },
 ];
 
 export function ListaDevedores({
-  linhas, total, pagina, porPagina, filtros, carteiras, equipe, podeOperar, erro,
+  linhas, total, pagina, porPagina, filtros, ordemDaCarteira, carteiras, equipe, podeOperar, erro,
 }: {
-  linhas: LinhaDevedor[]; total: number; pagina: number; porPagina: number; filtros: Filtros;
+  linhas: LinhaDevedor[]; total: number; pagina: number; porPagina: number; filtros: Filtros; ordemDaCarteira: string | null;
   carteiras: { id: number; nome: string }[]; equipe: { id: string; nome: string }[]; podeOperar: boolean; erro: string | null;
 }) {
   const router = useRouter();
@@ -99,7 +100,9 @@ export function ListaDevedores({
           <option value="30">Sem contato há 30+ dias</option>
         </Select>
         <Select name="ordem" defaultValue={filtros.ordem} aria-label="Ordem">
-          <option value="">Prioridade</option>
+          <option value="">{ordemDaCarteira === "antigos" ? "Ordem da carteira (mais antigos)" : ordemDaCarteira === "recentes" ? "Ordem da carteira (mais recentes)" : "Prioridade"}</option>
+          <option value="antigos">Vencimento mais antigo</option>
+          <option value="recentes">Vencimento mais recente</option>
           <option value="divida">Maior dívida</option>
           <option value="contato">Contato mais antigo</option>
           <option value="nome">Nome</option>
@@ -120,7 +123,7 @@ export function ListaDevedores({
           {ativos > 0 || filtros.aba !== "todos" ? (
             <>
               <p className="font-display text-titulo font-600 text-ouro">Ninguém com esses filtros</p>
-              <p className="mt-1 text-[0.9375rem] text-lapis">{filtros.aba === "minha" ? "Nenhum devedor está com você ainda. Ao trabalhar alguém sem dono, ele passa a ser seu." : "Mude ou limpe os filtros para ver mais gente."}</p>
+              <p className="mt-1 text-[0.9375rem] text-lapis">{filtros.aba === "minha" ? "Nenhum devedor está com você ainda. Ao trabalhar alguém sem dono, ele passa a ser seu." : filtros.aba === "inativos" ? "Ninguém inativo. O administrador inativa pela Zona de risco, no Cadastro da ficha." : "Mude ou limpe os filtros para ver mais gente."}</p>
             </>
           ) : (
             <>

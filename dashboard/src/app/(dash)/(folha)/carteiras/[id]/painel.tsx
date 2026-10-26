@@ -17,6 +17,7 @@ import { AbaRoteiro } from "./roteiro";
 import { ConhecimentoCarteira } from "./conhecimento";
 import { ChipsVinculados } from "./chips-vinculados";
 import { RegrasNegociacao } from "./regras";
+import { FilaCarteira, type ResumoFila } from "./fila-carteira";
 
 // Quatro abas. A carteira é o único lugar onde o robô se configura (§35): o Fluxo carrega a linha
 // do tempo inteira (disparo → reenvios → conversa → pós-pagamento) mais os ajustes de persona e
@@ -29,7 +30,7 @@ const TABS = [
 ] as const;
 type Tab = typeof TABS[number]["k"];
 
-export function CarteiraPainel({ carteira, importacoes, padrao, conhecimento, fluxos, tabInicial, podeEditar = true }: { carteira: any; importacoes: any[]; padrao: Record<string, any>; conhecimento: any[]; fluxos: any[]; tabInicial?: string; podeEditar?: boolean }) {
+export function CarteiraPainel({ carteira, importacoes, padrao, conhecimento, fluxos, tabInicial, podeEditar = true, resumoFila = null }: { carteira: any; importacoes: any[]; padrao: Record<string, any>; conhecimento: any[]; fluxos: any[]; tabInicial?: string; podeEditar?: boolean; resumoFila?: ResumoFila | null }) {
   // credor/visualizador só veem o andamento, sem editar nem ver chaves
   const tabs = podeEditar ? TABS : TABS.filter((t) => t.k === "visao");
   // ?tab=robo era a aba de prompt/descontos, que virou um card dentro do Fluxo — link antigo não quebra
@@ -49,6 +50,7 @@ export function CarteiraPainel({ carteira, importacoes, padrao, conhecimento, fl
       {tab === "visao" && (
         <div className="space-y-4">
           <AbaStatus carteira={carteira} podeEditar={podeEditar} />
+          {podeEditar && <FilaCarteira carteiraId={carteira.id} ordem={carteira.ordem_fila} resumo={resumoFila} podeEditar={podeEditar} />}
           {podeEditar && <AbaAsaas carteira={carteira} padrao={padrao} modo="asaas" />}
           <AbaHistorico carteira={carteira} importacoes={importacoes} podeEditar={podeEditar} />
         </div>
@@ -614,6 +616,8 @@ function AbaAsaas({ carteira, padrao, modo }: { carteira: any; padrao: Record<st
 function AbaHistorico({ carteira, importacoes, podeEditar = true }: { carteira: any; importacoes: any[]; podeEditar?: boolean }) {
   const router = useRouter();
   const [modo, setModo] = React.useState<"modelo" | "ia">("modelo");
+  // V5.6.16: a planilha só acrescenta contatos de quem já está na carteira
+  const [enriquecer, setEnriquecer] = React.useState(false);
   const [arquivo, setArquivo] = React.useState<File | null>(null);
   const [carregando, setCarregando] = React.useState(false);
   const [erro, setErro] = React.useState<string | null>(null);
@@ -638,16 +642,23 @@ function AbaHistorico({ carteira, importacoes, podeEditar = true }: { carteira: 
   async function enviar() {
     if (!arquivo) return;
     setCarregando(true); setErro(null); setOkMsg(null);
-    const fd = new FormData(); fd.append("arquivo", arquivo);
+    const fd = new FormData(); fd.append("arquivo", arquivo); fd.append("modo", enriquecer ? "enriquecer" : "carga");
     const r = await fetch(`/api/carteiras/${carteira.id}/importar`, { method: "POST", body: fd });
     const d = await r.json().catch(() => ({}));
     setCarregando(false);
     if (!r.ok) { setErro(d.erro ?? "Falha ao importar."); return; }
-    setOkMsg(`Importadas ${d.relatorio?.importados ?? 0} linhas.`); setArquivo(null); router.refresh();
+    setOkMsg(mensagemImportacao(d.relatorio)); setArquivo(null); router.refresh();
   }
 
   function importadoPelaIA(rel: any) {
-    setOkMsg(`Importadas ${rel?.importados ?? 0} linhas.`); router.refresh();
+    setOkMsg(mensagemImportacao(rel)); router.refresh();
+  }
+
+  function mensagemImportacao(rel: any) {
+    if (rel && "localizados" in rel) {
+      return `${num(rel.localizados)} encontrados na carteira (${num(rel.fichas_enriquecidas)} com contato novo): ${num(rel.telefones_novos)} telefones, ${num(rel.emails_novos)} e-mails e ${num(rel.enderecos_preenchidos)} cidades preenchidas. ${num(rel.nao_localizados)} linhas não acharam ninguém e foram ignoradas.`;
+    }
+    return `Importadas ${num(rel?.importados ?? 0)} linhas.${rel?.inativos_ignorados ? ` ${num(rel.inativos_ignorados)} inativos ficaram de fora.` : ""}`;
   }
 
   return (
@@ -662,6 +673,13 @@ function AbaHistorico({ carteira, importacoes, podeEditar = true }: { carteira: 
         <Card className="space-y-3">
           <Label className="flex items-center gap-1.5">Subir planilha para esta carteira <HelpHint text="Acrescenta ou atualiza devedores. Mesmo CPF é atualizado. Reenviar um arquivo antigo também libera a visualização do original quando ele ainda não estava armazenado." /></Label>
           <ModoSeletor modo={modo} setModo={setModo} />
+          <label className="flex items-start gap-2.5 rounded-controle border border-pauta-forte bg-papel px-3 py-2.5 text-[0.9375rem]">
+            <input type="checkbox" checked={enriquecer} onChange={(e) => setEnriquecer(e.target.checked)} className="mt-1 h-4 w-4 shrink-0 accent-[rgb(var(--c-tinta))] [@media(pointer:coarse)]:h-5 [@media(pointer:coarse)]:w-5" />
+            <span>
+              <span className="font-600 text-texto">Somente enriquecer clientes que já estão aqui</span>
+              <span className="block text-sm2 text-lapis">Processo e CPF só servem para achar a ficha. Entram os telefones, e-mails e cidades que faltam; ninguém novo é criado e saldo, vencimento, situação e fila do robô ficam como estão.</span>
+            </span>
+          </label>
           {modo === "modelo" ? (
             <>
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -678,7 +696,7 @@ function AbaHistorico({ carteira, importacoes, podeEditar = true }: { carteira: 
               {erro && <p className="flex items-center gap-1.5 text-xs text-rose"><AlertTriangle className="h-3.5 w-3.5" /> {erro}</p>}
             </>
           ) : (
-            <ImportadorIA carteiraId={carteira.id} onImportado={importadoPelaIA} />
+            <ImportadorIA carteiraId={carteira.id} onImportado={importadoPelaIA} modo={enriquecer ? "enriquecer" : "carga"} />
           )}
           {okMsg && <p className="flex items-center gap-1.5 text-xs text-emerald"><CheckCircle2 className="h-3.5 w-3.5" /> {okMsg}</p>}
         </Card>
@@ -703,7 +721,7 @@ function AbaHistorico({ carteira, importacoes, podeEditar = true }: { carteira: 
           <tbody>
             {importacoes.map((imp) => (
               <tr key={imp.id} className="border-b border-line/50">
-                <td className="px-5 py-3 text-chalk">{imp.arquivo_nome}</td>
+                <td className="px-5 py-3 text-chalk">{imp.arquivo_nome}{imp.modo === "enriquecer" && <span className="block text-meta text-lapis">só contatos</span>}</td>
                 <td className="px-5 py-3 font-mono text-chalk tabnums">{num(imp.linhas_importadas)}</td>
                 <td className="px-5 py-3 font-mono text-mist tabnums">{num(imp.linhas_ignoradas)}</td>
                 <td className="px-5 py-3 text-mist">{dataHoraBR(imp.criado_em)}</td>

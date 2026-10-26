@@ -6,6 +6,7 @@ import { getSessao } from "@/lib/auth";
 import { RESULTADOS, type Resultado } from "@/lib/resultados";
 import { brl, cn, contar, num, porcento } from "@/lib/utils";
 import { diaISO, instanteSP, margem, partesSP, porExtenso } from "@/lib/datas";
+import { Produtividade } from "./_painel/produtividade";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Painel" };
@@ -14,10 +15,14 @@ type Funil = { carteira_id: number; nome: string; base: number; saldo_total: num
 
 // O Painel do MC COB ("Visão executiva da recuperação"), com os mesmos blocos que o Maurelio usa:
 // números do dia, carteira por credor, funil de cobrança, ações rápidas e últimas ocorrências. Cada
-// número leva para a tela onde ele se resolve.
-export default async function Painel() {
+// número leva para a tela onde ele se resolve. A produtividade da equipe (V5.6.13/14) fica entre o
+// funil e as ações rápidas, como no MC COB.
+export default async function Painel({ searchParams }: { searchParams: Promise<{ prod_dia?: string; prod_carteira?: string }> }) {
   const sessao = await getSessao();
   if (!sessao) redirect("/login");
+  const busca = await searchParams;
+  const prodDia = /^\d{4}-\d{2}-\d{2}$/.test(busca.prod_dia ?? "") && busca.prod_dia! <= diaISO() ? busca.prod_dia! : diaISO();
+  const prodCarteira = Number(busca.prod_carteira) || null;
   const sb = await supabaseServer();
   const p = partesSP();
   const inicioMes = instanteSP(p.ano, p.mes, 1).toISOString();
@@ -159,6 +164,10 @@ export default async function Painel() {
           </ul>
         </section>
       </div>
+
+      {sessao.role !== "credor" && (
+        <Produtividade sessao={sessao} dia={prodDia} carteira={prodCarteira} carteiras={carteiras.map((c) => ({ id: c.carteira_id, nome: c.nome }))} />
+      )}
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
         <section aria-labelledby="t-acoes">

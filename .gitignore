@@ -72,6 +72,10 @@ backups/
 # conversa com agente.
 .playwright-mcp/
 MC_COB_*.zip
+# A pasta extraída de cada versão nova do MC COB: código de terceiro e planilhas com CPF real
+MC_COB_*/
 *-pastedcontent-*.txt
+# Transcrição de sessão exportada do Claude Code
+*-this-session-is-being-continued-*.txt
 # Material de contexto do projeto (pedidos, reuniões, análises): fica só na máquina.
 contexto/

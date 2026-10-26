@@ -1,4 +1,5 @@
-import { supabaseServer } from "@/lib/supabase-server";
+import { supabaseServer, supabaseAdmin } from "@/lib/supabase-server";
+import type { ResumoFila } from "./fila-carteira";
 import { SectionTitle } from "@/components/ui/primitives";
 import { notFound } from "next/navigation";
 import Link from "next/link";
@@ -26,11 +27,16 @@ export default async function CarteiraPage({ params, searchParams }: { params: P
   if (!carteira) notFound();
 
   const { data: importacoes } = await sb.from("importacoes")
-    .select("id, arquivo_nome, arquivo_path, arquivo_tamanho, arquivo_mime, status, linhas_total, linhas_importadas, linhas_ignoradas, criado_em")
+    .select("id, arquivo_nome, arquivo_path, arquivo_tamanho, arquivo_mime, status, linhas_total, linhas_importadas, linhas_ignoradas, criado_em, modo")
     .eq("carteira_id", Number(id)).order("criado_em", { ascending: false });
 
   const { data: fluxos } = await sb.from("v_desempenho_fluxos")
     .select("*").eq("carteira_id", Number(id)).order("versao", { ascending: false });
+
+  // Acionáveis e não acionáveis (fn_fila_carteira): só para quem cuida da carteira
+  const resumoFila = podeEditar
+    ? ((await supabaseAdmin().rpc("fn_fila_carteira_resumo", { p_carteira_id: carteira.id })).data as ResumoFila | null)
+    : null;
 
   // padrão global do robô/asaas só é necessário para quem edita; credor/visualizador não veem chaves
   const padrao: Record<string, any> = {};
@@ -62,7 +68,7 @@ export default async function CarteiraPage({ params, searchParams }: { params: P
       </Link>
       <SectionTitle title={carteira.nome} sub={carteira.credor ? `Credor: ${carteira.credor}` : "Acompanhe os envios e o robô desta carteira."} />
       <CarteiraPainel carteira={carteiraView} importacoes={importacoes ?? []} padrao={padrao}
-                      conhecimento={conhecimento} fluxos={fluxos ?? []} tabInicial={tab} podeEditar={podeEditar} />
+                      conhecimento={conhecimento} fluxos={fluxos ?? []} tabInicial={tab} podeEditar={podeEditar} resumoFila={resumoFila} />
     </>
   );
 }

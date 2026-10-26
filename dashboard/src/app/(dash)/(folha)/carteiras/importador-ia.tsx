@@ -50,7 +50,7 @@ export function ModoSeletor({ modo, setModo }: { modo: "modelo" | "ia"; setModo:
 
 type Fase = "escolher" | "analisando" | "revisar" | "importando";
 
-export function ImportadorIA({ carteiraId, onImportado }: { carteiraId: number; onImportado: (rel: any) => void }) {
+export function ImportadorIA({ carteiraId, onImportado, modo = "carga" }: { carteiraId: number; onImportado: (rel: any) => void; modo?: "carga" | "enriquecer" }) {
   const [arquivo, setArquivo] = React.useState<File | null>(null);
   const [fase, setFase] = React.useState<Fase>("escolher");
   const [receita, setReceita] = React.useState<Receita | null>(null);
@@ -105,7 +105,7 @@ export function ImportadorIA({ carteiraId, onImportado }: { carteiraId: number; 
   async function importar() {
     if (!arquivo || !receita) return;
     setFase("importando"); setErro(null);
-    const fd = new FormData(); fd.append("arquivo", arquivo); fd.append("receita", JSON.stringify(receita));
+    const fd = new FormData(); fd.append("arquivo", arquivo); fd.append("receita", JSON.stringify(receita)); fd.append("modo", modo);
     const r = await fetch(`/api/carteiras/${carteiraId}/importar`, { method: "POST", body: fd });
     const d = await r.json().catch(() => ({}));
     if (!r.ok) { setErro(d.erro ?? "Falha ao importar."); setFase("revisar"); return; }

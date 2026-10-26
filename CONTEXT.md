@@ -192,6 +192,40 @@ O que já foi resolvido hoje. A linha recebe um risco de caneta e desce para "Fe
 riscados é o placar do dia.
 _Avoid_: concluído, finalizado, ticket fechado
 
+**Acionamento**:
+Um contato feito por uma pessoa da equipe: uma conversa pelo WhatsApp do sistema ou um resultado
+registrado na ficha. O resultado lançado até 20 minutos depois de falar com o mesmo devedor, pelo mesmo
+canal, é o fechamento daquele contato e não conta como outro. É a unidade da produtividade e das metas.
+_Avoid_: ação, tentativa, toque
+
+**Acionável**:
+Quem dá para chamar agora: ativo, sem pagar, sem "não perturbe", sem contestação nem acordo em
+andamento, com pelo menos um celular que não foi dado como sem WhatsApp. O resto é não acionável, com o
+motivo escrito (o mais comum é precisar de higienização de contato).
+
+**Inativo**:
+O devedor que o administrador tirou da operação: sai da fila do robô, da agenda e das listas, e o
+histórico fica. Não é o mesmo que excluir, que apaga a ficha e só vale para cadastro de teste ou
+duplicado sem dinheiro, acordo, Jurídico, documento ou "não perturbe".
+_Avoid_: arquivado (é a situação que o inativo recebe, não o nome do estado), desativado
+
+## Jurídico
+
+**Análise jurídica**:
+O retrato que o motor faz de um devedor num dia: o que leu (valor, vencimento, título, documentos), a
+medida sugerida, o que falta, os riscos, a lei oficial confirmada naquele dia e a minuta. Nasce
+rascunho; só vale depois que o advogado aprova.
+_Avoid_: parecer, petição (a minuta é rascunho de petição, não a petição)
+
+**Fonte oficial**:
+O texto da lei no Planalto e os portais de jurisprudência dos tribunais. A lei usada numa análise
+precisa ter sido confirmada na fonte no mesmo dia em que o advogado aprova.
+
+**Caso jurídico**:
+O processo formal depois da decisão do advogado, com etapa, número CNJ, prazo e próxima ação. Nada é
+protocolado pelo sistema.
+_Avoid_: ação, processo judicial (processo é o código da dívida na planilha)
+
 ## Operação
 
 **Modo teste**:
