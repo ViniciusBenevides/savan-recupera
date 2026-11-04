@@ -1,6 +1,7 @@
 # O projeto Vercel usa `dashboard` como Root Directory. Envie somente os
 # arquivos necessarios para construir esse app; o restante do monorepo contem
 # dados, referencias e configuracoes que nao pertencem ao deployment.
+# O site-mccred/ fica fora desta lista: é o Root Directory do projeto `mccred`, que usa este mesmo repo.
 /.agents/**
 /.agents
 /.claude/**
@@ -19,8 +20,6 @@
 /referencias
 /ref_sites_bancarios/**
 /ref_sites_bancarios
-/site-mccred/**
-/site-mccred
 /supabase/**
 /supabase
 /dashboard/.next-stale-*/**

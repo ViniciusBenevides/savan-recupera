@@ -1,0 +1,630 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MC Cred — Compra e Recuperação de Carteiras de Crédito</title>
+  <meta name="description" content="A MC Cred compra carteiras de crédito inadimplentes e assume a recuperação: liquidez imediata para o credor e negociação humanizada, com desconto, para quem deve. Goiânia-GO." />
+  <meta property="og:title" content="MC Cred — Compra e Recuperação de Carteiras de Crédito" />
+  <meta property="og:description" content="Transformamos carteiras inadimplentes em liquidez imediata. Cessão de crédito, cobrança digital e negociação humanizada." />
+  <meta property="og:type" content="website" />
+  <meta property="og:image" content="/assets/logo-mccred.jpg" />
+  <meta property="og:locale" content="pt_BR" />
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..700;1,9..144,400..700&family=Instrument+Sans:ital,wght@0,400..700;1,400..700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div class="preloader" aria-hidden="true">
+    <div>
+      <div class="pl-mono">MC</div>
+      <div class="pl-bar"><i></i></div>
+    </div>
+  </div>
+
+  <div class="scroll-progress" id="scrollProgress" aria-hidden="true"></div>
+  <div class="cursor-ring" id="cursorRing" aria-hidden="true"><span class="cursor-label" id="cursorLabel"></span></div>
+  <div class="cursor-dot" id="cursorDot" aria-hidden="true"></div>
+  <div class="grain" aria-hidden="true"></div>
+
+  <!-- ===================== NAV ===================== -->
+  <header class="nav" id="nav">
+    <div class="wrap nav-inner">
+      <a class="logo" href="#inicio" aria-label="MC Cred — página inicial">
+        <span class="logo-mark"><span>MC</span></span>
+        <span class="logo-word">
+          <b><em>MC</em>&nbsp;CRED</b>
+          <small>Seu parceiro de negócios</small>
+        </span>
+      </a>
+      <nav class="nav-links" id="navLinks" aria-label="Navegação principal">
+        <a href="#solucoes">Soluções</a>
+        <a href="#como-funciona">Como funciona</a>
+        <a href="#comparativo">Comparativo</a>
+        <a href="#negocie">Negociar dívida</a>
+        <a href="#faq">Dúvidas</a>
+      </nav>
+      <a class="btn btn-gold magnetic" href="https://wa.me/5564999276567?text=Ol%C3%A1!%20Tenho%20uma%20carteira%20de%20cr%C3%A9dito%20e%20quero%20uma%20proposta%20da%20MC%20Cred." target="_blank" rel="noopener">
+        Vender minha carteira
+      </a>
+      <button class="nav-burger" id="navBurger" aria-label="Abrir menu" aria-expanded="false">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+  </header>
+
+  <main>
+    <!-- ===================== HERO ===================== -->
+    <section class="hero" id="inicio">
+      <canvas id="fx" aria-hidden="true"></canvas>
+      <div class="orb orb-1" data-parallax="0.25" aria-hidden="true"></div>
+      <div class="orb orb-2" data-parallax="-0.2" aria-hidden="true"></div>
+      <div class="hero-glow" aria-hidden="true"></div>
+      <div class="wrap hero-inner">
+        <div>
+          <span class="badge reveal">Compra · Cessão · Recuperação de crédito</span>
+          <h1 class="split" data-split>Sua carteira inadimplente vira <span class="gold-i">liquidez imediata</span>.</h1>
+          <p class="hero-sub reveal" style="--d:.16s">
+            A MC Cred <strong>compra carteiras de crédito vencidas</strong> e assume todo o processo de recuperação:
+            você recebe à vista e zera a inadimplência do balanço. Quem deve encontra do outro lado uma
+            <strong>negociação humana, com desconto real</strong> — do primeiro contato ao acordo, tudo digital.
+          </p>
+          <div class="hero-ctas reveal" style="--d:.24s">
+            <a class="btn btn-gold btn-lg magnetic" href="https://wa.me/5564999276567?text=Ol%C3%A1!%20Tenho%20uma%20carteira%20de%20cr%C3%A9dito%20e%20quero%20uma%20proposta%20da%20MC%20Cred." target="_blank" rel="noopener">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"/></svg>
+              Quero vender minha carteira
+            </a>
+            <a class="btn btn-ghost btn-lg magnetic" href="#negocie">Recebi uma cobrança — negociar</a>
+          </div>
+          <div class="hero-stats reveal" style="--d:.32s">
+            <div class="stat"><b data-count="1500" data-prefix="+">+1.500</b><span>negociações e clientes atendidos</span></div>
+            <div class="stat"><b data-count="48" data-suffix="h">48h</b><span>para você receber uma proposta</span></div>
+            <div class="stat"><b>100%</b><span>digital, do diagnóstico ao acordo</span></div>
+          </div>
+        </div>
+
+        <div class="hero-visual reveal" style="--d:.2s" aria-hidden="true">
+          <div class="hv-ring"></div>
+          <div class="hv-ring hv-ring-2"></div>
+
+          <div class="hv-card hv-main" id="tiltCard">
+            <div class="hv-main-head">
+              <span>Esteira de recuperação</span>
+              <span class="hv-chip-live">Ao vivo</span>
+            </div>
+            <div class="hv-value"><sup>R$</sup><span id="odometer">4.280.350</span></div>
+            <p class="hv-label">recuperados para credores parceiros</p>
+            <div class="hv-bar"><i></i></div>
+            <div class="hv-bar-meta"><span>Meta do trimestre</span><span>72%</span></div>
+            <div class="feed" id="liveFeed"></div>
+          </div>
+
+          <div class="hv-card hv-float hv-f1">
+            <div class="ic ic-gold">
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#191307" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 13 4 4L19 7"/></svg>
+            </div>
+            <div>
+              <h5>Carteira adquirida</h5>
+              <p>Cessão assinada · pagamento à vista</p>
+            </div>
+          </div>
+
+          <div class="hv-card hv-float hv-f2">
+            <div class="ic ic-green">
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="#06130b" aria-hidden="true"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5.1-1.3A10 10 0 1 0 12 2Zm5.2 14.2c-.2.6-1.3 1.2-1.8 1.2-.5.1-1 .2-3.3-.7-2.8-1.1-4.6-4-4.7-4.2-.1-.2-1.1-1.5-1.1-2.9s.7-2 1-2.3c.2-.3.5-.3.7-.3h.5c.2 0 .4 0 .6.5s.8 1.9.8 2c.1.1.1.3 0 .5l-.3.5-.4.4c-.1.1-.3.3-.1.6.2.3.8 1.3 1.7 2.1 1.2 1 2.2 1.4 2.5 1.5.3.1.5.1.7-.1l1-1.2c.2-.3.4-.2.7-.1l2 1c.3.1.5.2.5.3.1.1.1.7-.1 1.2Z"/></svg>
+            </div>
+            <div>
+              <h5>Acordo no WhatsApp</h5>
+              <p>Negociação humanizada, sem constrangimento</p>
+            </div>
+          </div>
+
+          <div class="hv-card hv-float hv-f3">
+            <div class="ic ic-dark">
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#e8b84b" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 3v18M7 8c0-1.7 2.2-3 5-3s5 1.3 5 3-2.2 3-5 3-5 1.3-5 3 2.2 3 5 3 5-1.3 5-3"/></svg>
+            </div>
+            <div>
+              <h5>Liquidez imediata</h5>
+              <p>Caixa hoje, risco 100% nosso</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== MARQUEE DUPLO ===================== -->
+    <section class="marquee-section" aria-label="Segmentos e princípios">
+      <p class="marquee-title">Carteiras que avaliamos e compramos</p>
+      <div class="marquee">
+        <div class="marquee-track">
+          <span class="mq-item">Financeiras</span>
+          <span class="mq-item">Varejo &amp; e-commerce</span>
+          <span class="mq-item">Educação</span>
+          <span class="mq-item">Saúde &amp; clínicas</span>
+          <span class="mq-item">Serviços recorrentes</span>
+          <span class="mq-item">Crédito pessoal</span>
+          <span class="mq-item">Financeiras</span>
+          <span class="mq-item">Varejo &amp; e-commerce</span>
+          <span class="mq-item">Educação</span>
+          <span class="mq-item">Saúde &amp; clínicas</span>
+          <span class="mq-item">Serviços recorrentes</span>
+          <span class="mq-item">Crédito pessoal</span>
+        </div>
+      </div>
+      <div class="marquee reverse">
+        <div class="marquee-track">
+          <span class="mq-item small">Cessão definitiva</span>
+          <span class="mq-item small">Pagamento à vista</span>
+          <span class="mq-item small">Cobrança digital</span>
+          <span class="mq-item small">Negociação humanizada</span>
+          <span class="mq-item small">LGPD por padrão</span>
+          <span class="mq-item small">Sigilo total (NDA)</span>
+          <span class="mq-item small">Cessão definitiva</span>
+          <span class="mq-item small">Pagamento à vista</span>
+          <span class="mq-item small">Cobrança digital</span>
+          <span class="mq-item small">Negociação humanizada</span>
+          <span class="mq-item small">LGPD por padrão</span>
+          <span class="mq-item small">Sigilo total (NDA)</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== COMO FUNCIONA ===================== -->
+    <section class="section" id="como-funciona">
+      <div class="wrap">
+        <div class="section-head center">
+          <span class="badge reveal">Como funciona</span>
+          <h2 class="split" data-split>Da carteira parada ao <span class="gold-i">caixa no banco</span></h2>
+          <p class="reveal" style="--d:.1s">Um processo direto, sigiloso e rápido. Você envia os dados, recebe uma proposta e transforma inadimplência em liquidez — sem carregar mais esse peso.</p>
+        </div>
+        <div class="timeline">
+          <article class="step spot reveal">
+            <div class="step-num">01</div>
+            <h3>Envie sua carteira</h3>
+            <p>Compartilhe os dados da carteira vencida com total sigilo — assinamos NDA antes de qualquer análise.</p>
+          </article>
+          <article class="step spot reveal" style="--d:.1s">
+            <div class="step-num">02</div>
+            <h3>Avaliação e proposta</h3>
+            <p>Analisamos perfil, aging e histórico da carteira e devolvemos uma proposta objetiva em até 48h.</p>
+          </article>
+          <article class="step spot reveal" style="--d:.2s">
+            <div class="step-num">03</div>
+            <h3>Cessão e pagamento</h3>
+            <p>Formalizamos o contrato de cessão de crédito e você recebe à vista. A inadimplência sai do seu balanço.</p>
+          </article>
+          <article class="step spot reveal" style="--d:.3s">
+            <div class="step-num">04</div>
+            <h3>Nós recuperamos</h3>
+            <p>Nossa esteira digital assume a cobrança: contato respeitoso, acordos com desconto e acompanhamento total.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== FAIXA GIGANTE ===================== -->
+    <div class="big-strip" aria-hidden="true">
+      <div class="marquee">
+        <div class="marquee-track">
+          <span class="big-word">Compra de carteira</span>
+          <span class="big-word fill">Recuperação</span>
+          <span class="big-word">Liquidez</span>
+          <span class="big-word fill">Cessão de crédito</span>
+          <span class="big-word">Compra de carteira</span>
+          <span class="big-word fill">Recuperação</span>
+          <span class="big-word">Liquidez</span>
+          <span class="big-word fill">Cessão de crédito</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===================== SOLUÇÕES (BENTO) ===================== -->
+    <section class="section" id="solucoes">
+      <div class="wrap">
+        <div class="section-head">
+          <span class="badge reveal">Nossas soluções</span>
+          <h2 class="split" data-split>Especialistas em <span class="gold-i">crédito inadimplente</span></h2>
+          <p class="reveal" style="--d:.1s">Compramos, recuperamos e negociamos. Uma operação completa para credores que querem liquidez — e para clientes que querem sair do vermelho.</p>
+        </div>
+
+        <div class="bento">
+          <article class="bento-card bento-wide spot reveal">
+            <div class="bento-icon">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#e8b84b" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v18M7 8c0-1.7 2.2-3 5-3s5 1.3 5 3-2.2 3-5 3-5 1.3-5 3 2.2 3 5 3 5-1.3 5-3"/></svg>
+            </div>
+            <h3>Compra de carteiras de crédito</h3>
+            <p>Adquirimos carteiras inadimplentes por cessão definitiva: você antecipa receita perdida, limpa o balanço e transfere 100% do risco de recuperação para a MC Cred. Avaliação criteriosa, proposta rápida e pagamento à vista.</p>
+            <div class="bento-chips">
+              <span class="chip gold">Cessão definitiva</span>
+              <span class="chip gold">Pagamento à vista</span>
+              <span class="chip">Proposta em até 48h</span>
+              <span class="chip">Sigilo garantido</span>
+            </div>
+            <div class="bento-foot">
+              <a class="bento-link" href="https://wa.me/5564999276567?text=Ol%C3%A1!%20Tenho%20uma%20carteira%20de%20cr%C3%A9dito%20e%20quero%20uma%20proposta%20da%20MC%20Cred." target="_blank" rel="noopener">
+                Pedir uma avaliação
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"/></svg>
+              </a>
+            </div>
+          </article>
+
+          <article class="bento-card spot reveal" style="--d:.1s">
+            <div class="bento-icon">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#e8b84b" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-9-9"/><path d="M21 3v6h-6"/><path d="M12 7v5l3 3"/></svg>
+            </div>
+            <h3>Recuperação de crédito</h3>
+            <p>Não quer vender? Terceirize a cobrança. Nossa esteira digital cuida da recuperação e você só paga pelo que recuperarmos.</p>
+            <div class="bento-chips">
+              <span class="chip">Success fee</span>
+              <span class="chip">Sem custo fixo</span>
+            </div>
+          </article>
+
+          <article class="bento-card spot reveal">
+            <div class="bento-icon">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#e8b84b" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a8.5 8.5 0 0 1-8.5 8.5c-1.5 0-3-.4-4.2-1.1L3 21l1.6-5.3A8.5 8.5 0 1 1 21 12Z"/></svg>
+            </div>
+            <h3>Cobrança digital humanizada</h3>
+            <p>Réguas inteligentes pelo WhatsApp com atendimento humano por trás. Abordagem respeitosa, sem constrangimento — como manda o Código de Defesa do Consumidor.</p>
+            <div class="bento-chips">
+              <span class="chip">WhatsApp oficial</span>
+              <span class="chip">Sem constrangimento</span>
+            </div>
+          </article>
+
+          <article class="bento-card spot reveal" style="--d:.1s">
+            <div class="bento-icon">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#e8b84b" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 4v5c0 4.4-3 8.4-7 9-4-.6-7-4.6-7-9V7l7-4Z"/><path d="m9.5 12 2 2 3.5-3.5"/></svg>
+            </div>
+            <h3>Dados &amp; conformidade</h3>
+            <p>Tratamento de dados conforme a LGPD, trilha de auditoria completa e prestação de contas transparente em cada etapa da operação.</p>
+            <div class="bento-chips">
+              <span class="chip">LGPD</span>
+              <span class="chip">Auditoria</span>
+            </div>
+          </article>
+
+          <article class="bento-card bento-wide spot reveal" style="--d:.1s">
+            <div class="bento-icon">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#e8b84b" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 11.5c1-2.5 3-4 4.5-3.5s1.5 2.5.5 4-3 2.5-4.5 3.5c0-1.5-.5-3-.5-4Z"/><circle cx="12" cy="12" r="9"/></svg>
+            </div>
+            <h3>Negociação para quem deve</h3>
+            <p>Do outro lado da dívida existe uma pessoa — e a gente sabe disso. Quem tem débito conosco encontra descontos reais para quitação, parcelamento acessível e atendimento que resolve, direto no WhatsApp.</p>
+            <div class="notif-stack">
+              <div class="notif">
+                <span class="dot green"></span>
+                <div><h5>Proposta de acordo enviada</h5><p>Quitação à vista com desconto especial.</p></div>
+                <time>09:12</time>
+              </div>
+              <div class="notif">
+                <span class="dot"></span>
+                <div><h5>Acordo fechado 🎉</h5><p>Parcelamento ajustado ao seu orçamento.</p></div>
+                <time>11:47</time>
+              </div>
+              <div class="notif">
+                <span class="dot green"></span>
+                <div><h5>Dívida quitada — nome limpo</h5><p>Comprovante e baixa registrados. Recomeço!</p></div>
+                <time>14:03</time>
+              </div>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== COMPARATIVO ===================== -->
+    <section class="section" id="comparativo" style="padding-top: 40px;">
+      <div class="wrap">
+        <div class="section-head center">
+          <span class="badge reveal">Comparativo</span>
+          <h2 class="split" data-split>Carteira parada <span class="gold-i">×</span> carteira com a MC Cred</h2>
+          <p class="reveal" style="--d:.1s">Cada mês de inadimplência na gaveta corrói o valor da carteira. Veja o que muda quando ela passa para as nossas mãos.</p>
+        </div>
+        <div class="compare">
+          <div class="cmp-col cmp-before reveal">
+            <h3>Na sua gaveta</h3>
+            <p class="cmp-sub">Carteira vencida sem gestão dedicada</p>
+            <ul>
+              <li><span class="cmp-x"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></span>Caixa preso em créditos vencidos</li>
+              <li><span class="cmp-x"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></span>Custo contínuo de cobrança interna</li>
+              <li><span class="cmp-x"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></span>Time desviado da atividade principal</li>
+              <li><span class="cmp-x"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></span>Valor da carteira caindo mês a mês</li>
+              <li><span class="cmp-x"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></span>Desgaste na relação com o cliente</li>
+            </ul>
+          </div>
+          <div class="cmp-col cmp-after reveal" style="--d:.12s">
+            <span class="cmp-tag">Com a MC Cred</span>
+            <h3>No nosso motor</h3>
+            <p class="cmp-sub">Cessão definitiva + esteira de recuperação</p>
+            <ul>
+              <li><span class="cmp-c"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 13 4 4L19 7"/></svg></span>Pagamento à vista pela carteira</li>
+              <li><span class="cmp-c"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 13 4 4L19 7"/></svg></span>Zero custo de cobrança daqui pra frente</li>
+              <li><span class="cmp-c"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 13 4 4L19 7"/></svg></span>Risco de recuperação 100% da MC Cred</li>
+              <li><span class="cmp-c"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 13 4 4L19 7"/></svg></span>Balanço limpo e indicadores saudáveis</li>
+              <li><span class="cmp-c"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 13 4 4L19 7"/></svg></span>Cobrança respeitosa que preserva sua marca</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== MÉTRICAS ===================== -->
+    <section class="metrics" aria-label="Nossos números">
+      <div class="metrics-grid">
+        <div class="metric reveal"><b data-count="1500" data-prefix="+">+1.500</b><span>negociações e clientes atendidos</span></div>
+        <div class="metric reveal" style="--d:.08s"><b data-count="48" data-suffix="h">48h</b><span>para propor pela sua carteira</span></div>
+        <div class="metric reveal" style="--d:.16s"><b data-count="100" data-suffix="%">100%</b><span>digital — sem papelada, sem fila</span></div>
+        <div class="metric reveal" style="--d:.24s"><b>7 dias</b><span>de esteira de cobrança ativa por semana</span></div>
+      </div>
+    </section>
+
+    <!-- ===================== PARA QUEM DEVE ===================== -->
+    <section class="section debt" id="negocie">
+      <div class="wrap debt-grid">
+        <div>
+          <div class="section-head" style="margin-bottom: 34px;">
+            <span class="badge reveal">Recebeu um contato nosso?</span>
+            <h2 class="split" data-split>Sua dívida mudou de mãos. <span class="gold-i">Sua chance também</span>.</h2>
+          </div>
+          <div class="why-list">
+            <div class="why-item reveal">
+              <span class="why-check">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#191307" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 13 4 4L19 7"/></svg>
+              </span>
+              <div>
+                <h4>É oficial e está na lei</h4>
+                <p>A MC Cred adquiriu sua dívida por cessão de crédito (arts. 286 a 298 do Código Civil) e passou a ser a credora. O contato é legítimo.</p>
+              </div>
+            </div>
+            <div class="why-item reveal" style="--d:.08s">
+              <span class="why-check">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#191307" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 13 4 4L19 7"/></svg>
+              </span>
+              <div>
+                <h4>Desconto de verdade</h4>
+                <p>Como compramos a carteira, temos margem para oferecer condições que o credor original não conseguia: desconto para quitar ou parcelas que cabem no bolso.</p>
+              </div>
+            </div>
+            <div class="why-item reveal" style="--d:.16s">
+              <span class="why-check">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#191307" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 13 4 4L19 7"/></svg>
+              </span>
+              <div>
+                <h4>Respeito sempre</h4>
+                <p>Nada de ligação insistente ou exposição. Conversa clara pelo WhatsApp, no seu tempo, como determina o Código de Defesa do Consumidor.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="reveal" style="--d:.15s">
+          <div class="debt-card spot">
+            <span class="badge">Negocie agora</span>
+            <h3 style="font-size: 26px; margin-top: 18px;">Saia do vermelho hoje mesmo</h3>
+            <ul class="debt-check-list">
+              <li><span class="ck"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 13 4 4L19 7"/></svg></span>Consulta da sua pendência sem compromisso</li>
+              <li><span class="ck"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 13 4 4L19 7"/></svg></span>Desconto especial para quitação à vista</li>
+              <li><span class="ck"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 13 4 4L19 7"/></svg></span>Parcelamento que respeita seu orçamento</li>
+              <li><span class="ck"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 13 4 4L19 7"/></svg></span>Comprovante e baixa da dívida garantidos</li>
+            </ul>
+            <a class="btn btn-whats btn-lg magnetic" href="https://wa.me/5564999276567?text=Ol%C3%A1!%20Recebi%20um%20contato%20da%20MC%20Cred%20e%20quero%20negociar%20minha%20pend%C3%AAncia." target="_blank" rel="noopener">
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5.1-1.3A10 10 0 1 0 12 2Zm5.2 14.2c-.2.6-1.3 1.2-1.8 1.2-.5.1-1 .2-3.3-.7-2.8-1.1-4.6-4-4.7-4.2-.1-.2-1.1-1.5-1.1-2.9s.7-2 1-2.3c.2-.3.5-.3.7-.3h.5c.2 0 .4 0 .6.5s.8 1.9.8 2c.1.1.1.3 0 .5l-.3.5-.4.4c-.1.1-.3.3-.1.6.2.3.8 1.3 1.7 2.1 1.2 1 2.2 1.4 2.5 1.5.3.1.5.1.7-.1l1-1.2c.2-.3.4-.2.7-.1l2 1c.3.1.5.2.5.3.1.1.1.7-.1 1.2Z"/></svg>
+              Negociar minha dívida
+            </a>
+            <p style="font-size: 12px; color: var(--muted-2); margin-top: 14px;">Atenção: nunca pedimos senhas, PIX antecipado ou pagamento fora de acordo formalizado com comprovante.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== DEPOIMENTOS ===================== -->
+    <section class="section" id="depoimentos" style="padding-bottom: 80px;">
+      <div class="wrap">
+        <div class="section-head center">
+          <span class="badge reveal">Quem já passou por aqui</span>
+          <h2 class="split" data-split>Dos dois lados da dívida, <span class="gold-i">confiança</span></h2>
+          <p class="reveal" style="--d:.1s">Credores que viraram caixa. Pessoas que limparam o nome. É assim que a gente mede resultado.</p>
+        </div>
+      </div>
+      <div class="wrap">
+        <div class="car" id="carousel" data-cursor-text="Arraste">
+          <article class="testi">
+            <div class="stars" aria-label="5 estrelas">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="m12 2 2.9 6.6 7.1.7-5.4 4.8 1.6 7-6.2-3.7-6.2 3.7 1.6-7L2 9.3l7.1-.7L12 2Z"/></svg><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="m12 2 2.9 6.6 7.1.7-5.4 4.8 1.6 7-6.2-3.7-6.2 3.7 1.6-7L2 9.3l7.1-.7L12 2Z"/></svg><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="m12 2 2.9 6.6 7.1.7-5.4 4.8 1.6 7-6.2-3.7-6.2 3.7 1.6-7L2 9.3l7.1-.7L12 2Z"/></svg><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="m12 2 2.9 6.6 7.1.7-5.4 4.8 1.6 7-6.2-3.7-6.2 3.7 1.6-7L2 9.3l7.1-.7L12 2Z"/></svg><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="m12 2 2.9 6.6 7.1.7-5.4 4.8 1.6 7-6.2-3.7-6.2 3.7 1.6-7L2 9.3l7.1-.7L12 2Z"/></svg>
+            </div>
+            <p>“Tínhamos uma carteira vencida havia mais de dois anos consumindo o time de cobrança. A MC Cred avaliou, propôs e pagou em dias. Viramos a página e o caixa agradeceu.”</p>
+            <footer>
+              <span class="avatar">R</span>
+              <span><b>Ricardo M.</b><small>Sócio de financeira · Goiânia, GO</small></span>
+            </footer>
+          </article>
+          <article class="testi">
+            <div class="stars" aria-label="5 estrelas">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="m12 2 2.9 6.6 7.1.7-5.4 4.8 1.6 7-6.2-3.7-6.2 3.7 1.6-7L2 9.3l7.1-.7L12 2Z"/></svg><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="m12 2 2.9 6.6 7.1.7-5.4 4.8 1.6 7-6.2-3.7-6.2 3.7 1.6-7L2 9.3l7.1-.7L12 2Z"/></svg><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="m12 2 2.9 6.6 7.1.7-5.4 4.8 1.6 7-6.2-3.7-6.2 3.7 1.6-7L2 9.3l7.1-.7L12 2Z"/></svg><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="m12 2 2.9 6.6 7.1.7-5.4 4.8 1.6 7-6.2-3.7-6.2 3.7 1.6-7L2 9.3l7.1-.7L12 2Z"/></svg><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="m12 2 2.9 6.6 7.1.7-5.4 4.8 1.6 7-6.2-3.7-6.2 3.7 1.6-7L2 9.3l7.1-.7L12 2Z"/></svg>
+            </div>
+            <p>“Devia uma parcela antiga e vivia adiando. O atendimento foi tão tranquilo que resolvi na mesma conversa: desconto justo, paguei à vista e recebi o comprovante na hora.”</p>
+            <footer>
+              <span class="avatar green">A</span>
+              <span><b>Ana L.</b><small>Negociou e quitou · Rondonópolis, MT</small></span>
+            </footer>
+          </article>
+          <article class="testi">
+            <div class="stars" aria-label="5 estrelas">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="m12 2 2.9 6.6 7.1.7-5.4 4.8 1.6 7-6.2-3.7-6.2 3.7 1.6-7L2 9.3l7.1-.7L12 2Z"/></svg><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="m12 2 2.9 6.6 7.1.7-5.4 4.8 1.6 7-6.2-3.7-6.2 3.7 1.6-7L2 9.3l7.1-.7L12 2Z"/></svg><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="m12 2 2.9 6.6 7.1.7-5.4 4.8 1.6 7-6.2-3.7-6.2 3.7 1.6-7L2 9.3l7.1-.7L12 2Z"/></svg><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="m12 2 2.9 6.6 7.1.7-5.4 4.8 1.6 7-6.2-3.7-6.2 3.7 1.6-7L2 9.3l7.1-.7L12 2Z"/></svg><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="m12 2 2.9 6.6 7.1.7-5.4 4.8 1.6 7-6.2-3.7-6.2 3.7 1.6-7L2 9.3l7.1-.7L12 2Z"/></svg>
+            </div>
+            <p>“O diferencial foi a transparência: relatório claro do que estava sendo cedido, contrato objetivo e pagamento no prazo combinado. Parceria séria.”</p>
+            <footer>
+              <span class="avatar">C</span>
+              <span><b>Camila S.</b><small>Diretora administrativa · Goiânia, GO</small></span>
+            </footer>
+          </article>
+          <article class="testi">
+            <div class="stars" aria-label="5 estrelas">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="m12 2 2.9 6.6 7.1.7-5.4 4.8 1.6 7-6.2-3.7-6.2 3.7 1.6-7L2 9.3l7.1-.7L12 2Z"/></svg><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="m12 2 2.9 6.6 7.1.7-5.4 4.8 1.6 7-6.2-3.7-6.2 3.7 1.6-7L2 9.3l7.1-.7L12 2Z"/></svg><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="m12 2 2.9 6.6 7.1.7-5.4 4.8 1.6 7-6.2-3.7-6.2 3.7 1.6-7L2 9.3l7.1-.7L12 2Z"/></svg><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="m12 2 2.9 6.6 7.1.7-5.4 4.8 1.6 7-6.2-3.7-6.2 3.7 1.6-7L2 9.3l7.1-.7L12 2Z"/></svg><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="m12 2 2.9 6.6 7.1.7-5.4 4.8 1.6 7-6.2-3.7-6.2 3.7 1.6-7L2 9.3l7.1-.7L12 2Z"/></svg>
+            </div>
+            <p>“Achei que era golpe quando recebi a mensagem. Chequei o site, vi que a cessão era oficial e negociei parcelado. Trataram meu caso com um respeito que banco nunca teve.”</p>
+            <footer>
+              <span class="avatar green">P</span>
+              <span><b>Paulo H.</b><small>Negociou parcelado · Goiânia, GO</small></span>
+            </footer>
+          </article>
+        </div>
+        <p class="car-hint">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M9 8l-4 4 4 4M15 8l4 4-4 4"/></svg>
+          Arraste para ver mais
+        </p>
+      </div>
+    </section>
+
+    <!-- ===================== FAQ ===================== -->
+    <section class="section" id="faq" style="padding-top: 40px;">
+      <div class="wrap">
+        <div class="section-head center">
+          <span class="badge reveal">Dúvidas frequentes</span>
+          <h2 class="split" data-split>Tudo em pratos limpos</h2>
+          <p class="reveal" style="--d:.1s">Cessão de crédito ainda gera dúvida — a gente responde sem juridiquês. Não achou sua pergunta? Chama no WhatsApp.</p>
+        </div>
+        <div class="faq-list">
+          <div class="faq-item reveal">
+            <button class="faq-q" aria-expanded="false">
+              O que é cessão de crédito? Isso é legal?
+              <span class="faq-ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></span>
+            </button>
+            <div class="faq-a"><p>É a transferência de um crédito do credor original para outra empresa, prevista nos artigos 286 a 298 do Código Civil. Quando a MC Cred compra uma carteira, passa a ser a credora legítima daquelas dívidas — com todos os deveres de tratamento respeitoso e conformidade que a lei exige.</p></div>
+          </div>
+          <div class="faq-item reveal" style="--d:.06s">
+            <button class="faq-q" aria-expanded="false">
+              Que tipos de carteira a MC Cred compra?
+              <span class="faq-ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></span>
+            </button>
+            <div class="faq-a"><p>Avaliamos carteiras de crédito pessoal, financeiras, varejo, educação, saúde e serviços recorrentes, entre outras. O aging (tempo de atraso), o ticket médio e a documentação disponível influenciam a proposta — envie os dados e devolvemos uma avaliação em até 48h.</p></div>
+          </div>
+          <div class="faq-item reveal" style="--d:.12s">
+            <button class="faq-q" aria-expanded="false">
+              Como é definido o valor da proposta pela carteira?
+              <span class="faq-ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></span>
+            </button>
+            <div class="faq-a"><p>Analisamos o perfil dos devedores, o tempo de inadimplência, o histórico de cobrança e a qualidade da documentação. Com isso estimamos o potencial de recuperação e apresentamos um valor de compra à vista. Sem compromisso: a decisão de vender é sempre sua.</p></div>
+          </div>
+          <div class="faq-item reveal" style="--d:.18s">
+            <button class="faq-q" aria-expanded="false">
+              Recebi uma cobrança da MC Cred. Como sei que não é golpe?
+              <span class="faq-ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></span>
+            </button>
+            <div class="faq-a"><p>Nossos contatos partem apenas dos canais oficiais indicados neste site. Ao negociar, você recebe os dados da dívida original, o acordo formalizado e comprovante de cada pagamento. Importante: nunca pedimos senhas, códigos ou PIX antecipado fora de um acordo documentado. Na dúvida, chame o WhatsApp oficial <a href="https://wa.me/5564999276567">(64) 99927-6567</a>.</p></div>
+          </div>
+          <div class="faq-item reveal" style="--d:.24s">
+            <button class="faq-q" aria-expanded="false">
+              Consigo desconto para quitar minha dívida?
+              <span class="faq-ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></span>
+            </button>
+            <div class="faq-a"><p>Sim — é justamente o nosso modelo. Como adquirimos a carteira, temos flexibilidade para oferecer desconto real na quitação à vista ou parcelamento que caiba no seu orçamento. Quanto antes você negociar, melhores as condições.</p></div>
+          </div>
+          <div class="faq-item reveal" style="--d:.3s">
+            <button class="faq-q" aria-expanded="false">
+              E a LGPD? Como os dados são tratados na cessão?
+              <span class="faq-ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></span>
+            </button>
+            <div class="faq-a"><p>A transferência dos dados na cessão de crédito tem base legal na execução do contrato e no exercício regular de direitos. Tratamos tudo conforme a LGPD: acesso restrito, finalidade específica (recuperação do crédito) e canal aberto para os titulares exercerem seus direitos. Detalhes na nossa <a href="/privacidade">Política de Privacidade</a>.</p></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== CTA FINAL DUPLO ===================== -->
+    <section class="cta-final" id="contato">
+      <div class="wrap">
+        <div class="section-head center">
+          <span class="badge reveal">Vamos conversar</span>
+          <h2 class="split" data-split>De que lado da dívida <span class="gold-i">você está</span>?</h2>
+        </div>
+        <div class="cta-duo">
+          <div class="cta-card cta-card-gold spot reveal">
+            <span class="cta-kicker">Para empresas e credores</span>
+            <h3>Tenho uma carteira para vender</h3>
+            <p>Receba uma proposta em até 48h, com sigilo total, e transforme inadimplência em caixa imediato.</p>
+            <a class="btn btn-gold magnetic" href="https://wa.me/5564999276567?text=Ol%C3%A1!%20Tenho%20uma%20carteira%20de%20cr%C3%A9dito%20e%20quero%20uma%20proposta%20da%20MC%20Cred." target="_blank" rel="noopener">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"/></svg>
+              Pedir avaliação da carteira
+            </a>
+          </div>
+          <div class="cta-card cta-card-green spot reveal" style="--d:.12s">
+            <span class="cta-kicker">Para quem quer quitar</span>
+            <h3>Quero negociar minha dívida</h3>
+            <p>Consulte sua pendência e receba condições especiais para limpar o nome ainda hoje, direto no WhatsApp.</p>
+            <a class="btn btn-whats magnetic" href="https://wa.me/5564999276567?text=Ol%C3%A1!%20Recebi%20um%20contato%20da%20MC%20Cred%20e%20quero%20negociar%20minha%20pend%C3%AAncia." target="_blank" rel="noopener">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5.1-1.3A10 10 0 1 0 12 2Zm5.2 14.2c-.2.6-1.3 1.2-1.8 1.2-.5.1-1 .2-3.3-.7-2.8-1.1-4.6-4-4.7-4.2-.1-.2-1.1-1.5-1.1-2.9s.7-2 1-2.3c.2-.3.5-.3.7-.3h.5c.2 0 .4 0 .6.5s.8 1.9.8 2c.1.1.1.3 0 .5l-.3.5-.4.4c-.1.1-.3.3-.1.6.2.3.8 1.3 1.7 2.1 1.2 1 2.2 1.4 2.5 1.5.3.1.5.1.7-.1l1-1.2c.2-.3.4-.2.7-.1l2 1c.3.1.5.2.5.3.1.1.1.7-.1 1.2Z"/></svg>
+              Negociar agora
+            </a>
+          </div>
+        </div>
+        <div class="cta-trust reveal" style="--d:.2s">
+          <span>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#e8b84b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 4v5c0 4.4-3 8.4-7 9-4-.6-7-4.6-7-9V7l7-4Z"/></svg>
+            Dados protegidos · LGPD
+          </span>
+          <span>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#e8b84b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M9 12h6M9 8h6M9 16h4"/></svg>
+            Cessão formalizada em contrato
+          </span>
+          <span>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#e8b84b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
+            Proposta em até 48h
+          </span>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ===================== FOOTER ===================== -->
+  <footer class="footer">
+    <div class="wrap">
+      <div class="footer-grid">
+        <div class="footer-brand">
+          <a class="logo" href="#inicio" aria-label="MC Cred">
+            <span class="logo-mark"><span>MC</span></span>
+            <span class="logo-word">
+              <b><em>MC</em>&nbsp;CRED</b>
+              <small>Seu parceiro de negócios</small>
+            </span>
+          </a>
+          <p>Compra de carteiras de crédito e recuperação de ativos com liquidez para o credor e respeito por quem deve. Cobrança digital, humana e transparente.</p>
+        </div>
+        <div>
+          <h4>Navegação</h4>
+          <ul>
+            <li><a href="#solucoes">Soluções</a></li>
+            <li><a href="#como-funciona">Como funciona</a></li>
+            <li><a href="#comparativo">Comparativo</a></li>
+            <li><a href="#negocie">Negociar dívida</a></li>
+            <li><a href="/privacidade">Política de Privacidade</a></li>
+            <li><a href="/termos">Termos de Uso</a></li>
+          </ul>
+        </div>
+        <div>
+          <h4>Contato</h4>
+          <ul>
+            <li><a href="https://wa.me/5564999276567" target="_blank" rel="noopener">WhatsApp: (64) 99927-6567</a></li>
+            <li><a href="https://www.instagram.com/mccred.oficial" target="_blank" rel="noopener">Instagram: @mccred.oficial</a></li>
+            <li class="addr">Edifício Minas Bank · Sala 1809<br />Goiânia · GO · CEP 74020-200</li>
+          </ul>
+        </div>
+      </div>
+      <p class="footer-legal">
+        <strong style="color: var(--muted);">MC CRED SOLUÇÕES EM CRÉDITOS LTDA</strong> — CNPJ 46.189.300/0001-61.
+        A MC Cred atua na aquisição de carteiras de crédito por meio de cessão de crédito, nos termos dos arts. 286 a 298
+        do Código Civil, e na recuperação dos créditos adquiridos, observando o Código de Defesa do Consumidor e a Lei Geral
+        de Proteção de Dados (Lei nº 13.709/2018). Valores, prazos e condições de proposta e de acordo variam conforme a
+        análise de cada carteira e de cada pendência.
+      </p>
+      <div class="footer-bottom">
+        <span>© 2026 MC Cred — Compra e Recuperação de Carteiras de Crédito. Todos os direitos reservados.</span>
+        <span>Goiânia · Goiás · Brasil</span>
+      </div>
+    </div>
+  </footer>
+
+  <script src="/script.js" defer></script>
+</body>
+</html>
