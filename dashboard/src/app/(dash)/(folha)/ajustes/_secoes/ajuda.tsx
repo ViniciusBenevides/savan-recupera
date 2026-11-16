@@ -1,12 +1,23 @@
 // Ajuda: o jeito de trabalhar no MC COB, em português claro. Curta de propósito — cada tela ensina
 // o resto pelo uso (estados vazios, rótulos e o "próxima ação" da ficha).
+
+// Vídeos curtos, com legenda gravada na imagem. As telas são desenhadas e os nomes, fictícios
+// (projeto em videos/tutoriais, feito com HyperFrames). Ficam em public/ajuda/.
+const VIDEOS: { arquivo: string; titulo: string; duracao: string; resumo: string }[] = [
+  { arquivo: "ligar-whatsapp", titulo: "Ligar o WhatsApp", duracao: "1 min", resumo: "Cadastrar a linha, ler o QR no celular e ativar." },
+  { arquivo: "atender-respondeu", titulo: "Atender quem respondeu", duracao: "45 s", resumo: "Abrir a pessoa no Trabalho de hoje, conferir a resposta e enviar." },
+  { arquivo: "pediu-para-parar", titulo: "Quando pedem para parar", duracao: "33 s", resumo: "Registrar Pediu para não ser contatado, e não insistir." },
+  { arquivo: "central-recuperacao", titulo: "Central de recuperação", duracao: "27 s", resumo: "O que olhar toda manhã, em dez segundos." },
+  { arquivo: "atraso-prescricao", titulo: "Atraso e prescrição", duracao: "31 s", resumo: "Achar as dívidas mais antigas e baixar a planilha." },
+];
+
 const SECOES: { titulo: string; itens: string[] }[] = [
   {
     titulo: "O dia começa no Trabalho de hoje",
     itens: [
       "A fila se monta sozinha, na ordem de urgência: quem respondeu e está esperando, quem quis pagar e sumiu, promessas e parcelas do dia, retornos marcados e quem está sem contato há muito tempo.",
       "Clique numa linha: ao lado aparecem a última mensagem, o que a IA entendeu (por exemplo, a data de uma promessa) e uma sugestão de resposta.",
-      "Depois de falar com a pessoa, escolha o resultado e clique em Registrar e ir para o próximo. A linha ganha um risco e desce para Feito hoje.",
+      "Depois de falar com a pessoa, escolha o resultado e clique em Enviar e ir para o próximo (ou Registrar e ir para o próximo, quando não houver resposta para mandar). A linha ganha um risco e desce para Feito hoje.",
       "Promessa e retorno viram data: no dia combinado, a pessoa volta para a fila sem ninguém precisar lembrar.",
     ],
   },
@@ -14,7 +25,7 @@ const SECOES: { titulo: string; itens: string[] }[] = [
     titulo: "Conversas",
     itens: [
       "Todas as conversas de WhatsApp. Quem respondeu por último fica marcado até alguém ler.",
-      "Responder pelo painel tira o robô da conversa: daí em diante quem fala é você.",
+      "O robô manda só a primeira mensagem. Quem responde aparece aqui e no Trabalho de hoje, e daí em diante quem fala é a equipe.",
       "No computador, a ficha resumida aparece do lado direito da conversa.",
     ],
   },
@@ -53,7 +64,7 @@ const SECOES: { titulo: string; itens: string[] }[] = [
   {
     titulo: "Números de WhatsApp",
     itens: [
-      "Os números da MC CRED são conectados por QR em Configurações → Linhas WhatsApp.",
+      "Os números da MC CRED são conectados por QR em Administração → Linhas WhatsApp. Use um número que não esteja em nenhum outro sistema.",
       "Número conectado por QR precisa de ritmo baixo: cada um conversa com poucas pessoas novas por dia, para o WhatsApp não bloquear.",
       "Use um número por aparelho e não reconecte um número bloqueado para continuar mandando.",
     ],
@@ -63,7 +74,7 @@ const SECOES: { titulo: string; itens: string[] }[] = [
     itens: [
       "Faz: lê a mensagem da pessoa, entende datas (\"dia 10\", \"sexta\", \"quando receber\"), classifica (quer pagar, pediu prazo, desconfiou, já pagou, não quer) e escreve um rascunho de resposta.",
       "Não faz: não envia nada sozinha, não inventa desconto nem valor (o valor vem da proposta da carteira) e não fecha acordo.",
-      "Quando a pessoa diz \"não\" ou pede para parar, o número é bloqueado para sempre, em todos os números da MC CRED.",
+      "Quando a pessoa diz \"não\" ou pede para parar, marque Pediu para não ser contatado: o número fica bloqueado para sempre, em todos os números da MC CRED.",
     ],
   },
   {
@@ -71,13 +82,42 @@ const SECOES: { titulo: string; itens: string[] }[] = [
     itens: [
       "Nada de ameaça, de constrangimento nem de falar da dívida com outra pessoa (Código de Defesa do Consumidor, art. 42).",
       "As dívidas antigas podem estar prescritas: o pagamento é voluntário e isso se fala com honestidade se a pessoa perguntar.",
-      "Abordagem nova só de segunda a sexta, das 8h às 20h. Responder quem escreveu pode a qualquer hora.",
+      "No padrão, a primeira mensagem só sai de segunda a sexta, das 8h às 18h, e no sábado até o meio-dia (Configurações → Envio). Responder quem escreveu pode a qualquer hora.",
     ],
   },
 ];
 
 export function Ajuda() {
   return (
+    <>
+    <section aria-labelledby="aj-videos" className="mb-10 border-b border-pauta pb-10">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
+        <h2 id="aj-videos" className="font-display text-titulo font-600 text-ouro">Vídeos curtos</h2>
+        <p className="text-sm2 text-lapis">Comece pelo primeiro. Todos têm legenda.</p>
+      </div>
+      <ol role="list" className="mt-4 grid gap-x-8 gap-y-8 md:grid-cols-2">
+        {VIDEOS.map((v, i) => (
+          <li key={v.arquivo} className="min-w-0">
+            <video
+              controls
+              playsInline
+              preload="none"
+              poster={`/ajuda/${v.arquivo}.jpg`}
+              aria-label={`Vídeo: ${v.titulo}`}
+              className="aspect-video w-full rounded-painel border border-pauta bg-black"
+            >
+              <source src={`/ajuda/${v.arquivo}.mp4`} type="video/mp4" />
+            </video>
+            <p className="mt-3 flex items-baseline gap-3">
+              <span className="font-mono text-meta text-lapis tabnums" aria-hidden="true">{i + 1}</span>
+              <span className="min-w-0 font-700 text-texto">{v.titulo}</span>
+              <span className="ml-auto shrink-0 font-mono text-meta text-lapis tabnums">{v.duracao}</span>
+            </p>
+            <p className="mt-0.5 pl-[calc(1ch+0.75rem)] text-sm2 text-lapis">{v.resumo}</p>
+          </li>
+        ))}
+      </ol>
+    </section>
     <div className="grid gap-x-10 gap-y-8 lg:grid-cols-2">
       {SECOES.map((s) => (
         <section key={s.titulo} aria-labelledby={`aj-${s.titulo}`}>
@@ -93,5 +133,6 @@ export function Ajuda() {
         </section>
       ))}
     </div>
+    </>
   );
 }

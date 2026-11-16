@@ -84,3 +84,6 @@ contexto/
 *.db-shm
 *.db-wal
 Reuni*Anota*.txt
+
+# Projetos de vídeo (HyperFrames): só os MP4 finais vão para dashboard/public/ajuda
+videos/

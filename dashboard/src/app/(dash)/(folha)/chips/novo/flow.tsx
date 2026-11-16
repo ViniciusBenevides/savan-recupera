@@ -160,7 +160,7 @@ export function NovoChipFlow({ linhasLiberadas }: { linhasLiberadas: boolean }) 
             <Label>Papel da linha</Label>
             <select value={papel} onChange={(e) => setPapel(e.target.value as "bot" | "equipe")}
                     className="h-10 w-full rounded-xl border border-line bg-ink-850 px-3 text-sm text-chalk outline-none">
-              <option value="bot">Bot (dispara e negocia automaticamente)</option>
+              <option value="bot">Robô (manda a primeira mensagem das carteiras)</option>
               <option value="equipe">Equipe (cobrador humano — só recebe escalações)</option>
             </select>
             <p className="mt-1.5 text-xs text-mist">
