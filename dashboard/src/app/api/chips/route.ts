@@ -95,6 +95,17 @@ export async function POST(req: Request) {
       .from("chips").insert(novoBaileys).select("id").single();
     if (errB) return NextResponse.json({ erro: errB.message }, { status: 400 });
 
+    // A linha nova já nasce ligada às carteiras do dono dela, para que conectar e ativar baste para
+    // começar a rodar. Quem decide se cada carteira envia é o status dela (ativa ou pausada), que
+    // continua independente: ligar ou pausar uma carteira não mexe nas outras. O vínculo de cada
+    // carteira pode ser desfeito na tela dela.
+    const { data: dasCarteiras } = await admin.from("carteiras").select("id").eq("cobrador_id", dono).neq("status", "arquivada");
+    if (dasCarteiras?.length) {
+      const { error: errV } = await admin.from("carteira_chips")
+        .upsert(dasCarteiras.map((c) => ({ carteira_id: c.id, chip_id: chipB.id })), { onConflict: "carteira_id,chip_id", ignoreDuplicates: true });
+      if (errV) console.error("vinculo da linha nova:", errV.message);
+    }
+
     // Só a Evolution é endereçada por instância, e o nome dela depende do id — por isso só dá para
     // calcular depois do insert. No baileys-api o endereço é o próprio número, que já está gravado.
     let instancia: string | null = null;

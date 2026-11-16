@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-server";
 import { exigirCobrador, podeEditarChip, erroDono } from "@/lib/auth";
-import { linhasLiberadas, AVISO_LINHAS_BLOQUEADAS } from "@/lib/linhas";
+import { linhasLiberadas, AVISO_LINHAS_BLOQUEADAS, AVISO_NUMERO_EM_USO, AVISO_SERVIDOR_SEM_RESPOSTA, situacaoNoServidor } from "@/lib/linhas";
 import { criarInstancia, estadoInstancia, ligarChatwoot } from "@/lib/evolution";
 import {
   abrirConexaoBaileys, buscarInboxPorNome, conexaoBaileys, criarInboxBaileys, nomeDoInbox,
@@ -84,6 +84,10 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
 
     let inboxId = chip.chatwoot_inbox_id as number | null;
     if (!inboxId) {
+      // Primeira conexão desta linha: o número não pode já estar em outro projeto do mesmo servidor
+      const situacao = await situacaoNoServidor(numero);
+      if (situacao === "em_uso") return NextResponse.json({ erro: AVISO_NUMERO_EM_USO, motivo: "numero_em_uso" }, { status: 409 });
+      if (situacao === "sem_resposta") return NextResponse.json({ erro: AVISO_SERVIDOR_SEM_RESPOSTA, motivo: "servidor_sem_resposta" }, { status: 503 });
       const cw = await criarInboxBaileys({ chipId, nome: chip.nome as string, numeroE164: numero });
       if (!cw.ok) return NextResponse.json({ erro: `Chatwoot: ${cw.mensagem}` }, { status: 502 });
       inboxId = cw.inbox_id;
