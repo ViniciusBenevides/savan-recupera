@@ -10,7 +10,10 @@ const CAMPOS = ["nome", "credor", "credor_id", "descricao", "status", "prompt_pe
   // Ordem da fila (V5.5.20): vale para o robô, a lista de devedores e as planilhas da carteira.
   "ordem_fila",
   // Quem atende depois da primeira mensagem (16/11/2026): "equipe" ou "robo".
-  "atendimento"];
+  "atendimento",
+  // Quem o disparo chama, pela faixa de atraso (Disparos, 16/11/2026). null = todos.
+  "publico_faixa"];
+const PUBLICOS = ["lt1", "1a2", "2a3", "3a4", "4a5", "5mais", "sem"];
 
 const FAIXAS: Record<string, [number, number]> = {
   honorarios_pct: [0, 100], desconto_max_pct: [0, 95], parcelas_max: [1, 60], entrada_min_pct: [0, 100],
@@ -38,6 +41,9 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   }
   if ("ordem_fila" in patch && !["prioridade", "antigos", "recentes"].includes(String(patch.ordem_fila))) {
     return NextResponse.json({ erro: "Ordem da fila inválida." }, { status: 400 });
+  }
+  if ("publico_faixa" in patch && patch.publico_faixa !== null && !PUBLICOS.includes(String(patch.publico_faixa))) {
+    return NextResponse.json({ erro: "Faixa de atraso inválida." }, { status: 400 });
   }
   for (const [campo, [min, max]] of Object.entries(FAIXAS)) {
     if (!(campo in patch)) continue;

@@ -10,6 +10,8 @@ import { casoDeTeste, vistaDisparos } from "@/lib/dev/pior-caso";
 import type { LinhaDisparo, VistaDisparos } from "@/lib/vistas";
 import { cn, contar, num } from "@/lib/utils";
 import { diaISO } from "@/lib/datas";
+import type { Faixa } from "@/lib/recuperacao";
+import { CobrarAgora, type CarteiraCobrar } from "./cobrar-agora";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Disparos e automação" };
@@ -45,23 +47,26 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ d
   const hoje = diaISO();
 
   const [{ data: carteirasRaw }, { data: chipsRaw }, cfg] = await Promise.all([
-    sb.from("carteiras").select("id, nome, status, num_devedores, atendimento").order("nome"),
+    sb.from("carteiras").select("id, nome, status, num_devedores, atendimento, ordem_fila, publico_faixa, roteiro").order("nome"),
     sb.from("chips").select("*").order("id"),
     getConfigEscopo(sessao.role === "admin" ? null : sessao.tenant),
   ]);
-  const carteiras = ((carteirasRaw ?? []) as { id: number; nome: string; status: string; num_devedores: number; atendimento: string | null }[]).filter((c) => c.status !== "arquivada");
+  type CarteiraLida = { id: number; nome: string; status: string; num_devedores: number; atendimento: string | null; ordem_fila: string | null; publico_faixa: Faixa | null; roteiro: { etapas?: { tipo?: string; textos?: string[] }[] } | null };
+  const carteiras = ((carteirasRaw ?? []) as CarteiraLida[]).filter((c) => c.status !== "arquivada");
   const linhas = ((chipsRaw ?? []) as { id: number; nome: string; numero_e164: string | null; status: string; excluido_em?: string | null }[]).filter((c) => !c.excluido_em);
   const ids = carteiras.map((c) => c.id);
   const idsLinhas = linhas.map((l) => l.id);
 
   const cabeca = (status: string, carteira: number) => sb.from("fila_envios").select("id", { count: "exact", head: true }).eq("status", status).eq("carteira_id", carteira);
-  const [resumos, aguardando, enviados, falhas, { data: vinculos }, { data: metricas }] = await Promise.all([
+  const [resumos, aguardando, enviados, falhas, { data: vinculos }, { data: metricas }, porFaixa] = await Promise.all([
     Promise.all(ids.map((id) => adm.rpc("fn_fila_carteira_resumo", { p_carteira_id: id }))),
     Promise.all(ids.map((id) => cabeca("aguardando", id))),
     Promise.all(ids.map((id) => cabeca("enviado", id))),
     Promise.all(ids.map((id) => cabeca("falha", id))),
     adm.from("carteira_chips").select("carteira_id, chip_id").in("carteira_id", ids.length ? ids : [-1]),
     sb.from("chip_metricas_diarias").select("chip_id, novos_contatos").eq("dia", hoje).in("chip_id", idsLinhas.length ? idsLinhas : [-1]),
+    // Quem espera na fila de cada carteira, por faixa de atraso (o "público do lote" da V5.9.02)
+    Promise.all(ids.map((id) => adm.rpc("fn_fila_por_faixa", { p_carteira_id: id }))),
   ]);
 
   const enviadosHojePorLinha = new Map<number, number>();
@@ -103,6 +108,20 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ d
   const caso = casoDeTeste((await searchParams).dados);
   const v = caso ? vistaDisparos(caso) : real;
 
+  // "O que você quer cobrar agora?": carteira, público pela faixa de atraso, linhas e a 1ª mensagem
+  const cobrar: CarteiraCobrar[] = caso ? [] : carteiras.filter((c) => c.status === "ativa" || c.status === "pausada").map((c) => {
+    const i = ids.indexOf(c.id);
+    const faixas: Partial<Record<Faixa, number>> = {};
+    for (const r of ((porFaixa[i]?.data ?? []) as { faixa: Faixa; n: number }[])) faixas[r.faixa] = Number(r.n);
+    const disparo = (c.roteiro?.etapas ?? []).find((e) => e.tipo === "disparo");
+    return {
+      id: c.id, nome: c.nome, status: c.status, publico: c.publico_faixa ?? null, ordem: c.ordem_fila ?? "prioridade", porFaixa: faixas,
+      linhas: (linhasPorCarteira.get(c.id) ?? []).map((id) => linhas.find((l) => l.id === id)).filter((l): l is (typeof linhas)[number] => !!l)
+        .map((l) => ({ id: l.id, nome: l.nome, status: l.status, final: finalDoNumero(l.numero_e164) })),
+      textoAbordagem: disparo?.textos?.find((t) => t.trim()) ?? null,
+    };
+  });
+
   const { ligada, simulacao } = v;
   const enviadosHoje = v.linhas.reduce((s, l) => s + l.enviadosHoje, 0);
   const totalFila = v.carteiras.reduce((s, c) => s + c.naFila, 0);
@@ -134,6 +153,9 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ d
         title="Disparos e automação"
         sub="O que o robô tem para chamar em cada carteira, por quais linhas, e o que já saiu hoje."
       />
+
+      <CobrarAgora carteiras={cobrar} campanhaLigada={v.ligada} podeMexer={configura} />
+      <h2 className={cn("mb-3 font-display text-titulo font-600 text-ouro", cobrar.length ? "mt-10" : "mt-2")}>Acompanhamento</h2>
 
       <dl className="grid grid-cols-2 overflow-hidden rounded-painel border border-pauta bg-folha sm:grid-cols-3 lg:grid-cols-5">
         {numeros.map((k) => (
