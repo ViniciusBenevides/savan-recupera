@@ -36,7 +36,17 @@ const nextConfig = {
   eslint: { ignoreDuringBuilds: true },
   typescript: { ignoreBuildErrors: true },
   async redirects() {
-    return rotasAntigas.map(([source, destination]) => ({ source, destination, permanent: false }));
+    return [
+      // Um endereço só (16/11/2026): o automático da Vercel leva ao domínio da MC CRED, com o mesmo
+      // caminho. Nada de fora chama o painel por ele — o Asaas e o n8n falam com o Supabase.
+      {
+        source: "/:path*",
+        has: [{ type: "host", value: "savan-recupera.vercel.app" }],
+        destination: "https://cobranca.mccredoficial.com.br/:path*",
+        permanent: true,
+      },
+      ...rotasAntigas.map(([source, destination]) => ({ source, destination, permanent: false })),
+    ];
   },
 };
 export default nextConfig;
