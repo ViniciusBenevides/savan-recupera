@@ -8,7 +8,9 @@ const CAMPOS = ["nome", "credor", "credor_id", "descricao", "status", "prompt_pe
   // Regras de negociação (MC COB): conferidas abaixo com os mesmos limites do banco.
   "tipo_carteira", "honorarios_pct", "desconto_max_pct", "parcelas_max", "entrada_min_pct", "parcela_min_valor", "dias_sem_contato_max",
   // Ordem da fila (V5.5.20): vale para o robô, a lista de devedores e as planilhas da carteira.
-  "ordem_fila"];
+  "ordem_fila",
+  // Quem atende depois da primeira mensagem (16/11/2026): "equipe" ou "robo".
+  "atendimento"];
 
 const FAIXAS: Record<string, [number, number]> = {
   honorarios_pct: [0, 100], desconto_max_pct: [0, 95], parcelas_max: [1, 60], entrada_min_pct: [0, 100],
@@ -30,6 +32,9 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   }
   if ("tipo_carteira" in patch && !["propria", "terceiros"].includes(String(patch.tipo_carteira))) {
     return NextResponse.json({ erro: "Tipo de carteira inválido." }, { status: 400 });
+  }
+  if ("atendimento" in patch && !["equipe", "robo"].includes(String(patch.atendimento))) {
+    return NextResponse.json({ erro: "Atendimento inválido." }, { status: 400 });
   }
   if ("ordem_fila" in patch && !["prioridade", "antigos", "recentes"].includes(String(patch.ordem_fila))) {
     return NextResponse.json({ erro: "Ordem da fila inválida." }, { status: 400 });

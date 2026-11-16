@@ -8,7 +8,7 @@ import { diaISO, somarDias } from "@/lib/datas";
 
 type Carteira = {
   id: number; nome: string; tipo_carteira: string; honorarios_pct: number | null; desconto_max_pct: number; parcelas_max: number;
-  entrada_min_pct: number; parcela_min_valor: number; dias_sem_contato_max: number;
+  entrada_min_pct: number; parcela_min_valor: number; dias_sem_contato_max: number; atendimento?: string;
 };
 
 // "Regras de negociação": o Quadro Cobrança do CobCloud, curto. É o que segura o negociador dentro do
@@ -17,6 +17,7 @@ export function RegrasNegociacao({ carteira, podeEditar }: { carteira: Carteira;
   const router = useRouter();
   const [f, setF] = useState({
     tipo_carteira: carteira.tipo_carteira ?? "propria",
+    atendimento: carteira.atendimento === "robo" ? "robo" : "equipe",
     honorarios_pct: carteira.honorarios_pct != null ? String(carteira.honorarios_pct) : "",
     desconto_max_pct: String(carteira.desconto_max_pct ?? 60),
     parcelas_max: String(carteira.parcelas_max ?? 6),
@@ -42,7 +43,7 @@ export function RegrasNegociacao({ carteira, podeEditar }: { carteira: Carteira;
     const r = await fetch(`/api/carteiras/${carteira.id}`, {
       method: "PATCH", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        tipo_carteira: f.tipo_carteira, honorarios_pct: f.tipo_carteira === "terceiros" && f.honorarios_pct !== "" ? n(f.honorarios_pct) : null,
+        tipo_carteira: f.tipo_carteira, atendimento: f.atendimento, honorarios_pct: f.tipo_carteira === "terceiros" && f.honorarios_pct !== "" ? n(f.honorarios_pct) : null,
         desconto_max_pct: n(f.desconto_max_pct), parcelas_max: Math.round(n(f.parcelas_max)), entrada_min_pct: n(f.entrada_min_pct),
         parcela_min_valor: n(f.parcela_min_valor), dias_sem_contato_max: Math.round(n(f.dias_sem_contato_max)),
       }),
@@ -75,6 +76,22 @@ export function RegrasNegociacao({ carteira, podeEditar }: { carteira: Carteira;
             <p className="mt-1 text-meta text-lapis">O resto vai para o credor (aparece no Financeiro).</p>
           </div>
         )}
+        <div>
+          <p className="mb-2 text-sm2 font-600" id="t-atendimento">Depois da primeira mensagem</p>
+          <div className="flex flex-wrap gap-2" role="radiogroup" aria-labelledby="t-atendimento">
+            {[["equipe", "A equipe atende"], ["robo", "O robô conversa"]].map(([k, t]) => (
+              <button key={k} type="button" role="radio" aria-checked={f.atendimento === k} onClick={() => setF({ ...f, atendimento: k })}
+                className={cn("rounded-full border px-3.5 py-2 text-sm2 font-600", f.atendimento === k ? "border-tinta bg-tinta text-sobre-tinta" : "border-pauta-forte bg-folha text-texto hover:border-tinta/50")}>
+                {t}
+              </button>
+            ))}
+          </div>
+          <p className="mt-1.5 max-w-[60ch] text-meta text-lapis">
+            {f.atendimento === "equipe"
+              ? "O robô só manda a primeira mensagem. Quem responder aparece no Trabalho de hoje para a equipe atender, e ninguém recebe reenvio automático."
+              : "O robô responde seguindo o fluxo da carteira e faz o reenvio para quem não respondeu."}
+          </p>
+        </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <Campo id="dmax" rotulo="Maior desconto que o negociador dá sozinho (%)" ajuda="Acima disso, só o dono da operação libera." valor={f.desconto_max_pct} onChange={set("desconto_max_pct")} />
           <Campo id="pmax" rotulo="Máximo de parcelas" ajuda="Sem contar a entrada." valor={f.parcelas_max} onChange={set("parcelas_max")} />

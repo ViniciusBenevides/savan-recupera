@@ -177,20 +177,11 @@ export function NovoChipFlow({ linhasLiberadas }: { linhasLiberadas: boolean }) 
             </p>
           ) : papel === "bot" ? (
             <>
+              {/* A conexão alternativa (Evolution) saiu em 16/11/2026: a chave dela foi retirada e
+                  nenhuma linha usa esse serviço. Toda linha nova é o WhatsApp comum pelo Chatwoot. */}
               <div>
                 <Label>Canal</Label>
-                <select value={canal} onChange={(e) => setCanal(e.target.value as Canal)}
-                        className="h-10 w-full rounded-xl border border-line bg-ink-850 px-3 text-sm text-chalk outline-none">
-                  <option value="baileys_chatwoot">WhatsApp comum (QR) — recomendado</option>
-                  <option value="baileys">WhatsApp comum (QR) — conexão alternativa</option>
-                </select>
-                {porQr && (
-                  <p className="mt-1.5 text-xs text-mist">
-                    Os dois são o <b className="text-chalk">mesmo WhatsApp comum, vinculado por QR</b> — muda só o
-                    serviço que segura a sessão. Use o <b className="text-chalk">recomendado</b>; a alternativa é
-                    para quando o número não consegue parear por ele.
-                  </p>
-                )}
+                <p className="text-sm text-chalk">WhatsApp comum, vinculado por QR.</p>
               </div>
 
               {porQr ? (

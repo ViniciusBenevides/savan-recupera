@@ -17,3 +17,7 @@ verify_jwt = true
 
 [functions.gerar-pix]
 verify_jwt = false
+
+# O robô confere o papel do token sem conferir a assinatura: quem confere é este flag (como no §30).
+[functions.bot-turno]
+verify_jwt = true

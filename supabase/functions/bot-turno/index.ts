@@ -669,6 +669,35 @@ Deno.serve(async (req) => {
     return json({ ok: true, acao: "humano", mensagens: [] });
   }
 
+  // Carteira com atendimento da equipe (16/11/2026): o robô só manda a primeira mensagem. Quem
+  // responde vai direto para uma pessoa, sem nenhuma palavra do robô: a conversa vira `humano` e
+  // aparece no Trabalho de hoje e em Mensagens WhatsApp. É a mesma passagem do bloco acima, só que
+  // decidida pela carteira em vez de por alguém ter assumido.
+  {
+    let idCarteira = conv.carteira_id as number | null;
+    if (!idCarteira) {
+      const { data: d } = await sb.from("devedores").select("carteira_id").eq("id", conv.devedor_id).maybeSingle();
+      idCarteira = d?.carteira_id ?? null;
+    }
+    const { data: cartAtend } = idCarteira
+      ? await sb.from("carteiras").select("atendimento").eq("id", idCarteira).maybeSingle()
+      : { data: null };
+    // Falha fechada: carteira não encontrada também fica com a equipe
+    if ((cartAtend?.atendimento ?? "equipe") !== "robo") {
+      const agoraIso = new Date().toISOString();
+      await sb.from("mensagens").upsert({
+        conversa_id: conv.id, direcao: "entrada", origem: "devedor", conteudo: b.mensagem,
+        chatwoot_message_id: incomingMessageId, simulacao,
+      }, incomingMessageId ? { onConflict: "chatwoot_message_id" } : undefined);
+      await sb.from("conversas").update({ ultima_msg_em: agoraIso, ultima_msg_de: "devedor", proximo_followup_em: null }).eq("id", conv.id);
+      await sb.from("conversas").update({ estado: "humano" })
+        .eq("id", conv.id).not("estado", "in", "(humano,pago,optout,encerrada)");
+      await sb.from("eventos_campanha").insert({ tipo: "resposta", devedor_id: conv.devedor_id, carteira_id: idCarteira, payload: { simulacao, atendimento: "equipe" } });
+      if (!simulacao) await sb.rpc("fn_inc_metrica_dia", { p_dia: agoraIso.slice(0, 10), p_campo: "respostas", p_n: 1 });
+      return json({ ok: true, acao: "humano", motivo: "carteira_atendida_pela_equipe", mensagens: [] });
+    }
+  }
+
   if (incomingMessageId) {
     const estadoFila = await registrarNaFila(sb, convId, incomingMessageId, String(b.mensagem ?? ""));
     if (estadoFila === "concluida" || estadoFila === "suplantada") {

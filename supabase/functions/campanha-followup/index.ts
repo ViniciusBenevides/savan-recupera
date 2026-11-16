@@ -177,7 +177,8 @@ Deno.serve(async (req) => {
   const intervalos: number[] = cfgG.followup?.intervalos_horas ?? [24, 72, 168];
 
   // carteiras ativas + dono (cobrador) p/ resolver o gate e o fluxo
-  const { data: ativas } = await sb.from("carteiras").select("id, credor, cobrador_id, roteiro").eq("status", "ativa");
+  // Carteira com atendimento da equipe não tem reenvio: só a primeira mensagem é automática (16/11/2026)
+  const { data: ativas } = await sb.from("carteiras").select("id, credor, cobrador_id, roteiro").eq("status", "ativa").eq("atendimento", "robo");
   const idsAtivas = (ativas ?? []).map((c) => c.id);
   if (idsAtivas.length === 0) return json({ ok: true, motivo: "sem_carteira_ativa", enviados: 0 });
   const cartMap = new Map<number, { credor: string | null; cobrador_id: string | null; blocos: BlocoFollowup[] }>(

@@ -45,11 +45,11 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ d
   const hoje = diaISO();
 
   const [{ data: carteirasRaw }, { data: chipsRaw }, cfg] = await Promise.all([
-    sb.from("carteiras").select("id, nome, status, num_devedores").order("nome"),
+    sb.from("carteiras").select("id, nome, status, num_devedores, atendimento").order("nome"),
     sb.from("chips").select("*").order("id"),
     getConfigEscopo(sessao.role === "admin" ? null : sessao.tenant),
   ]);
-  const carteiras = ((carteirasRaw ?? []) as { id: number; nome: string; status: string; num_devedores: number }[]).filter((c) => c.status !== "arquivada");
+  const carteiras = ((carteirasRaw ?? []) as { id: number; nome: string; status: string; num_devedores: number; atendimento: string | null }[]).filter((c) => c.status !== "arquivada");
   const linhas = ((chipsRaw ?? []) as { id: number; nome: string; numero_e164: string | null; status: string; excluido_em?: string | null }[]).filter((c) => !c.excluido_em);
   const ids = carteiras.map((c) => c.id);
   const idsLinhas = linhas.map((l) => l.id);
@@ -83,7 +83,9 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ d
         : naFila === 0
           ? "Ativa, com linha, mas sem ninguém na fila do robô."
           : cfg.campanha_ativa === true
-            ? "O robô abre conversa no ritmo de cada linha."
+            ? c.atendimento === "robo"
+              ? "O robô abre conversa e responde pelo fluxo, no ritmo de cada linha."
+              : "O robô manda só a primeira mensagem; quem responde vai para a equipe."
             : "Pronta para enviar, mas a campanha está desligada.";
     return {
       ...c, acionaveis: r?.acionaveis ?? 0, naoAcionaveis: r?.nao_acionaveis ?? 0, higienizar: semContatoUtil(r?.motivos), naFila,
