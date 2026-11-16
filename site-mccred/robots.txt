@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://mccredoficial.com.br/sitemap.xml
