@@ -92,7 +92,8 @@ export async function montarFilaHoje(sb: SupabaseClient, agora = new Date()): Pr
     sb.from("agenda").select("id, devedor_id, tipo, quando, dia_inteiro, valor, observacao").eq("status", "pendente").lte("quando", fim).order("quando").limit(400),
     sb.from("acordo_parcelas").select("id, numero, vencimento, valor, acordos!inner(id, devedor_id, parcelas, status)")
       .eq("status", "aberta").eq("acordos.status", "ativo").lte("vencimento", amanha).order("vencimento").limit(400),
-    sb.from("ocorrencias").select("devedor_id, resultado, autor_nome, descricao, criado_em").gte("criado_em", ini).order("criado_em", { ascending: false }).limit(1000),
+    // só o que uma pessoa registrou: o histórico trazido do MC COB V5 entra sem autor e não é trabalho de hoje
+    sb.from("ocorrencias").select("devedor_id, resultado, autor_nome, descricao, criado_em").gte("criado_em", ini).not("autor_id", "is", null).order("criado_em", { ascending: false }).limit(1000),
     sb.from("carteiras").select("id, nome, dias_sem_contato_max, status"),
     sb.from("agenda").select("devedor_id").eq("status", "pendente").limit(5000),
   ]);

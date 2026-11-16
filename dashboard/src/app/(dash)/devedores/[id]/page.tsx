@@ -23,7 +23,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
   const sb = await supabaseServer();
   const { data: d } = await sb
     .from("devedores")
-    .select("id, nome, cpf_cnpj, processo, saldo, vencimento, cidade, uf, emails, tags, fase, motivo_inadimplencia, status_cobranca, responsavel_id, carteira_id, ultimo_contato_em, criado_em, inativo_em, inativado_por_nome, titulo_especie, titulo_emissao, prescricao_em, titulo_observacao, carteiras(id, nome, credor, cobrador_id, desconto_max_pct, parcelas_max, entrada_min_pct, parcela_min_valor, tipo_carteira)")
+    .select("id, nome, cpf_cnpj, processo, saldo, vencimento, cidade, uf, emails, tags, fase, motivo_inadimplencia, status_original, status_cobranca, responsavel_id, carteira_id, ultimo_contato_em, criado_em, inativo_em, inativado_por_nome, titulo_especie, titulo_emissao, prescricao_em, titulo_observacao, carteiras(id, nome, credor, cobrador_id, desconto_max_pct, parcelas_max, entrada_min_pct, parcela_min_valor, tipo_carteira)")
     .eq("id", id)
     .maybeSingle();
   if (!d) notFound();
@@ -66,7 +66,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
   const dados: DadosFicha = {
     devedor: {
       id: d.id, nome: d.nome, cpf: d.cpf_cnpj, processo: d.processo, saldo: Number(d.saldo), vencimento: d.vencimento,
-      cidade: d.cidade, uf: d.uf, emails: d.emails ?? [], tags: d.tags, fase: d.fase, motivo: d.motivo_inadimplencia,
+      cidade: d.cidade, uf: d.uf, emails: d.emails ?? [], tags: d.tags, fase: d.fase, motivo: d.motivo_inadimplencia, origem: d.status_original,
       situacao: d.status_cobranca, responsavel_id: d.responsavel_id, ultimo_contato_em: d.ultimo_contato_em,
       inativo_em: d.inativo_em, inativado_por_nome: d.inativado_por_nome,
       titulo: { especie: d.titulo_especie, emissao: d.titulo_emissao, prescricao: d.prescricao_em, observacao: d.titulo_observacao },

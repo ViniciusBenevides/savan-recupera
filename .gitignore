@@ -78,3 +78,9 @@ MC_COB_*/
 *-this-session-is-being-continued-*.txt
 # Material de contexto do projeto (pedidos, reuniões, análises): fica só na máquina.
 contexto/
+
+# Banco SQLite do MC COB V5 (dados reais de devedores) e anotações de reunião: nunca no repositório público.
+*.db
+*.db-shm
+*.db-wal
+Reuni*Anota*.txt

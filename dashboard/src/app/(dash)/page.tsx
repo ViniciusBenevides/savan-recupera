@@ -1,11 +1,12 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ListChecks, UserPlus, FileUp, Download } from "lucide-react";
+import { UserPlus, FileUp, Download } from "lucide-react";
 import { supabaseServer } from "@/lib/supabase-server";
 import { getSessao } from "@/lib/auth";
+import { estiloBotao } from "@/components/ui/primitives";
 import { RESULTADOS, type Resultado } from "@/lib/resultados";
 import { brl, cn, contar, num, porcento } from "@/lib/utils";
-import { diaISO, instanteSP, margem, partesSP, porExtenso } from "@/lib/datas";
+import { diaISO, fimDoDiaSP, instanteSP, margem, partesSP, porExtenso } from "@/lib/datas";
 import { Produtividade } from "./_painel/produtividade";
 
 export const dynamic = "force-dynamic";
@@ -16,7 +17,8 @@ type Funil = { carteira_id: number; nome: string; base: number; saldo_total: num
 // O Painel do MC COB ("Visão executiva da recuperação"), com os mesmos blocos que o Maurelio usa:
 // números do dia, carteira por credor, funil de cobrança, ações rápidas e últimas ocorrências. Cada
 // número leva para a tela onde ele se resolve. A produtividade da equipe (V5.6.13/14) fica entre o
-// funil e as ações rápidas, como no MC COB.
+// funil e as ações rápidas, como no MC COB. Em cima de tudo, o "O que você quer fazer agora?" da
+// V5.9.02: as quatro tarefas do dia, com o que já está esperando.
 export default async function Painel({ searchParams }: { searchParams: Promise<{ prod_dia?: string; prod_carteira?: string }> }) {
   const sessao = await getSessao();
   if (!sessao) redirect("/login");
@@ -29,15 +31,17 @@ export default async function Painel({ searchParams }: { searchParams: Promise<{
   const agora = new Date().toISOString();
   const ha30 = new Date(Date.now() - 30 * 86_400_000).toISOString();
 
-  const [{ data: funil }, { data: recMes }, { data: recTudo }, { data: ativos }, vencida, quebrados, { data: ocorrencias }, semDono] = await Promise.all([
+  const [{ data: funil }, { data: recMes }, { data: recTudo }, { data: ativos }, vencida, quebrados, { data: ocorrencias }, semDono, esperando, paraHoje] = await Promise.all([
     sb.from("v_funil_carteira").select("*").order("nome"),
     sb.from("v_recebimentos").select("valor").gte("recebido_em", inicioMes).limit(20000),
     sb.from("v_recebimentos").select("carteira_id, valor").limit(50000),
     sb.from("acordos").select("id, acordo_parcelas(status, valor)").eq("status", "ativo").limit(2000),
     sb.from("agenda").select("id", { count: "exact", head: true }).eq("status", "pendente").lt("quando", agora),
     sb.from("acordos").select("id", { count: "exact", head: true }).eq("status", "quebrado").gte("encerrado_em", ha30),
-    sb.from("ocorrencias").select("id, resultado, autor_nome, criado_em, devedor_id, devedores(nome)").order("criado_em", { ascending: false }).limit(8),
+    sb.from("ocorrencias").select("id, resultado, descricao, autor_nome, criado_em, devedor_id, devedores(nome)").order("criado_em", { ascending: false }).limit(8),
     sb.from("devedores").select("id", { count: "exact", head: true }).is("responsavel_id", null).neq("status_cobranca", "pago"),
+    sb.from("v_conversas_esperando").select("id", { count: "exact", head: true }),
+    sb.from("agenda").select("id", { count: "exact", head: true }).eq("status", "pendente").lte("quando", fimDoDiaSP().toISOString()),
   ]);
 
   const carteiras = (funil ?? []) as Funil[];
@@ -65,11 +69,30 @@ export default async function Painel({ searchParams }: { searchParams: Promise<{
   // Ações, não atalhos do menu: cada uma faz uma coisa do dia
   const nSemDono = semDono.count ?? 0;
   const acoes = [
-    { href: "/trabalho-hoje", t: "Começar o trabalho de hoje", s: "Quem chamar agora, na ordem certa", icon: ListChecks },
     { href: "/devedores?aba=sem", t: "Distribuir devedores", s: nSemDono ? `${contar(nSemDono, "devedor sem responsável", "devedores sem responsável")}` : "Todos já têm responsável", icon: UserPlus },
     { href: "/carteiras/nova", t: "Importar planilha", s: "Uma carteira nova a partir do Excel", icon: FileUp },
     { href: `/api/financeiro/exportar?de=${diaISO(new Date(inicioMes))}&ate=${diaISO()}`, t: "Baixar recebimentos do mês", s: "Planilha para conferir e repassar", icon: Download, baixar: true },
   ];
+
+  // As tarefas do "Comece aqui", na ordem da V5.9.02. Cada papel vê só as que pode abrir, e a
+  // primeira da lista é a que leva a tinta.
+  const papel = sessao.role;
+  const tarefas = [
+    { href: "/trabalho-hoje", t: "Atender o próximo", pode: papel !== "credor" },
+    { href: "/disparos", t: "Configurar disparos", pode: ["admin", "cobrador", "visualizador"].includes(papel) },
+    { href: "/devedores", t: "Encontrar devedor", pode: true },
+    { href: "/acordos", t: "Consultar acordos", pode: true },
+  ].filter((x) => x.pode);
+  const nEsperando = esperando.count ?? 0;
+  const nParaHoje = paraHoje.count ?? 0;
+  const esperaVoce = papel === "credor"
+    ? "Acompanhe o andamento das suas carteiras."
+    : nEsperando || nParaHoje
+      ? [
+          nEsperando ? `${contar(nEsperando, "pessoa respondeu e espera", "pessoas responderam e esperam")} você` : null,
+          nParaHoje ? contar(nParaHoje, "compromisso até hoje na agenda", "compromissos até hoje na agenda") : null,
+        ].filter(Boolean).join(" · ")
+      : "Ninguém esperando resposta e a agenda de hoje está limpa.";
 
   return (
     <div className="mx-auto w-full max-w-[1280px] px-4 pb-12 pt-6 sm:px-6 lg:px-8">
@@ -83,6 +106,20 @@ export default async function Painel({ searchParams }: { searchParams: Promise<{
           Disciplina em cada processo.<br />Resultado em cada negociação.
         </p>
       </header>
+
+      <section aria-labelledby="t-comece" className="mt-6 rounded-painel border border-pauta bg-folha px-5 py-4">
+        <div className="flex flex-wrap items-center justify-between gap-x-8 gap-y-3">
+          <div className="min-w-0">
+            <h2 id="t-comece" className="font-display text-titulo font-600 text-ouro">O que você quer fazer agora?</h2>
+            <p className={cn("mt-0.5 text-[0.9375rem]", nEsperando && papel !== "credor" ? "text-texto" : "text-lapis")}>{esperaVoce}</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {tarefas.map((x, i) => (
+              <Link key={x.href} href={x.href} className={estiloBotao(i === 0 ? "primary" : "outline", "md")}>{x.t}</Link>
+            ))}
+          </div>
+        </div>
+      </section>
 
       {/* Os números do dia, cada um leva para onde ele se resolve */}
       <dl className="mt-6 grid grid-cols-2 overflow-hidden rounded-painel border border-pauta bg-folha sm:grid-cols-3 min-[1300px]:grid-cols-6">
@@ -172,7 +209,7 @@ export default async function Painel({ searchParams }: { searchParams: Promise<{
       <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
         <section aria-labelledby="t-acoes">
           <h2 id="t-acoes" className="font-display text-titulo font-600 text-ouro">Ações rápidas</h2>
-          <div className="mt-3 grid grid-cols-2 gap-3">
+          <div className="mt-3 grid gap-3 sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3">
             {acoes.map((a) => {
               const Icon = a.icon;
               const classe = "group flex min-h-[5.25rem] items-start gap-3 rounded-painel border border-pauta-forte bg-folha p-4 transition-[border-color,background-color,transform] duration-150 ease-saida hover:border-tinta/70 hover:bg-tinta-clara active:scale-[0.98]";
@@ -202,13 +239,16 @@ export default async function Painel({ searchParams }: { searchParams: Promise<{
               {(ocorrencias ?? []).map((o) => {
                 const r = RESULTADOS[o.resultado as Resultado];
                 const nome = (o.devedores as unknown as { nome: string } | null)?.nome ?? "Devedor";
+                // Anotação sozinha não diz nada: mostra a primeira linha do que foi anotado
+                const anotado = o.resultado === "anotacao" ? (o.descricao ?? "").split(/\r?\n/)[0].replace(/^MC COB V5 · /, "").trim() : "";
                 return (
                   <li key={o.id} className="grid grid-cols-[var(--margem)_minmax(0,1fr)] border-b border-pauta last:border-b-0">
                     <span className="px-3 py-2.5 font-mono text-sm2 tabnums text-tinta">{margem(o.criado_em)}</span>
                     <span className="min-w-0 px-4 py-2.5">
                       <Link href={`/devedores/${o.devedor_id}`} className="alvo-toque font-600 text-texto hover:text-tinta hover:underline">{nome}</Link>
-                      <span className={cn("block text-sm2", r?.tom === "bom" ? "text-pago" : r?.tom === "ruim" ? "text-margem" : "text-lapis")}>
-                        {r?.rotulo ?? o.resultado}{o.autor_nome ? <span className="text-lapis"> · {o.autor_nome.split(" ")[0]}</span> : null}
+                      <span className={cn("flex min-w-0 text-sm2", r?.tom === "bom" ? "text-pago" : r?.tom === "ruim" ? "text-margem" : "text-lapis")}>
+                        <span className="truncate" title={anotado || undefined}>{anotado || (r?.rotulo ?? o.resultado)}</span>
+                        {o.autor_nome ? <span className="shrink-0 whitespace-pre text-lapis"> · {o.autor_nome.split(" ")[0]}</span> : null}
                       </span>
                     </span>
                   </li>

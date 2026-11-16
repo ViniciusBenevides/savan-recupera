@@ -7,6 +7,7 @@ import { brl, cn, porcento } from "@/lib/utils";
 import { descontoReal } from "@/lib/acordo";
 import { dataCurta, ha, hora, margem, prazo, diaISO } from "@/lib/datas";
 import { RESULTADOS, RESULTADOS_RAPIDOS, ROTULO_SITUACAO, proximoPasso, type Resultado } from "@/lib/resultados";
+import { mascararCPF, formatarCPF } from "@/lib/documento";
 
 export type Resumo = {
   devedor: { id: number; nome: string; cpf: string; processo: string | null; saldo: number; vencimento: string | null; cidade: string | null; uf: string | null; situacao: string; responsavel: string | null; ultimo_contato_em: string | null; motivo: string | null; ano: number | null };
@@ -24,18 +25,8 @@ export type Resumo = {
 
 export type ContextoFila = { conversa_id?: number | null; agenda_id?: number | null; parcela_id?: number | null; grupo?: string };
 
-export const mascararCPF = (cpf: string) => {
-  const d = (cpf || "").replace(/\D/g, "");
-  if (d.length === 11) return `***.${d.slice(3, 6)}.${d.slice(6, 9)}-**`;
-  if (d.length === 14) return `**.${d.slice(2, 5)}.${d.slice(5, 8)}/****-**`;
-  return "não informado";
-};
-export const formatarCPF = (cpf: string) => {
-  const d = (cpf || "").replace(/\D/g, "");
-  if (d.length === 11) return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}`;
-  if (d.length === 14) return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8, 12)}-${d.slice(12)}`;
-  return cpf;
-};
+// As máscaras moram em lib/documento (módulo neutro): as telas de servidor também usam.
+export { mascararCPF, formatarCPF } from "@/lib/documento";
 
 // O resultado que a leitura da mensagem sugere. Vem marcado para a pessoa só conferir: o caso comum
 // (mandar a resposta e registrar) fica a um clique, e trocar continua a um clique também.

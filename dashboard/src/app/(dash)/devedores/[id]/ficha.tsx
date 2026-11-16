@@ -21,7 +21,7 @@ import { dataCurta, dataLonga, diaISO, ha, hora, margem, prazo, diasEntre, deDia
 type Parcela = { id: number; numero: number; vencimento: string; valor: number; status: string; pago_em: string | null; valor_pago: number | null; forma_pagamento: string | null };
 export type DadosFicha = {
   devedor: {
-    id: number; nome: string; cpf: string; processo: string | null; saldo: number; vencimento: string | null; cidade: string | null; uf: string | null; emails: string[]; tags: string | null; fase: string | null; motivo: string | null; situacao: string; responsavel_id: string | null; ultimo_contato_em: string | null;
+    id: number; nome: string; cpf: string; processo: string | null; saldo: number; vencimento: string | null; cidade: string | null; uf: string | null; emails: string[]; tags: string | null; fase: string | null; motivo: string | null; origem: string | null; situacao: string; responsavel_id: string | null; ultimo_contato_em: string | null;
     inativo_em: string | null; inativado_por_nome: string | null;
     titulo: { especie: string | null; emissao: string | null; prescricao: string | null; observacao: string | null };
   };
@@ -365,9 +365,10 @@ export function Ficha({ dados, abaInicial, podeOperar, podeJuridico, papel, meuI
                   )) : <li className="px-4 py-3 text-lapis">Nenhum e-mail.</li>}
                   <li className="flex items-center gap-2.5 px-4 py-3"><MapPin className="h-4 w-4 text-lapis" aria-hidden="true" /> {[d.cidade, d.uf].filter(Boolean).join("/") || "Endereço não informado na planilha"}</li>
                 </ul>
-                {(d.motivo || d.fase || d.tags) && (
+                {(d.motivo || d.fase || d.tags || d.origem) && (
                   <dl className="mt-4 grid grid-cols-[140px_minmax(0,1fr)] gap-y-2 text-[0.9375rem]">
                     {d.motivo && <><dt className="text-lapis">Motivo</dt><dd>{d.motivo}</dd></>}
+                    {d.origem && <><dt className="text-lapis">Situação na origem</dt><dd>{d.origem}</dd></>}
                     {d.fase && <><dt className="text-lapis">Fase</dt><dd>{d.fase}</dd></>}
                     {d.tags && <><dt className="text-lapis">Marcadores</dt><dd>{d.tags}</dd></>}
                   </dl>
